@@ -4,6 +4,7 @@ import { Hono, type Context } from "hono";
 import type { Adapter } from "./adapters/adapter.js";
 import { chatAdapter } from "./adapters/chat.js";
 import { geminiAdapter } from "./adapters/gemini.js";
+import { exaAdapter } from "./adapters/exa.js";
 import { messagesAdapter } from "./adapters/messages.js";
 import { responsesAdapter } from "./adapters/responses.js";
 import type { Config } from "./config.js";
@@ -145,7 +146,13 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     const time = new Date().toISOString();
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     // Unreadable bodies are not ours to judge: upstream produces its own error for them.
-    const req = parseBody<Req>(bytes, c.req.header("content-encoding"));
+    const encoding = c.req.header("content-encoding");
+    let req: Req | undefined;
+    try {
+      req = adapter.parse ? adapter.parse(bytes, encoding) : parseBody<Req>(bytes, encoding);
+    } catch {
+      req = undefined;
+    }
     dump?.("request", {
       method: c.req.method,
       path: c.req.path,
@@ -155,7 +162,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
 
     let decision: Decision;
     let tools: number | undefined;
-    if (!req) decision = { mode: "passthrough", reason: "unparseable_body" };
+    if (!req) decision = { mode: "passthrough", reason: encoding ? "unsupported_encoding" : "unparseable_body" };
     else if (c.req.header("x-jev-gateway") === "off") decision = { mode: "passthrough", reason: "disabled_by_header" };
     else if (!routing) decision = { mode: "passthrough", reason: "routing_disabled" };
     else ({ decision, tools } = await decideFor(adapter, req));
@@ -195,9 +202,17 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
       }
     }
 
+    let rewrittenBody: string | Uint8Array | undefined;
     if (rewritten && decision.mode !== "passthrough") {
-      const body = JSON.stringify(rewritten);
-      const response = await forward(c.req.raw, config, fetchImpl, { body, responseHeaders: decisionHeaders(decision) });
+      try {
+        rewrittenBody = adapter.encode ? adapter.encode(rewritten) : JSON.stringify(rewritten);
+      } catch (error) {
+        decision = giveUp(error);
+      }
+    }
+
+    if (rewrittenBody !== undefined && rewritten && decision.mode !== "passthrough") {
+      const response = await forward(c.req.raw, config, fetchImpl, { body: rewrittenBody, responseHeaders: decisionHeaders(decision) });
       const sent = { mode: decision.mode, model: rewritten.model, tool_choice: (rewritten as { tool_choice?: unknown }).tool_choice };
       dumpResponse("rejected", response, { sent });
       if (response.status !== 400 && response.status !== 422) {
@@ -267,6 +282,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
   app.post("/v1/responses", route(responsesAdapter));
   app.post("/v1/messages", route(messagesAdapter));
   app.post("/v1beta/models/*", route(geminiAdapter));
+  app.post("/exa.api_server_pb.ApiServerService/GetChatMessage", route(exaAdapter));
 
   // Everything else (models, embeddings, …) is proxied untouched.
   app.all("/v1/*", async (c) => {
@@ -275,6 +291,16 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     return response;
   });
   app.all("/v1beta/*", async (c) => {
+    const response = await forward(c.req.raw, config, fetchImpl);
+    dump?.("other", { method: c.req.method, path: c.req.path, headers: redactHeaders(c.req.raw.headers), status: response.status });
+    return response;
+  });
+
+  // Every other endpoint — the rest of exa (seat management, model catalogue, analytics) and
+  // anything an unrecognized client asks for — is proxied opaque. Dashboard misses are this
+  // gateway's, not upstream's: forwarding one would send its ?key= credential along.
+  app.all("/*", async (c) => {
+    if (c.req.path === "/dashboard" || c.req.path.startsWith("/dashboard/")) return c.notFound();
     const response = await forward(c.req.raw, config, fetchImpl);
     dump?.("other", { method: c.req.method, path: c.req.path, headers: redactHeaders(c.req.raw.headers), status: response.status });
     return response;
