@@ -100,8 +100,6 @@ function toTools(raw: ResponsesTool[]): RouterTool[] {
 }
 
 function toInput(req: ResponsesRequest, maxMessageChars: number): RouterInput | { skip: string } {
-  // With server-side history the router would be judging a conversation it cannot see.
-  if (req.previous_response_id) return { skip: "previous_response_id" };
   const items = inputItems(req);
   // Delegated tasks and replies use a separate message format whose content may be encrypted.
   if (items.some((item) => item.type === "agent_message")) return { skip: "agent_message" };
