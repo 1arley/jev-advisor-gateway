@@ -560,6 +560,11 @@ list. The ones worth knowing:
 | `JEV_DIRECT_CALLS` | `true` | Set to `false` so the gateway never answers without the LLM |
 | `JEV_ROUTING` | `on` | Set to `off` to start in baseline mode |
 | `JEV_TIMEOUT_MS` | `4000` | How long to wait for Jev before letting the LLM decide |
+| `JEV_ADVISOR` | `on` for `jev-codex-advisor` | Consult Astra when Jev is unsure. The advisor call is synchronous, so its timeout is added to that turn's latency |
+| `JEV_ADVISOR_MODEL` | `gpt-6-astra` | Model the advisor answers with. It has to be a model your upstream actually serves |
+| `JEV_ADVISOR_TIMEOUT_MS` | `30000` | Deadline for the advisor call. A real model needs seconds, not the sub-second budget a tool-router call gets; too low and the stream is cut mid-answer, which arrives as an empty reply rather than an error |
+| `JEV_ADVISOR_MAX_CALLS` | `6` | Advisor consults per session |
+| `JEV_ADVISOR_MAX_OUTPUT_TOKENS` | `700` | Cap on the advisor's reply |
 | `ARGS_MODEL` | unset | A cheaper model for filling arguments in `forced` mode |
 | `HOST` | `127.0.0.1` | Interface to listen on. Set `ROUTER_API_KEY` before exposing it |
 | `JEV_DEBUG_DUMP_DIR` | unset | Write requests and response summaries to this folder. Credentials in headers are redacted; bodies are written whole, system prompts and conversation included, in files only you can read |

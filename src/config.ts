@@ -82,7 +82,7 @@ export function loadConfig(env: Env = process.env): Config {
     argsModel: client === "codex" ? undefined : str(env, "ARGS_MODEL"),
     advisorModel: str(env, "JEV_ADVISOR_MODEL") ?? "gpt-6-astra",
     advisorEnabled: bool(env, "JEV_ADVISOR", client === "codex"),
-    advisorTimeoutMs: num(env, "JEV_ADVISOR_TIMEOUT_MS", 2500),
+    advisorTimeoutMs: num(env, "JEV_ADVISOR_TIMEOUT_MS", 30_000),
     advisorMaxOutputTokens: num(env, "JEV_ADVISOR_MAX_OUTPUT_TOKENS", 700),
     advisorMaxCallsPerSession: num(env, "JEV_ADVISOR_MAX_CALLS_PER_SESSION", 6),
     jevProvider,

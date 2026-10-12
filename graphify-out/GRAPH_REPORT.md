@@ -1,27 +1,27 @@
-# Graph Report - codex-jev-advisor  (2026-10-08)
+# Graph Report - codex-jev-advisor  (2026-10-12)
 
 ## Corpus Check
-- 69 files · ~60,779 words
+- 69 files · ~62,218 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 3 file(s) not represented in the graph (top: (none) 2, .example 1)
 
 ## Summary
-- 599 nodes · 1295 edges · 26 communities (24 shown, 2 thin omitted)
+- 601 nodes · 1310 edges · 30 communities (28 shown, 2 thin omitted)
 - Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 44 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `37ff9829`
+- Built from commit: `669c993c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- responses.ts
+- messages.ts
 - clients.mjs
 - exa.ts
 - app.ts
 - createApp
-- decide.ts
+- config.ts
 - Contributing to jev-gateway
 - package.json
 - scripts
@@ -35,22 +35,26 @@
 - Changelog
 - engines
 - Codex Jev Advisor
-- events.ts
+- decide.ts
 - launcher.mjs
 - setup.test.ts
 - Arquitetura: Codex + Luna + Astra + Jev
 - launcher.test.ts
-- jev-gateway conventions
+- gemini.ts
 - mock-jev.mjs
+- responses.ts
+- events.ts
+- policy.ts
+- chat.ts
 
 ## God Nodes (most connected - your core abstractions)
-1. `createApp()` - 39 edges
+1. `createApp()` - 40 edges
 2. `concat()` - 27 edges
-3. `fakeJev()` - 22 edges
+3. `fakeJev()` - 23 edges
 4. `vitest` - 21 edges
 5. `testConfig()` - 21 edges
-6. `field()` - 19 edges
-7. `fakeUpstream()` - 19 edges
+6. `fakeUpstream()` - 20 edges
+7. `field()` - 19 edges
 8. `Codex Jev Advisor` - 19 edges
 9. `utf8()` - 17 edges
 10. `Adapter` - 16 edges
@@ -70,11 +74,11 @@
 ## Import Cycles
 - None detected.
 
-## Communities (26 total, 2 thin omitted)
+## Communities (30 total, 2 thin omitted)
 
-### Community 0 - "responses.ts"
-Cohesion: 0.06
-Nodes (58): Adding a wire format, Where things live, Adapter, sse(), directJson(), directStream(), ids(), toInput() (+50 more)
+### Community 0 - "messages.ts"
+Cohesion: 0.12
+Nodes (18): Adding a wire format, Where things live, Adapter, sse(), apply(), Block, build(), directJson() (+10 more)
 
 ### Community 1 - "clients.mjs"
 Cohesion: 0.13
@@ -85,16 +89,16 @@ Cohesion: 0.09
 Nodes (48): apply(), byField(), directStream(), encode(), envelope(), exaAdapter, ExaRequest, fieldOf() (+40 more)
 
 ### Community 3 - "app.ts"
-Cohesion: 0.08
-Nodes (34): chatAdapter, geminiAdapter, messagesAdapter, responsesAdapter, ResponsesRequest, AnyRequest, decisionHeaders(), DECODERS (+26 more)
+Cohesion: 0.10
+Nodes (31): chatAdapter, messagesAdapter, AnyRequest, decisionHeaders(), DECODERS, headerSafe(), parseBody(), safeEqual() (+23 more)
 
 ### Community 4 - "createApp"
 Cohesion: 0.08
-Nodes (44): Tests, vitest, createApp(), AskJev, NO_TOOL, Feed, lights, setup() (+36 more)
+Nodes (43): Tests, vitest, createApp(), NO_TOOL, Feed, lights, setup(), app() (+35 more)
 
-### Community 5 - "decide.ts"
-Cohesion: 0.07
-Nodes (48): Invariants: never break these, @hono/node-server, @typesafe-ai/sdk, ACTIONS, decideSessionAction(), SessionAction, SessionDecision, Config (+40 more)
+### Community 5 - "config.ts"
+Cohesion: 0.08
+Nodes (28): Before calling a change done, Code, Commits and pull request titles, Invariants: never break these, jev-gateway conventions, Prose: README, CHANGELOG, docs, pull requests, Releases, @hono/node-server (+20 more)
 
 ### Community 6 - "Contributing to jev-gateway"
 Cohesion: 0.06
@@ -140,9 +144,9 @@ Nodes (30): 0.1.0, 0.2.0, 0.2.1, 0.2.2, 0.3.0, 0.3.1, [0.4.0](https://github.com
 Cohesion: 0.08
 Nodes (25): Benchmark, Codex Jev Advisor, Commands, Configuration, Credentials and upstream, Dashboard, Development, How it works (+17 more)
 
-### Community 19 - "events.ts"
-Cohesion: 0.15
-Nodes (12): hono, AdvisorSwitch, dashboardRoutes(), page, RoutingSwitch, createEventLog(), EventLog, number() (+4 more)
+### Community 19 - "decide.ts"
+Cohesion: 0.18
+Nodes (22): @typesafe-ai/sdk, Answers, decide(), JevTrace, resolveArgs(), shortlist(), skipReason(), argKey() (+14 more)
 
 ### Community 20 - "launcher.mjs"
 Cohesion: 0.16
@@ -160,33 +164,49 @@ Nodes (12): Arquitetura: Codex + Luna + Astra + Jev, Contexto e continuidade, Fl
 Cohesion: 0.17
 Nodes (9): claude, codex, codexAdvisor, devin, launcherBin, LauncherSpec, managedEnv, opencode (+1 more)
 
-### Community 24 - "jev-gateway conventions"
-Cohesion: 0.29
-Nodes (6): Before calling a change done, Code, Commits and pull request titles, jev-gateway conventions, Prose: README, CHANGELOG, docs, pull requests, Releases
+### Community 24 - "gemini.ts"
+Cohesion: 0.15
+Nodes (12): directJson(), directStream(), geminiAdapter, GeminiContent, GeminiFunctionDeclaration, GeminiPart, GeminiRequest, GeminiTool (+4 more)
 
 ### Community 25 - "mock-jev.mjs"
 Cohesion: 0.29
 Nodes (5): answer(), ARG_CERTAINTY, CONFIDENCE, PORT, SCRIPT
 
+### Community 26 - "responses.ts"
+Cohesion: 0.22
+Nodes (13): build(), declaredTools(), directJson(), directStream(), hex(), HOSTED_DESCRIPTIONS, InputItem, inputItems() (+5 more)
+
+### Community 27 - "events.ts"
+Cohesion: 0.15
+Nodes (12): hono, AdvisorSwitch, dashboardRoutes(), page, RoutingSwitch, createEventLog(), EventLog, number() (+4 more)
+
+### Community 28 - "policy.ts"
+Cohesion: 0.28
+Nodes (8): Deps, ACTIONS, decideSessionAction(), SessionAction, SessionDecision, Config, AskJev, buildState()
+
+### Community 30 - "chat.ts"
+Cohesion: 0.17
+Nodes (17): directJson(), directStream(), ids(), toInput(), toTools(), usageOf(), toInput(), Limits (+9 more)
+
 ## Knowledge Gaps
-- **228 isolated node(s):** `ROOT`, `STATE_DIR`, `FROM_SOURCE`, `ENV_FILES`, `name` (+223 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 271 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **229 isolated node(s):** `ROOT`, `STATE_DIR`, `FROM_SOURCE`, `ENV_FILES`, `name` (+224 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 272 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **2 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Contributing to jev-gateway` connect `Contributing to jev-gateway` to `responses.ts`?**
-  _High betweenness centrality (0.167) - this node is a cross-community bridge._
+- **Why does `Contributing to jev-gateway` connect `Contributing to jev-gateway` to `messages.ts`?**
+  _High betweenness centrality (0.166) - this node is a cross-community bridge._
 - **What connects `ROOT`, `STATE_DIR`, `FROM_SOURCE` to the rest of the system?**
-  _228 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `responses.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.05894736842105263 - nodes in this community are weakly interconnected._
-- **Why does `vitest` connect `createApp` to `exa.ts`, `app.ts`, `decide.ts`, `package.json`, `setup.test.ts`, `launcher.test.ts`?**
-  _High betweenness centrality (0.149) - this node is a cross-community bridge._
+  _229 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `messages.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.1225071225071225 - nodes in this community are weakly interconnected._
+- **Why does `vitest` connect `createApp` to `exa.ts`, `app.ts`, `config.ts`, `package.json`, `setup.test.ts`, `launcher.test.ts`?**
+  _High betweenness centrality (0.148) - this node is a cross-community bridge._
 - **Should `clients.mjs` be split into smaller, more focused modules?**
   _Cohesion score 0.13405797101449277 - nodes in this community are weakly interconnected._
-- **Why does `Where things live` connect `responses.ts` to `Contributing to jev-gateway`?**
+- **Why does `Where things live` connect `messages.ts` to `Contributing to jev-gateway`?**
   _High betweenness centrality (0.114) - this node is a cross-community bridge._
 - **Should `exa.ts` be split into smaller, more focused modules?**
   _Cohesion score 0.09394205443371378 - nodes in this community are weakly interconnected._
