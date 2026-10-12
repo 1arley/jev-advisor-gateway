@@ -26,27 +26,31 @@ export async function decideSessionAction(
   askJev: AskJev,
 ): Promise<SessionDecision> {
   const startedAt = performance.now();
-  const result = await askJev({
-    model: config.jevModel,
-    state: { ...buildState(input, config), recent_session_events: session.recent },
-    questions: {
-      [ACTION_KEY]: {
-        type: "choice",
-        instructions:
-          "Decide whether an independent review or a stop signal is useful for the next coding-agent step. " +
-          "Consult Astra before a high-stakes plan, after a repeated tool failure, when the tool decision is uncertain, " +
-          "or when a proposed completion needs a final check. Otherwise pass control to the main model.",
-        criteria: ACTIONS,
+  try {
+    const result = await askJev({
+      model: config.jevModel,
+      state: { ...buildState(input, config), recent_session_events: session.recent },
+      questions: {
+        [ACTION_KEY]: {
+          type: "choice",
+          instructions:
+            "Decide whether an independent review or a stop signal is useful for the next coding-agent step. " +
+            "Consult Astra before a high-stakes plan, after a repeated tool failure, when the tool decision is uncertain, " +
+            "or when a proposed completion needs a final check. Otherwise pass control to the main model.",
+          criteria: ACTIONS,
+        },
       },
-    },
-  });
-  const answer = result.answers[ACTION_KEY];
-  if (answer?.type !== "choice" || !(answer.choice in ACTIONS) || answer.confidence < config.minConfidence) {
-    return { action: "pass", confidence: answer?.type === "choice" ? answer.confidence : 0, latencyMs: Math.round(performance.now() - startedAt) };
+    });
+    const answer = result.answers[ACTION_KEY];
+    if (answer?.type !== "choice" || !(answer.choice in ACTIONS) || answer.confidence < config.minConfidence) {
+      return { action: "pass", confidence: answer?.type === "choice" ? answer.confidence : 0, latencyMs: Math.round(performance.now() - startedAt) };
+    }
+    return {
+      action: answer.choice as SessionAction,
+      confidence: answer.confidence,
+      latencyMs: Math.round(performance.now() - startedAt),
+    };
+  } catch (error) {
+    return { action: "pass", confidence: 0, latencyMs: Math.round(performance.now() - startedAt) };
   }
-  return {
-    action: answer.choice as SessionAction,
-    confidence: answer.confidence,
-    latencyMs: Math.round(performance.now() - startedAt),
-  };
 }

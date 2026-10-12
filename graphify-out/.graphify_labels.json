@@ -1,10 +1,10 @@
 {
-  "0": "responses.ts",
+  "0": "messages.ts",
   "1": "clients.mjs",
   "2": "exa.ts",
   "3": "app.ts",
   "4": "createApp",
-  "5": "decide.ts",
+  "5": "config.ts",
   "6": "Contributing to jev-gateway",
   "7": "package.json",
   "8": "scripts",
@@ -18,11 +18,15 @@
   "16": "Changelog",
   "17": "engines",
   "18": "Codex Jev Advisor",
-  "19": "events.ts",
+  "19": "decide.ts",
   "20": "launcher.mjs",
   "21": "setup.test.ts",
   "22": "Arquitetura: Codex + Luna + Astra + Jev",
   "23": "launcher.test.ts",
-  "24": "jev-gateway conventions",
-  "25": "mock-jev.mjs"
+  "24": "gemini.ts",
+  "25": "mock-jev.mjs",
+  "26": "responses.ts",
+  "27": "events.ts",
+  "28": "policy.ts",
+  "30": "chat.ts"
 }
