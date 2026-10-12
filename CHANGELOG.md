@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0](https://github.com/1arley/jev-codex-router/compare/v0.5.1...v0.6.0) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* package renamed, binary names changed, config env vars updated
+
+### Added
+
+* rebrand to codex-jev-advisor with GPT-6 Astra advisor for Luna sessions ([669c993](https://github.com/1arley/jev-codex-router/commit/669c993cd630266153664ad35da6c50f98be2fab))
+
 ## [0.5.1](https://github.com/vinilana/jev-gateway/compare/v0.5.0...v0.5.1) (2026-10-06)
 
 

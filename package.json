@@ -1,6 +1,6 @@
 {
   "name": "codex-jev-advisor",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "Local Codex launcher with Jev routing and optional GPT-6 Astra advice for GPT-6 Luna sessions.",
   "keywords": [
     "llm",
