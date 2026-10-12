@@ -1,6 +1,7 @@
 import type { Config } from "../config.js";
 import type { ResponsesRequest } from "../adapters/responses.js";
 import { forward } from "../upstream.js";
+import { summarizeResponse } from "../debug.js";
 import type { SessionState } from "./session-state.js";
 
 interface AdvisorResponse {
@@ -33,15 +34,62 @@ export function buildAdvisorRequest(req: ResponsesRequest, config: Config, sessi
   });
   return {
     model: config.advisorModel,
-    ...(req.previous_response_id ? { previous_response_id: req.previous_response_id } : {}),
+    // Deliberately not `req.previous_response_id`: that id belongs to the main model's history
+    // store, and chaining the advisor onto it would splice the note's reply into the session.
+    // The advisor reads the conversation as plain input instead, which is what `input` below is.
     input,
     instructions:
       "You are a read-only advisor to a coding agent. Review the current task and available conversation context. " +
       "Return at most three concise, actionable points. You have no tools and must not invent inspection results.",
-    stream: false,
+    stream: true,
     store: false,
+    // The Codex Responses-Lite backend rejects the request without these, naming the offending
+    // param each time: `reasoning.context`, then `parallel_tool_calls`. The main session sends
+    // both; only the advisor request was missing them.
+    reasoning: { context: "all_turns" },
+    parallel_tool_calls: false,
     max_output_tokens: config.advisorMaxOutputTokens,
   };
+}
+
+/**
+ * The response the advisor reads out of a reply, whatever shape it arrives in. The ChatGPT Codex
+ * backend answers 400 to `stream: false` ("Stream must be set to true"), so the advisor always
+ * gets SSE here; a JSON body is still accepted so a plain upstream keeps working.
+ *
+ * Deliberately its own parser rather than sharing debug.ts's `summarizeResponse`: that collapses
+ * repeated output items into counts, which is right for a dashboard and useless when the text
+ * itself is the answer.
+ */
+function terminalResponse(text: string): AdvisorResponse | undefined {
+  // A plain upstream replies with one JSON object, no `type` to dispatch on: that *is* the response.
+  if (text.trimStart().startsWith("{")) {
+    try {
+      return JSON.parse(text) as AdvisorResponse;
+    } catch {
+      return undefined;
+    }
+  }
+  let done: AdvisorResponse | undefined;
+  let deltas = "";
+  for (const line of text.split("\n")) {
+    if (!line.startsWith("data:")) continue;
+    const raw = line.slice(5).trim();
+    if (raw === "[DONE]") break;
+    let event: { type?: string; delta?: unknown; response?: AdvisorResponse };
+    try {
+      event = JSON.parse(raw) as typeof event;
+    } catch {
+      continue;
+    }
+    if (event.type === "response.output_text.delta" && typeof event.delta === "string") deltas += event.delta;
+    else if (event.type === "response.completed" || event.type === "response.incomplete") done = event.response ?? (event as unknown as AdvisorResponse);
+  }
+  // `response.completed` can arrive with an empty `output` — the Codex backend leaves the text in
+  // the deltas — so the deltas are the fallback, not the other way round.
+  const fromDeltas = deltas.trim() ? ({ output: [{ content: [{ type: "output_text", text: deltas }] }] } as AdvisorResponse) : undefined;
+  if (done && extractAdvisorText(done)) return done;
+  return fromDeltas ?? done;
 }
 
 export function extractAdvisorText(response: AdvisorResponse): string | undefined {
@@ -54,22 +102,46 @@ export function extractAdvisorText(response: AdvisorResponse): string | undefine
   return text ? text.slice(0, 3000) : undefined;
 }
 
+/**
+ * The advisor's answer, or why there is none. A silent `undefined` here is indistinguishable from
+ * an advisor that was never asked: an upstream refusal, a timeout and an empty reply all used to
+ * look the same on the log, which is how a dead advisor passes for a healthy one.
+ */
+export type AstraConsult =
+  | { note: string }
+  | { reason: "astra_http_error"; status: number; detail: string }
+  | { reason: "astra_unreachable"; detail: string }
+  | { reason: "astra_timeout" }
+  | { reason: "astra_empty_reply"; detail: string };
+
 export async function consultAstra(
   incoming: Request,
   req: ResponsesRequest,
   config: Config,
   session: SessionState,
   fetchImpl: typeof fetch,
-): Promise<string | undefined> {
+): Promise<AstraConsult> {
   try {
     const response = await forward(incoming, config, fetchImpl, {
       body: JSON.stringify(buildAdvisorRequest(req, config, session)),
       signal: AbortSignal.timeout(config.advisorTimeoutMs),
     });
-    if (!response.ok) return undefined;
-    return extractAdvisorText(await response.json() as AdvisorResponse);
-  } catch {
-    return undefined;
+    if (!response.ok) {
+      // The upstream's own words on why it refused: the status alone never says which field it
+      // rejected. Truncated, because an error body can echo part of the request back.
+      const detail = (await response.text().catch(() => "")).slice(0, 200);
+      return { reason: "astra_http_error", status: response.status, detail };
+    }
+    const body = await response.text();
+    const note = extractAdvisorText(terminalResponse(body) ?? {});
+    // A 200 with nothing to show is its own failure: say how the stream ended rather than
+    // reporting a bare "empty", which cannot tell a truncated reply from an unparsed one.
+    return note ? { note } : { reason: "astra_empty_reply", detail: JSON.stringify(summarizeResponse(body)).slice(0, 200) };
+  } catch (error) {
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    return timedOut
+      ? { reason: "astra_timeout" }
+      : { reason: "astra_unreachable", detail: error instanceof Error ? error.message : String(error) };
   }
 }
 

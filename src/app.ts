@@ -204,29 +204,43 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     }
 
     let bodyOverride: string | undefined;
+    // Why the advisor did or did not answer, recorded on every Codex request. The route log
+    // carries the tool decision alone, and a consult that silently produced nothing is then
+    // indistinguishable from a gateway that never asked: this is the only place it shows up.
+    let advisor: Record<string, unknown> | undefined;
+    if (config.client === "codex" && advisorEnabled) {
+      advisor = { action: sessionAction?.action ?? "unknown", confidence: sessionAction?.confidence ?? 0, calls: session?.advisorCalls ?? 0 };
+    }
     if (req && session && sessionAction && config.client === "codex") {
       const codexReq = req as ResponsesRequest;
       const uncertain = decision.mode === "passthrough" && ["low_confidence", "jev_answers_disagree"].includes(decision.reason);
       if (sessionAction.action === "stop" && (tools ?? 0) > 0) {
         decision = { mode: "none", confidence: sessionAction.confidence, jev: decision.jev };
-      } else if (
-        advisorEnabled &&
-        (sessionAction.action === "consult_astra" || uncertain) &&
-        session.advisorCalls < config.advisorMaxCallsPerSession
-      ) {
-        const note = await consultAstra(c.req.raw, codexReq, config, session, fetchImpl);
-        if (note) {
-          req = appendAdvisorNote(codexReq, note) as Req;
-          bodyOverride = JSON.stringify(req);
-          session.lastAdvisorAt = Date.now();
-          session.advisorCalls++;
+      } else if (sessionAction.action === "consult_astra" || uncertain) {
+        if (!advisorEnabled || session.advisorCalls >= config.advisorMaxCallsPerSession) {
+          advisor = { ...advisor, consulted: false, skipped: advisorEnabled ? "session_budget" : "advisor_off" };
+        } else {
+          const consult = await consultAstra(c.req.raw, codexReq, config, session, fetchImpl);
+          const note = "note" in consult ? consult.note : undefined;
+          advisor = {
+            ...advisor,
+            consulted: true,
+            noteAdded: note !== undefined,
+            ...("reason" in consult ? { skipped: consult.reason, ...("status" in consult ? { astraStatus: consult.status } : {}), ...("detail" in consult ? { detail: consult.detail } : {}) } : {}),
+          };
+          if (note) {
+            req = appendAdvisorNote(codexReq, note) as Req;
+            bodyOverride = JSON.stringify(req);
+            session.lastAdvisorAt = Date.now();
+            session.advisorCalls++;
+          }
         }
       }
     }
 
     const url = new URL(c.req.url);
     const fromUrl = adapter.fromUrl?.(url) ?? {};
-    const entry = { event: "route", time, path: c.req.path, model: req?.model ?? fromUrl.model, tools: tools ?? req?.tools?.length ?? 0 };
+    const entry = { event: "route", time, path: c.req.path, model: req?.model ?? fromUrl.model, tools: tools ?? req?.tools?.length ?? 0, ...(advisor ? { advisor } : {}) };
     // Building an answer or a rewrite is the gateway's own work. If it breaks, the original
     // request still goes upstream: the router must never be the reason a request fails.
     const giveUp = (error: unknown): Decision => ({
