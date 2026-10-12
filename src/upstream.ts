@@ -13,6 +13,8 @@ export interface ForwardOptions {
   body?: string | Uint8Array;
   /** Headers added to the response so callers can see what the router did. */
   responseHeaders?: Record<string, string>;
+  /** Additional deadline for internal requests; still cancelled if the client disconnects. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -58,7 +60,8 @@ export async function forward(
   if (typeof options.body === "string") headers.delete("content-encoding");
 
   const hasBody = incoming.method !== "GET" && incoming.method !== "HEAD";
-  const init: RequestInit & { duplex?: "half" } = { method: incoming.method, headers, signal: incoming.signal };
+  const signal = options.signal ? AbortSignal.any([incoming.signal, options.signal]) : incoming.signal;
+  const init: RequestInit & { duplex?: "half" } = { method: incoming.method, headers, signal };
   if (options.body !== undefined) {
     init.body = options.body as BodyInit;
   } else if (hasBody && incoming.body) {
@@ -82,5 +85,5 @@ export async function forward(
     if (!DROPPED_RESPONSE_HEADERS.has(name)) responseHeaders.set(name, value);
   });
   for (const [name, value] of Object.entries(options.responseHeaders ?? {})) responseHeaders.set(name, value);
-  return new Response(quietOnClientAbort(upstream.body, incoming.signal), { status: upstream.status, headers: responseHeaders });
+  return new Response(quietOnClientAbort(upstream.body, signal), { status: upstream.status, headers: responseHeaders });
 }

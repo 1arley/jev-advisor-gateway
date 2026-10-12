@@ -11,6 +11,7 @@ interface LauncherSpec {
   client: string;
   portEnv: string;
   defaultPort: number;
+  gatewayEnv?: Record<string, string>;
   upstream: () => string;
   upstreamHelp: string;
   args?: (origin: string) => string[];
@@ -20,6 +21,7 @@ interface LauncherSpec {
 
 const opencode = clients.opencode as LauncherSpec;
 const codex = clients.codex as LauncherSpec;
+const codexAdvisor = clients.codexAdvisor as LauncherSpec;
 const claude = clients.claude as LauncherSpec;
 const devin = clients.devin as LauncherSpec;
 
@@ -192,11 +194,20 @@ describe("existing launchers", () => {
   it("keeps the codex and claude specs intact", () => {
     expect(codex.name).toBe("jev-codex");
     expect(codex.client).toBe("codex");
-    expect(codex.defaultPort).toBe(8790);
+    expect(codex.defaultPort).toBe(8794);
+    expect(codex.gatewayEnv).toEqual({ JEV_ADVISOR: "off" });
     // No readable login (CODEX_HOME is pointed at nothing): falls back to the API backend.
     process.env.CODEX_HOME = "/nonexistent-jev-test-dir";
     expect(codex.upstream()).toBe("https://api.openai.com/v1");
-    expect(codex.args!(origin).join(" ")).toContain('model_provider="jev-gateway"');
+    expect(codex.args!(origin).join(" ")).toContain('model_provider="jev-codex"');
+    expect(codex.args!(origin).join(" ")).not.toContain("gpt-6-luna");
+    expect(codex.configHelp(origin)).not.toContain("[profiles.jev]");
+
+    expect(codexAdvisor.name).toBe("jev-codex-advisor");
+    expect(codexAdvisor.defaultPort).toBe(8790);
+    expect(codexAdvisor.gatewayEnv).toEqual({ JEV_ADVISOR: "on" });
+    expect(codexAdvisor.args!(origin).join(" ")).toContain('model="gpt-6-luna"');
+    expect(codexAdvisor.configHelp(origin)).toContain('[profiles.jev]');
 
     expect(claude.name).toBe("jev-claude");
     expect(claude.client).toBe("claude");

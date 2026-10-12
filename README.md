@@ -1,13 +1,11 @@
-# jev-gateway
+# Codex Jev Advisor
 
-A local LLM gateway for coding agents. When your agent is about to decide **which tool to call**,
-the gateway asks [Jev](https://docs.typesafe.ai/introduction), TypeSafe's fast decision model,
-instead of leaving that choice to the expensive reasoning model. Everything else goes to your usual
-LLM untouched.
+A local Codex launcher that keeps GPT-6 Luna on the session, asks [Jev](https://docs.typesafe.ai/introduction)
+to route tool decisions, and can consult GPT-6 Astra as a read-only advisor when Jev sees uncertainty,
+a planning checkpoint, or repeated failure. The normal Codex login and upstream remain in use.
 
-It works with **Codex**, **Claude Code**, **OpenCode** and **Kilo** out of the box, including on
-ChatGPT and claude.ai subscriptions, with Gemini API clients, and with any client that speaks the
-OpenAI, Anthropic or Google Gemini APIs.
+The gateway is based on [jev-gateway](https://github.com/vinilana/jev-gateway), which also provides
+launchers for Claude Code, OpenCode, Kilo, Gemini and Devin.
 
 > Independent project, not affiliated with or endorsed by TypeSafe. "Jev" is TypeSafe's model and
 > this gateway is a client of its public API.
@@ -21,13 +19,15 @@ Devin already installed and logged in.
 **1. Install**
 
 ```bash
-npm install -g jev-gateway
+npm install -g codex-jev-advisor
 ```
 
 **2. Run your agent through the gateway**
 
 ```bash
-jev-codex      # use it exactly like `codex`
+jev-codex-advisor --yolo # GPT-6 Luna + Jev + Astra advisor
+jev-codex --yolo         # your Codex default model + Jev tool routing, no Astra
+codex-jev-advisor        # alias for jev-codex-advisor
 jev-claude     # use it exactly like `claude`
 jev-opencode   # use it exactly like `opencode` (stable v1)
 jev-kilo       # Kilo CLI, on free models unless KILO_API_KEY is set
@@ -55,7 +55,7 @@ The key works (Jev answered in 712 ms).
 **4. Watch it work**
 
 ```bash
-jev-codex --dashboard
+jev-codex-advisor --dashboard
 ```
 
 That's it. Your existing login keeps working, nothing in `~/.codex`, `~/.claude`,

@@ -19,7 +19,12 @@ export interface RoutingSwitch {
   set(enabled: boolean): void;
 }
 
-export function dashboardRoutes(config: Config, events: EventLog, routing: RoutingSwitch) {
+export interface AdvisorSwitch {
+  get(): boolean;
+  set(enabled: boolean): void;
+}
+
+export function dashboardRoutes(config: Config, events: EventLog, routing: RoutingSwitch, advisor?: AdvisorSwitch) {
   const startedAt = new Date().toISOString();
   const routes = new Hono();
 
@@ -41,6 +46,7 @@ export function dashboardRoutes(config: Config, events: EventLog, routing: Routi
         jevProvider: config.jevProvider,
         minConfidence: config.minConfidence,
         routing: routing.get(),
+        advisor: advisor?.get() ?? false,
         // Sequence numbers restart with the process: a page that sees this change starts over.
         startedAt,
         now: new Date().toISOString(),
@@ -63,6 +69,17 @@ export function dashboardRoutes(config: Config, events: EventLog, routing: Routi
     if (enabled !== "true" && enabled !== "false") return c.json({ error: "enabled must be true or false" }, 400);
     routing.set(enabled === "true");
     return c.json({ routing: routing.get() });
+  });
+
+  routes.post("/advisor", (c) => {
+    const origin = c.req.header("origin");
+    if (origin && !LOCAL_ORIGIN.test(origin)) return c.json({ error: "local pages only" }, 403);
+    if (origin) c.header("access-control-allow-origin", origin);
+    if (!advisor) return c.json({ error: "advisor is only available for Codex" }, 404);
+    const enabled = c.req.query("enabled");
+    if (enabled !== "true" && enabled !== "false") return c.json({ error: "enabled must be true or false" }, 400);
+    advisor.set(enabled === "true");
+    return c.json({ advisor: advisor.get() });
   });
 
   return routes;
