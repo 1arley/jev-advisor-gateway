@@ -398,7 +398,9 @@ describe("POST /v1/responses", () => {
 
     expect(res.status).toBe(200);
     expect(calls).toHaveLength(2);
-    expect(calls[0]!.body).toMatchObject({ model: "gpt-6-astra", previous_response_id: "resp_parent", stream: false });
+    expect(calls[0]!.body).toMatchObject({ model: "gpt-6-astra", stream: true });
+    // The advisor must not chain onto the session's own id.
+    expect(calls[0]!.body.previous_response_id).toBeUndefined();
     expect(calls[0]!.body.tools).toBeUndefined();
     expect(calls[0]!.body.input.some((item: any) => item.type === "additional_tools")).toBe(false);
     expect(calls[0]!.headers.get("authorization")).toBe("Bearer synthetic-client");
