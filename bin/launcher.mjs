@@ -26,6 +26,7 @@ const ENV_FILES = [...(FROM_SOURCE && !process.env.JEV_SKIP_PROJECT_ENV ? [join(
  * @param {string} spec.upstreamHelp          help text describing the upstream default
  * @param {(origin: string) => string[]} [spec.args]   extra leading arguments for the client
  * @param {(origin: string) => Record<string, string>} [spec.env]  extra environment for the client
+ * @param {Record<string, string>} [spec.gatewayEnv] extra environment for this launcher's gateway
  * @param {(origin: string, argv: string[]) => Promise<string[]>} [spec.notices]  what the user should
  *   know before this session starts, e.g. traffic that will not reach the gateway; never throws
  * @param {(origin: string) => string} spec.configHelp  how to wire the client up permanently
@@ -56,6 +57,7 @@ export async function runLauncher(spec) {
   ${spec.name} [${spec.client} args]    start the gateway if needed, then run ${spec.client} through it
   ${spec.name} --dashboard        open the monitoring dashboard in your browser
   ${spec.name} --routing on|off   off = baseline mode: stop asking Jev, keep counting tokens
+  ${spec.name} --advisor on|off   enable Astra consultations for Codex (Codex only)
   ${spec.name} --status           is the gateway running, and where does it forward to?
   ${spec.name} --logs             follow routing decisions live (use a second terminal)
   ${spec.name} --start            start the gateway without opening ${spec.client}
@@ -136,7 +138,7 @@ Environment (or ${ENV_FILES.at(-1)}):
     const child = spawn(process.execPath, ROUTER_ARGS, {
       cwd: ROOT,
       // JEV_LOG_FILE is where stdout goes (below): the router replays it so the dashboard keeps its history.
-      env: { ...env, PORT: String(port), UPSTREAM_BASE_URL: upstream, JEV_CLIENT: spec.client, JEV_LOG_FILE: logFile },
+      env: { ...env, ...spec.gatewayEnv, PORT: String(port), UPSTREAM_BASE_URL: upstream, JEV_CLIENT: spec.client, JEV_LOG_FILE: logFile },
       detached: true,
       stdio: ["ignore", log, log],
     });
@@ -202,7 +204,7 @@ Environment (or ${ENV_FILES.at(-1)}):
   // differently here. The original `--jev-*` spellings still work.
   const LEGACY = { "--jev-config": "--print-config", "--jev-help": "--gateway-help" };
   const [first] = process.argv.slice(2);
-  const flag = LEGACY[first] ?? first?.replace(/^--jev-(?=dashboard$|routing$|status$|logs$|start$|stop$)/, "--");
+  const flag = LEGACY[first] ?? first?.replace(/^--jev-(?=dashboard$|routing$|advisor$|status$|logs$|start$|stop$)/, "--");
   if (flag === "--gateway-help") return console.log(help);
   if (flag === "--setup") {
     if (!process.stdin.isTTY) return console.error(`${spec.name}: --setup asks questions, so it needs a terminal.`);
@@ -228,6 +230,16 @@ Environment (or ${ENV_FILES.at(-1)}):
         : `${spec.name}: routing off (baseline mode). Requests go straight to the LLM, tokens are still metered.`,
     );
   }
+  if (flag === "--advisor") {
+    const wanted = process.argv[3];
+    if (spec.client !== "codex") return console.error(`${spec.name}: --advisor is only available for Codex.`);
+    if (wanted !== "on" && wanted !== "off") return console.error(`usage: ${spec.name} --advisor on|off`);
+    await ensureRouter();
+    const key = process.env.ROUTER_API_KEY ? `&key=${encodeURIComponent(process.env.ROUTER_API_KEY)}` : "";
+    const response = await fetch(`${origin}/dashboard/advisor?enabled=${wanted === "on"}${key}`, { method: "POST" });
+    if (!response.ok) return console.error(`${spec.name}: the router refused (${response.status}). Run \`${spec.name} --stop\` and try again.`);
+    return console.log(`${spec.name}: Astra advisor ${wanted}.`);
+  }
   if (flag === "--print-config") return console.log(spec.configHelp(origin));
   if (flag === "--start") {
     await ensureRouter();
@@ -237,6 +249,7 @@ Environment (or ${ENV_FILES.at(-1)}):
     const running = await health();
     const via = running?.jev ? `, Jev via ${providers[running.jev]?.label ?? running.jev}` : "";
     console.log(running ? `${spec.name}: router up on ${origin} → ${running.upstream}${via}` : `${spec.name}: router is not running`);
+    if (spec.client === "codex" && running) console.log(`Astra advisor: ${running.advisor ? "on" : "off"}`);
     const configured = configuredProvider(process.env, providers);
     console.log(configured ? `key: ${providers[configured].label} (${providers[configured].keyEnv})` : `key: none yet, run \`${spec.name} --setup\``);
     console.log(`logs: ${logFile}`);

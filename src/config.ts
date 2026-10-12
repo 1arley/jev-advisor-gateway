@@ -11,6 +11,12 @@ export interface Config {
   routerApiKey?: string;
   /** Model used upstream once Jev has already picked the tool. */
   argsModel?: string;
+  /** Model Jev may consult for a read-only second opinion. */
+  advisorModel: string;
+  advisorEnabled: boolean;
+  advisorTimeoutMs: number;
+  advisorMaxOutputTokens: number;
+  advisorMaxCallsPerSession: number;
   /** Who serves Jev: TypeSafe itself, or a gateway that resells it. */
   jevProvider: ProviderId;
   /** The key for that provider; the launchers ask for it when it is missing. */
@@ -59,6 +65,7 @@ const bool = (env: Env, key: string, fallback: boolean): boolean => {
 };
 
 export function loadConfig(env: Env = process.env): Config {
+  const client = str(env, "JEV_CLIENT") ?? "standalone";
   const jevProvider = resolveProvider(env);
   const jevModel = resolveModel(jevProvider, str(env, "JEV_MODEL"));
   const onNone = str(env, "JEV_ON_NONE") ?? "force_none";
@@ -71,7 +78,13 @@ export function loadConfig(env: Env = process.env): Config {
     upstreamBaseUrl: (str(env, "UPSTREAM_BASE_URL") ?? "https://api.openai.com/v1").replace(/\/+$/, ""),
     upstreamApiKey: str(env, "UPSTREAM_API_KEY"),
     routerApiKey: str(env, "ROUTER_API_KEY"),
-    argsModel: str(env, "ARGS_MODEL"),
+    // Codex sessions must stay on Luna; these generic gateway options would silently switch it.
+    argsModel: client === "codex" ? undefined : str(env, "ARGS_MODEL"),
+    advisorModel: str(env, "JEV_ADVISOR_MODEL") ?? "gpt-6-astra",
+    advisorEnabled: bool(env, "JEV_ADVISOR", client === "codex"),
+    advisorTimeoutMs: num(env, "JEV_ADVISOR_TIMEOUT_MS", 2500),
+    advisorMaxOutputTokens: num(env, "JEV_ADVISOR_MAX_OUTPUT_TOKENS", 700),
+    advisorMaxCallsPerSession: num(env, "JEV_ADVISOR_MAX_CALLS_PER_SESSION", 6),
     jevProvider,
     jevApiKey: str(env, PROVIDERS[jevProvider].keyEnv),
     jevUrl: resolveUrl(jevProvider, env),
@@ -80,12 +93,13 @@ export function loadConfig(env: Env = process.env): Config {
     minConfidence: num(env, "JEV_MIN_CONFIDENCE", 0.7),
     argMinCertainty: num(env, "JEV_ARG_MIN_CERTAINTY", 0.8),
     onNone,
-    directCalls: bool(env, "JEV_DIRECT_CALLS", true),
+    // Synthetic Responses IDs are not known to Codex's upstream history store.
+    directCalls: client === "codex" ? false : bool(env, "JEV_DIRECT_CALLS", true),
     routing: bool(env, "JEV_ROUTING", true),
     maxStateChars: num(env, "JEV_MAX_STATE_CHARS", 60_000),
     maxMessageChars: num(env, "JEV_MAX_MESSAGE_CHARS", 4_000),
     debugDumpDir: str(env, "JEV_DEBUG_DUMP_DIR"),
-    client: str(env, "JEV_CLIENT") ?? "standalone",
+    client,
     logFile: str(env, "JEV_LOG_FILE"),
   };
   if (config.routerApiKey && !config.upstreamApiKey) {
