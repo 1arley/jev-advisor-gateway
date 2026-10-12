@@ -18,9 +18,29 @@ Devin already installed and logged in.
 
 **1. Install**
 
+`codex-jev-advisor` is not on npm yet, so install from a checkout:
+
 ```bash
-npm install -g codex-jev-advisor
+git clone https://github.com/1arley/jev-codex-router
+cd jev-codex-router
+npm install
 ```
+
+The launchers run the TypeScript sources directly from the checkout, so nothing needs building for
+normal use. Install it onto your `PATH` with:
+
+```bash
+npm link
+```
+
+Installing straight from the git URL (`npm install -g github:1arley/jev-codex-router`) does **not**
+work: the package has no `prepare` script, so `dist/` is never built, and `files` does not ship
+`src/`.
+
+This checkout is self-contained and delivers every launcher above, `jev-codex-advisor` and
+`jev-codex` included. The older `jev-gateway` npm package is not needed: it predates the rebrand, so
+it ships neither Codex launcher, and installing it would only duplicate the shared ones
+(`jev-claude`, `jev-opencode`, ...) on your `PATH`.
 
 **2. Run your agent through the gateway**
 
