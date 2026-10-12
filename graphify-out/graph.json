@@ -4098,7 +4098,7 @@
       "node_kind": "heading",
       "norm_label": "benchmark",
       "source_file": "README.md",
-      "source_location": "L588"
+      "source_location": "L613"
     },
     {
       "id": "readme_codex_jev_advisor",
@@ -4122,7 +4122,7 @@
       "node_kind": "heading",
       "norm_label": "commands",
       "source_file": "README.md",
-      "source_location": "L79"
+      "source_location": "L99"
     },
     {
       "id": "readme_configuration",
@@ -4134,7 +4134,7 @@
       "node_kind": "heading",
       "norm_label": "configuration",
       "source_file": "README.md",
-      "source_location": "L548"
+      "source_location": "L568"
     },
     {
       "id": "readme_credentials_and_upstream",
@@ -4146,7 +4146,7 @@
       "node_kind": "heading",
       "norm_label": "credentials and upstream",
       "source_file": "README.md",
-      "source_location": "L271"
+      "source_location": "L291"
     },
     {
       "id": "readme_dashboard",
@@ -4158,7 +4158,7 @@
       "node_kind": "heading",
       "norm_label": "dashboard",
       "source_file": "README.md",
-      "source_location": "L102"
+      "source_location": "L122"
     },
     {
       "id": "readme_development",
@@ -4170,7 +4170,7 @@
       "node_kind": "heading",
       "norm_label": "development",
       "source_file": "README.md",
-      "source_location": "L622"
+      "source_location": "L647"
     },
     {
       "id": "readme_how_it_works",
@@ -4182,7 +4182,7 @@
       "node_kind": "heading",
       "norm_label": "how it works",
       "source_file": "README.md",
-      "source_location": "L507"
+      "source_location": "L527"
     },
     {
       "id": "readme_is_it_worth_it_compare_with_a_baseline",
@@ -4194,7 +4194,7 @@
       "node_kind": "heading",
       "norm_label": "is it worth it? compare with a baseline",
       "source_file": "README.md",
-      "source_location": "L130"
+      "source_location": "L150"
     },
     {
       "id": "readme_known_trade_offs",
@@ -4206,7 +4206,7 @@
       "node_kind": "heading",
       "norm_label": "known trade-offs",
       "source_file": "README.md",
-      "source_location": "L569"
+      "source_location": "L594"
     },
     {
       "id": "readme_license",
@@ -4218,7 +4218,7 @@
       "node_kind": "heading",
       "norm_label": "license",
       "source_file": "README.md",
-      "source_location": "L641"
+      "source_location": "L666"
     },
     {
       "id": "readme_manual_setup",
@@ -4230,7 +4230,7 @@
       "node_kind": "heading",
       "norm_label": "manual setup",
       "source_file": "README.md",
-      "source_location": "L287"
+      "source_location": "L307"
     },
     {
       "id": "readme_quick_start",
@@ -4254,7 +4254,7 @@
       "node_kind": "heading",
       "norm_label": "running it as a server for your own app",
       "source_file": "README.md",
-      "source_location": "L456"
+      "source_location": "L476"
     },
     {
       "id": "readme_tools_and_routing",
@@ -4266,7 +4266,7 @@
       "node_kind": "heading",
       "norm_label": "tools and routing",
       "source_file": "README.md",
-      "source_location": "L351"
+      "source_location": "L371"
     },
     {
       "id": "readme_try_a_decision_without_calling_any_llm",
@@ -4278,7 +4278,7 @@
       "node_kind": "heading",
       "norm_label": "try a decision without calling any llm",
       "source_file": "README.md",
-      "source_location": "L490"
+      "source_location": "L510"
     },
     {
       "id": "readme_using_it_with_claude_code",
@@ -4290,7 +4290,7 @@
       "node_kind": "heading",
       "norm_label": "using it with claude code",
       "source_file": "README.md",
-      "source_location": "L191"
+      "source_location": "L211"
     },
     {
       "id": "readme_using_it_with_codex",
@@ -4302,7 +4302,7 @@
       "node_kind": "heading",
       "norm_label": "using it with codex",
       "source_file": "README.md",
-      "source_location": "L180"
+      "source_location": "L200"
     },
     {
       "id": "readme_using_it_with_devin",
@@ -4314,7 +4314,7 @@
       "node_kind": "heading",
       "norm_label": "using it with devin",
       "source_file": "README.md",
-      "source_location": "L428"
+      "source_location": "L448"
     },
     {
       "id": "readme_using_it_with_gemini",
@@ -4326,7 +4326,7 @@
       "node_kind": "heading",
       "norm_label": "using it with gemini",
       "source_file": "README.md",
-      "source_location": "L415"
+      "source_location": "L435"
     },
     {
       "id": "readme_using_it_with_kilo",
@@ -4338,7 +4338,7 @@
       "node_kind": "heading",
       "norm_label": "using it with kilo",
       "source_file": "README.md",
-      "source_location": "L376"
+      "source_location": "L396"
     },
     {
       "id": "readme_using_it_with_opencode",
@@ -4350,7 +4350,7 @@
       "node_kind": "heading",
       "norm_label": "using it with opencode",
       "source_file": "README.md",
-      "source_location": "L202"
+      "source_location": "L222"
     },
     {
       "id": "readme_what_goes_through_the_gateway_and_what_does_not",
@@ -4362,7 +4362,7 @@
       "node_kind": "heading",
       "norm_label": "what goes through the gateway, and what does not",
       "source_file": "README.md",
-      "source_location": "L220"
+      "source_location": "L240"
     },
     {
       "id": "readme_what_to_expect",
@@ -4374,7 +4374,7 @@
       "node_kind": "heading",
       "norm_label": "what to expect",
       "source_file": "README.md",
-      "source_location": "L66"
+      "source_location": "L86"
     },
     {
       "id": "readme_where_jev_runs",
@@ -4386,7 +4386,7 @@
       "node_kind": "heading",
       "norm_label": "where jev runs",
       "source_file": "README.md",
-      "source_location": "L144"
+      "source_location": "L164"
     },
     {
       "id": "src_decide",
@@ -18753,7 +18753,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L102",
+      "source_location": "L122",
       "weight": 1.0
     },
     {
@@ -18775,7 +18775,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L144",
+      "source_location": "L164",
       "weight": 1.0
     },
     {
@@ -18786,7 +18786,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L180",
+      "source_location": "L200",
       "weight": 1.0
     },
     {
@@ -18797,7 +18797,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L191",
+      "source_location": "L211",
       "weight": 1.0
     },
     {
@@ -18808,7 +18808,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L202",
+      "source_location": "L222",
       "weight": 1.0
     },
     {
@@ -18819,7 +18819,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L376",
+      "source_location": "L396",
       "weight": 1.0
     },
     {
@@ -18830,7 +18830,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L415",
+      "source_location": "L435",
       "weight": 1.0
     },
     {
@@ -18841,7 +18841,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L428",
+      "source_location": "L448",
       "weight": 1.0
     },
     {
@@ -18852,7 +18852,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L456",
+      "source_location": "L476",
       "weight": 1.0
     },
     {
@@ -18863,7 +18863,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L507",
+      "source_location": "L527",
       "weight": 1.0
     },
     {
@@ -18874,7 +18874,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L548",
+      "source_location": "L568",
       "weight": 1.0
     },
     {
@@ -18885,7 +18885,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L569",
+      "source_location": "L594",
       "weight": 1.0
     },
     {
@@ -18896,7 +18896,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L588",
+      "source_location": "L613",
       "weight": 1.0
     },
     {
@@ -18907,7 +18907,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L622",
+      "source_location": "L647",
       "weight": 1.0
     },
     {
@@ -18918,7 +18918,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L641",
+      "source_location": "L666",
       "weight": 1.0
     },
     {
@@ -18929,7 +18929,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L66",
+      "source_location": "L86",
       "weight": 1.0
     },
     {
@@ -18940,7 +18940,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L79",
+      "source_location": "L99",
       "weight": 1.0
     },
     {
@@ -18951,7 +18951,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L130",
+      "source_location": "L150",
       "weight": 1.0
     },
     {
@@ -18962,7 +18962,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L490",
+      "source_location": "L510",
       "weight": 1.0
     },
     {
@@ -18973,7 +18973,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L220",
+      "source_location": "L240",
       "weight": 1.0
     },
     {
@@ -18984,7 +18984,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L271",
+      "source_location": "L291",
       "weight": 1.0
     },
     {
@@ -18995,7 +18995,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L287",
+      "source_location": "L307",
       "weight": 1.0
     },
     {
@@ -19006,7 +19006,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L351",
+      "source_location": "L371",
       "weight": 1.0
     },
     {
@@ -21840,7 +21840,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "README.md",
-      "source_location": "L639",
+      "source_location": "L664",
       "weight": 1.0
     },
     {
@@ -22373,5 +22373,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "669c993cd630266153664ad35da6c50f98be2fab"
+  "built_at_commit": "c2c8865fa917081530b45ad575a162310fe32d33"
 }

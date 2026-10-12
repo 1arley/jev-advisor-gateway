@@ -138,10 +138,10 @@
     "semantic_hash": "a80c53062c4a160296b46900d2f27f73"
   },
   "src/config.ts": {
-    "mtime": 1791411736.6010578,
-    "seen": 1791412125.6775832,
-    "ast_hash": "8f5df837d8bf110aab1fcd4e5e962425",
-    "semantic_hash": "8f5df837d8bf110aab1fcd4e5e962425"
+    "mtime": 1791841111.237672,
+    "seen": 1791842345.8660913,
+    "ast_hash": "178a3bd5933a9d1fa185804b34692f0e",
+    "semantic_hash": ""
   },
   "src/dashboard.ts": {
     "mtime": 1791411929.3490613,
@@ -414,9 +414,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1791413631.442062,
-    "seen": 1791486779.1583037,
-    "ast_hash": "16f24f13907ca61076c0305bc98bcd1f",
+    "mtime": 1791844072.649931,
+    "seen": 1791844182.9930136,
+    "ast_hash": "b34d605af00b6d4458c86d571c17096e",
     "semantic_hash": ""
   },
   "docs/codex-jev-advisor-architecture.md": {
