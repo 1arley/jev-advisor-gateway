@@ -1,7 +1,7 @@
 {
-  "name": "jev-gateway",
-  "version": "0.5.1",
-  "description": "Local LLM gateway that lets TypeSafe's Jev model pick the tool for coding agents. Launchers for Codex, Claude Code, OpenCode, Kilo, Gemini and Devin, with a monitoring dashboard.",
+  "name": "codex-jev-advisor",
+  "version": "0.1.0",
+  "description": "Local Codex launcher with Jev routing and optional GPT-6 Astra advice for GPT-6 Luna sessions.",
   "keywords": [
     "llm",
     "gateway",
@@ -33,7 +33,9 @@
     "node": ">=22.15"
   },
   "bin": {
-    "jev-codex": "bin/jev-codex.mjs",
+    "jev-codex-advisor": "bin/jev-codex.mjs",
+    "codex-jev-advisor": "bin/jev-codex.mjs",
+    "jev-codex": "bin/jev-codex-basic.mjs",
     "jev-claude": "bin/jev-claude.mjs",
     "jev-opencode": "bin/jev-opencode.mjs",
     "jev-gemini": "bin/jev-gemini.mjs",
@@ -54,6 +56,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "codex": "node bin/jev-codex.mjs",
+    "jev-codex-advisor": "node bin/jev-codex.mjs",
+    "jev-codex": "node bin/jev-codex-basic.mjs",
     "claude": "node bin/jev-claude.mjs",
     "opencode": "node bin/jev-opencode.mjs",
     "kilo": "node bin/jev-kilo.mjs",

@@ -367,11 +367,63 @@ describe("POST /v1/responses", () => {
     expect(upstream.calls[0]!.body.tool_choice).toBe("auto");
   });
 
-  it.each(["gpt-codex", "codex-auto-review"])("leaves server-side history to %s", async (model) => {
-    const { post, jev } = setup({});
-    const res = await post(JSON.stringify(codexRequest({ model, previous_response_id: "resp_123" })));
-    expect(jev.requests).toHaveLength(0);
-    expect(res.headers.get("x-jev-gateway-reason")).toBe("previous_response_id");
+  it("routes continued Responses requests and preserves the Luna branch when Astra advises", async () => {
+    const jev = fakeJev({
+      session_action: { choice: "consult_astra" },
+      tool: { choice: NO_TOOL },
+      needs_tool: { noul: 0.1 },
+    });
+    const calls: { body: any; headers: Headers }[] = [];
+    const app = createApp({
+      config: testConfig({ client: "codex", advisorEnabled: true, directCalls: true, argsModel: "wrong-model" }),
+      askJev: jev.askJev,
+      fetch: (async (_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        calls.push({ body, headers: new Headers(init?.headers) });
+        return Response.json(body.model === "gpt-6-astra"
+          ? { id: "resp_astra", output: [{ content: [{ type: "output_text", text: "Check failure handling before proceeding." }] }] }
+          : { id: "resp_luna", output: [{ content: [{ type: "output_text", text: "I will inspect that path." }] }] });
+      }) as typeof fetch,
+    });
+    const request = codexRequest({
+      model: "gpt-6-luna",
+      previous_response_id: "resp_parent",
+      tools: [{ type: "function", name: "shell", description: "Run a shell command", parameters: { type: "object", properties: {} } }],
+    });
+    const res = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { authorization: "Bearer synthetic-client", "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.body).toMatchObject({ model: "gpt-6-astra", previous_response_id: "resp_parent", stream: false });
+    expect(calls[0]!.body.tools).toBeUndefined();
+    expect(calls[0]!.body.input.some((item: any) => item.type === "additional_tools")).toBe(false);
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer synthetic-client");
+    expect(calls[1]!.body).toMatchObject({ model: "gpt-6-luna", previous_response_id: "resp_parent", tool_choice: "none" });
+    expect(calls[1]!.body.input.at(-1).content[0].text).toContain("Check failure handling before proceeding.");
+    expect(calls[1]!.headers.get("authorization")).toBe("Bearer synthetic-client");
+    expect(jev.requests).toHaveLength(2);
+  });
+
+  it("uses Jev's stop decision to prevent another tool call", async () => {
+    const jev = fakeJev({
+      session_action: { choice: "stop" },
+      tool: { choice: "shell" },
+      needs_tool: { noul: 0.95 },
+    });
+    const upstream = fakeUpstream({ id: "resp_luna" });
+    const app = createApp({ config: testConfig({ client: "codex", advisorEnabled: true }), askJev: jev.askJev, fetch: upstream.fetchImpl });
+    const res = await app.request("/v1/responses", {
+      method: "POST",
+      body: JSON.stringify(codexRequest({ model: "gpt-6-luna" })),
+    });
+    expect(res.status).toBe(200);
+    expect(upstream.calls[0]!.body.model).toBe("gpt-6-luna");
+    expect(upstream.calls[0]!.body.tool_choice).toBe("none");
+    expect(upstream.calls).toHaveLength(1);
   });
 
   it.each(["gpt-codex", "codex-auto-review"])("leaves readable agent messages to %s", async (model) => {

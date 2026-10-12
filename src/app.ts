@@ -7,6 +7,10 @@ import { geminiAdapter } from "./adapters/gemini.js";
 import { exaAdapter } from "./adapters/exa.js";
 import { messagesAdapter } from "./adapters/messages.js";
 import { responsesAdapter } from "./adapters/responses.js";
+import type { ResponsesRequest } from "./adapters/responses.js";
+import { appendAdvisorNote, consultAstra } from "./codex/advisor.js";
+import { decideSessionAction } from "./codex/policy.js";
+import { addRecent, createSessionStore, readResponseId, type SessionState } from "./codex/session-state.js";
 import type { Config } from "./config.js";
 import { dashboardRoutes } from "./dashboard.js";
 import { redactHeaders, summarizeResponse, type Dump } from "./debug.js";
@@ -74,6 +78,7 @@ function decisionHeaders(decision: Decision): Record<string, string> {
 
 export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: writeLog = () => {}, events = createEventLog(), dump }: Deps) {
   const app = new Hono();
+  const sessions = createSessionStore();
 
   /** One routed request: a line in the log, and a row on the dashboard. */
   const log = (entry: Record<string, unknown>) => {
@@ -95,6 +100,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
   // Routing can be switched off at runtime to measure a baseline: same clients, same traffic,
   // same token accounting, but Jev is never asked and nothing is rewritten.
   let routing = config.routing;
+  let advisorEnabled = config.advisorEnabled;
 
   /**
    * Error bodies are the only documentation an undocumented backend offers, and a finished
@@ -127,6 +133,11 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
    * fail the request: upstream gets to answer it, with its own error when it deserves one.
    */
   const decideFor = async <Req extends AnyRequest>(adapter: Adapter<Req>, req: Req): Promise<{ decision: Decision; tools?: number }> => {
+    // Codex needs Jev on continuations for session policy; other Responses clients retain the
+    // upstream's server-side history untouched, as the original gateway did.
+    if (adapter === responsesAdapter && config.client !== "codex" && (req as ResponsesRequest).previous_response_id) {
+      return { decision: { mode: "passthrough", reason: "previous_response_id" } };
+    }
     let input: ReturnType<Adapter<Req>["toInput"]>;
     try {
       input = adapter.toInput(req, config.maxMessageChars);
@@ -166,10 +177,52 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
 
     let decision: Decision;
     let tools: number | undefined;
+    let session: SessionState | undefined;
+    let sessionAction: Awaited<ReturnType<typeof decideSessionAction>> | undefined;
     if (!req) decision = { mode: "passthrough", reason: encoding ? "unsupported_encoding" : "unparseable_body" };
     else if (c.req.header("x-jev-gateway") === "off") decision = { mode: "passthrough", reason: "disabled_by_header" };
     else if (!routing) decision = { mode: "passthrough", reason: "routing_disabled" };
-    else ({ decision, tools } = await decideFor(adapter, req));
+    else {
+      if (config.client === "codex" && advisorEnabled && adapter === responsesAdapter && req.model !== "codex-auto-review") {
+        try {
+          const codexReq = req as ResponsesRequest;
+          const input = responsesAdapter.toInput(codexReq, config.maxMessageChars);
+          if (!("skip" in input)) {
+            session = sessions.resume(codexReq.previous_response_id);
+            addRecent(session, input);
+            try {
+              sessionAction = await decideSessionAction(input, session, config, askJev);
+            } catch {
+              sessionAction = undefined;
+            }
+          }
+        } catch {
+          // The session policy is advisory; tool routing and the original request can still proceed.
+        }
+      }
+      ({ decision, tools } = await decideFor(adapter, req));
+    }
+
+    let bodyOverride: string | undefined;
+    if (req && session && sessionAction && config.client === "codex") {
+      const codexReq = req as ResponsesRequest;
+      const uncertain = decision.mode === "passthrough" && ["low_confidence", "jev_answers_disagree"].includes(decision.reason);
+      if (sessionAction.action === "stop" && (tools ?? 0) > 0) {
+        decision = { mode: "none", confidence: sessionAction.confidence, jev: decision.jev };
+      } else if (
+        advisorEnabled &&
+        (sessionAction.action === "consult_astra" || uncertain) &&
+        session.advisorCalls < config.advisorMaxCallsPerSession
+      ) {
+        const note = await consultAstra(c.req.raw, codexReq, config, session, fetchImpl);
+        if (note) {
+          req = appendAdvisorNote(codexReq, note) as Req;
+          bodyOverride = JSON.stringify(req);
+          session.lastAdvisorAt = Date.now();
+          session.advisorCalls++;
+        }
+      }
+    }
 
     const url = new URL(c.req.url);
     const fromUrl = adapter.fromUrl?.(url) ?? {};
@@ -220,6 +273,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
       const sent = { mode: decision.mode, model: rewritten.model, tool_choice: (rewritten as { tool_choice?: unknown }).tool_choice };
       dumpResponse("rejected", response, { sent });
       if (response.status !== 400 && response.status !== 422) {
+        if (session && response.ok) void readResponseId(response).then((id) => sessions.remember(id, session!));
         logWhenDone({ ...entry, ...decision }, response, startedAt);
         return response;
       }
@@ -230,9 +284,10 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     }
 
     const response = await forward(c.req.raw, config, fetchImpl, {
-      body: bytes,
+      ...(bodyOverride ? { body: bodyOverride } : { body: bytes }),
       responseHeaders: decisionHeaders(decision),
     });
+    if (session && response.ok) void readResponseId(response).then((id) => sessions.remember(id, session!));
     logWhenDone({ ...entry, ...decision }, response, startedAt);
     dumpResponse("upstream-error", response);
     return response;
@@ -241,7 +296,9 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
   // Answers before the key is checked, so that a launcher can find its gateway. A gateway that
   // has a key is one somebody else may reach: it says that it is up, and nothing about itself.
   app.get("/health", (c) =>
-    c.json(config.routerApiKey ? { status: "ok" } : { status: "ok", pid: process.pid, upstream: config.upstreamBaseUrl, jev: config.jevProvider }),
+    c.json(config.routerApiKey
+      ? { status: "ok" }
+      : { status: "ok", pid: process.pid, upstream: config.upstreamBaseUrl, jev: config.jevProvider, advisor: advisorEnabled }),
   );
 
   app.use("*", async (c, next) => {
@@ -251,7 +308,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     const inQuery = c.req.path.startsWith("/dashboard") ? c.req.query("key") : undefined;
     const presented = c.req.header("authorization")?.replace(/^Bearer\s+/i, "") ?? inQuery ?? "";
     if (safeEqual(presented, config.routerApiKey)) return next();
-    return c.json({ error: { message: "Invalid jev-gateway API key", type: "invalid_api_key" } }, 401);
+    return c.json({ error: { message: "Invalid codex-jev-advisor API key", type: "invalid_api_key" } }, 401);
   });
 
   /**
@@ -279,7 +336,14 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
 
   app.route(
     "/dashboard",
-    dashboardRoutes(config, events, { get: () => routing, set: (enabled) => void (routing = enabled) }),
+    dashboardRoutes(
+      config,
+      events,
+      { get: () => routing, set: (enabled) => void (routing = enabled) },
+      config.client === "codex"
+        ? { get: () => advisorEnabled, set: (enabled) => void (advisorEnabled = enabled) }
+        : undefined,
+    ),
   );
 
   app.post("/v1/chat/completions", route(chatAdapter));

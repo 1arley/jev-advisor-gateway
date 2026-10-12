@@ -20,19 +20,20 @@ function codexUpstream() {
   return "https://api.openai.com/v1";
 }
 
-const codexProvider = (origin) => ({
-  name: `"jev-gateway"`,
+const codexProvider = (origin, name) => ({
+  name: `"${name}"`,
   base_url: `"${origin}/v1"`,
   wire_api: `"responses"`,
   // Reuse whatever login Codex already has; the gateway forwards it upstream untouched.
   requires_openai_auth: "true",
 });
 
-export const codex = {
-  name: "jev-codex",
+const codexSpec = ({ name, provider, portEnv, defaultPort, advisor, pinLuna }) => ({
+  name,
   client: "codex",
-  portEnv: "JEV_CODEX_PORT",
-  defaultPort: 8790,
+  portEnv,
+  defaultPort,
+  gatewayEnv: { JEV_ADVISOR: advisor ? "on" : "off" },
   upstream: codexUpstream,
   upstreamHelp:
     "JEV_CODEX_UPSTREAM_BASE_URL   where Codex traffic goes; default follows your Codex login:\n" +
@@ -40,17 +41,25 @@ export const codex = {
     "                                API key       → https://api.openai.com/v1",
   args: (origin) => [
     "-c",
-    `model_provider="jev-gateway"`,
-    ...Object.entries(codexProvider(origin)).flatMap(([key, value]) => ["-c", `model_providers.jev-gateway.${key}=${value}`]),
+    `model_provider="${provider}"`,
+    ...(pinLuna ? ["-c", `model="gpt-6-luna"`] : []),
+    ...Object.entries(codexProvider(origin, provider)).flatMap(([key, value]) => ["-c", `model_providers.${provider}.${key}=${value}`]),
   ],
   configHelp: (origin) =>
-    `# Save as ~/.codex/jev.config.toml, keep the gateway running (jev-codex --start),\n` +
-    `# then use: codex --profile jev\n` +
-    `model_provider = "jev-gateway"\n\n[model_providers.jev-gateway]\n` +
-    Object.entries(codexProvider(origin))
+    `# Add to ~/.codex/config.toml, then keep the gateway running with \`${name} --start\`.\n\n[model_providers.${provider}]\n` +
+    Object.entries(codexProvider(origin, provider))
       .map(([key, value]) => `${key} = ${value}`)
-      .join("\n"),
-};
+      .join("\n") +
+    (pinLuna ? `\n\n[profiles.jev]\nmodel = "gpt-6-luna"\nmodel_provider = "${provider}"\n` : "\n"),
+});
+
+export const codexAdvisor = codexSpec({
+  name: "jev-codex-advisor", provider: "codex-jev-advisor", portEnv: "JEV_CODEX_PORT", defaultPort: 8790, advisor: true, pinLuna: true,
+});
+
+export const codex = codexSpec({
+  name: "jev-codex", provider: "jev-codex", portEnv: "JEV_CODEX_BASIC_PORT", defaultPort: 8794, advisor: false, pinLuna: false,
+});
 
 export const claude = {
   name: "jev-claude",
@@ -340,4 +349,3 @@ export const gemini = {
     `#   GEMINI_API_BASE=${origin}\n` +
     `#   or endpoint: ${origin}/v1beta\n`,
 };
-
