@@ -215,7 +215,7 @@ TypeScript in `src/` and `test/`, plain ES modules in `bin/` and `scripts/` so t
 without a build. There is no formatter or linter to satisfy: match the code around you. Comments
 explain why something is the way it is, not what the next line does.
 
-The idioms are written down in `.agents/skills/jev-gateway-conventions/SKILL.md`. Coding agents
+The idioms are written down in `.agents/skills/jev-advisor-gateway-conventions/SKILL.md`. Coding agents
 that read `.agents/skills/` (Codex, OpenCode, Gemini CLI) load it on their own, and
 `.claude/skills/` links to the same file for Claude Code. It reads fine for people too.
 
