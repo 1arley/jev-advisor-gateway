@@ -131,6 +131,12 @@
   </section>
 
   <section class="card">
+    <h2>Token use by model</h2>
+    <p class="note" id="models-note"></p>
+    <div class="scroll"><table class="compare" id="models"></table></div>
+  </section>
+
+  <section class="card">
     <h2>Recent requests</h2>
     <p class="note" id="note"></p>
     <div class="scroll"><table>
@@ -156,6 +162,21 @@ const IDLE_MS = 5 * 60 * 1000;
 const MAX_ROWS = 200;
 const KEPT_PER_ROUTER = 1000;
 const JEV_USD_PER_MILLION_INPUT_TOKENS = 0.042;
+// USD per million tokens, matched by a fragment of the model name. Sol is the reference; Astra
+// bills 2.5× Sol's rates. A model not listed shows tokens with no price.
+// shortcut: hardcoded rates that drift — move to config if a third model needs one.
+const SOL_RATES = { input: 4, output: 20 };
+const MODEL_PRICES = [
+  ["gpt-5.6-sol", SOL_RATES],
+  ["gpt-6-sol", SOL_RATES],
+  ["gpt-6-astra", { input: SOL_RATES.input * 2.5, output: SOL_RATES.output * 2.5 }],
+];
+const priceOf = (model) => MODEL_PRICES.find(([name]) => (model ?? "").toLowerCase().includes(name))?.[1];
+// Input tokens are billed whole, cache included: the provider's cached rate is not known here.
+const modelCost = (usage, model) => {
+  const price = priceOf(model);
+  return price ? (usage.input * price.input + usage.output * price.output) / 1e6 : undefined;
+};
 const RANGES = [["15 min", 15 * 60e3], ["1 h", 60 * 60e3], ["24 h", 24 * 60 * 60e3], ["All", Infinity]];
 const CATEGORIES = [
   ["direct", "direct — answered without the LLM"],
@@ -357,6 +378,51 @@ function renderCompare(events) {
     : "No baseline yet. Switch routing off on a router card, do a comparable piece of work, then switch it back on: both columns fill in.";
 }
 
+function renderByModel(events) {
+  // One row per model that answered a metered call. The session model and each delegator the
+  // Codex agent reaches for (subagents with their own model, and the advisor) keep their tokens
+  // apart, so a delegation's spend is never read as the session's.
+  const rows = new Map();
+  const add = (key, label, model, usage, calls) => {
+    const row = rows.get(key) ?? { label, calls: 0, input: 0, output: 0, cached: 0, reasoning: 0, cost: 0, priced: false };
+    row.calls += calls;
+    row.input += usage.input;
+    row.output += usage.output;
+    row.cached += usage.cached;
+    row.reasoning += usage.reasoning;
+    const cost = modelCost(usage, model);
+    if (cost !== undefined) {
+      row.cost += cost;
+      row.priced = true;
+    }
+    rows.set(key, row);
+  };
+  for (const event of events) {
+    if (event.usage) add(event.model ?? "(unknown)", event.model ?? "(unknown)", event.model, event.usage, 1);
+    if (event.advisor?.usage) {
+      const model = event.advisor.model ?? "advisor";
+      add(`advisor:${model}`, `${model} (advisor)`, model, event.advisor.usage, 1);
+    }
+  }
+  const sorted = [...rows.values()].sort((a, b) => b.input + b.output - (a.input + a.output));
+  const head = ["Model", "Calls", "Input", "Output", "Cached", "Reasoning", "Cost"];
+  $("models").replaceChildren(
+    h("thead", {}, h("tr", {}, ...head.map((label, index) => h("th", { class: index ? "num" : undefined }, label)))),
+    h("tbody", {}, ...sorted.map((row) => h("tr", {},
+      h("td", {}, row.label),
+      h("td", { class: "num" }, int(row.calls)),
+      h("td", { class: "num" }, int(row.input)),
+      h("td", { class: "num" }, int(row.output)),
+      h("td", { class: "num" }, int(row.cached)),
+      h("td", { class: "num" }, int(row.reasoning)),
+      h("td", { class: "num" }, row.priced ? `$${row.cost.toFixed(2)}` : "–"),
+    ))),
+  );
+  $("models-note").textContent = sorted.length
+    ? "Metered LLM calls in this range, one row per model. The advisor's consult and any Codex subagent keep their own row, so their tokens are not counted as the session's. Cost is input (cache included) plus output at the model's rate; a model with no rate here shows tokens only."
+    : "No metered LLM calls in this range yet.";
+}
+
 function renderTiles(events) {
   const asked = events.filter((event) => event.jev);
   const failures = events.filter(failed).length;
@@ -367,6 +433,16 @@ function renderTiles(events) {
   const tile = (label, value, sub) => h("div", { class: "card tile" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value), h("div", { class: "sub" }, sub));
   const avgLatency = mean(latencies);
   const avgConfidence = mean(asked.map((event) => event.jev.confidence));
+  // The advisor is a real model call, billed like any other, and its tokens are not the session's:
+  // give it its own tile so the dashboard's session total stays honest.
+  const advisorUsage = events.flatMap((event) => (event.advisor?.usage ? [{ usage: event.advisor.usage, model: event.advisor.model }] : []));
+  const advisorInput = sum(advisorUsage, (item) => item.usage.input);
+  const advisorOutput = sum(advisorUsage, (item) => item.usage.output);
+  const advisorCost = sum(advisorUsage, (item) => modelCost(item.usage, item.model) ?? 0);
+  const advisorPriced = advisorUsage.some((item) => modelCost(item.usage, item.model) !== undefined);
+  const advisorTile = advisorUsage.length
+    ? [tile("Advisor tokens", int(advisorInput + advisorOutput), `${int(advisorUsage.length)} consult${advisorUsage.length === 1 ? "" : "s"} · ${int(advisorInput)} in / ${int(advisorOutput)} out${advisorPriced ? ` · ≈ $${advisorCost.toFixed(2)}` : ""}`)]
+    : [];
   $("tiles").replaceChildren(
     tile("Requests", int(events.length), "through the gateway"),
     tile("Routed by Jev", pct(decided, events.length), `${int(decided)} requests`),
@@ -376,6 +452,7 @@ function renderTiles(events) {
     tile("Jev confidence", avgConfidence === undefined ? "–" : avgConfidence.toFixed(2), "average of its tool picks"),
     tile("LLM input tokens", int(sum(events, (event) => event.usage?.input)), `${pct(sum(events, (event) => event.usage?.cached), sum(events, (event) => event.usage?.input))} served from cache`),
     tile("LLM output tokens", int(sum(events, (event) => event.usage?.output)), `${int(sum(events, (event) => event.usage?.reasoning))} of them reasoning`),
+    ...advisorTile,
     tile("Jev input tokens", int(tokens), `≈ $${((tokens / 1e6) * JEV_USD_PER_MILLION_INPUT_TOKENS).toFixed(4)} at $${JEV_USD_PER_MILLION_INPUT_TOKENS}/M`),
   );
 }
@@ -491,6 +568,7 @@ function render() {
   renderControls();
   renderTiles(events);
   renderCompare(events);
+  renderByModel(events);
   renderShare(events);
   renderTimeline(events, now);
   renderReasons(events);

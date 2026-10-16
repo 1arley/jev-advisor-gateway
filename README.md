@@ -142,6 +142,11 @@ You will see:
 - **Jev's numbers:** calls, latency, confidence, and what it cost.
 - **LLM tokens:** input (and how much came from the prompt cache), output (and how much was hidden
   reasoning), and seconds per request.
+- **Token use by model:** every metered LLM call grouped by the model that answered it, with a
+  cost column, so the advisor consult (the `JEV_ADVISOR_MODEL`, Astra by default) and any Codex
+  subagent on a model of its own keep their spend apart from the session's. The advisor also gets
+  its own tile. Costs are per million tokens and shown for the models the page knows — Sol at
+  $4/$20, Astra at 2.5× Sol — while others show tokens only.
 - **A live table** of recent requests. A request appears when its reply finishes, because that is
   when the provider reports its tokens.
 

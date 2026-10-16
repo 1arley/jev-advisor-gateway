@@ -44,6 +44,7 @@ export function dashboardRoutes(config: Config, events: EventLog, routing: Routi
         upstream: config.upstreamBaseUrl,
         jevModel: config.jevModel,
         jevProvider: config.jevProvider,
+        advisorModel: config.advisorModel,
         minConfidence: config.minConfidence,
         routing: routing.get(),
         advisor: advisor?.get() ?? false,
