@@ -3,3 +3,5 @@ dist
 .env
 *.log
 .playwright-mcp
+# grill-with-jev audit logs: decision inputs and redacted provider answers
+.grill
