@@ -151,6 +151,7 @@ workflow run that built it.
 | The version in the release pull request is not what you expected | A commit has the wrong type, or a `!` that should not be there | Correct it with an override block, or force the version with `Release-As:` |
 | `Tag vX.Y.Z does not match package.json version` | Only with a tag made by hand, pushed without the version bump | Nothing was published. Delete the tag (`git push origin :vX.Y.Z`, `git tag -d vX.Y.Z`) and release through the pull request |
 | Type check, tests or build fail in the publish job | `main` was not green when the release pull request was merged | npm has nothing, but the tag and the GitHub release exist. Fix on `main` with a `fix:` commit and merge the next release pull request. Delete the orphaned GitHub release, or mark it as superseded |
+| `npm error 404 Not Found - PUT https://registry.npmjs.org/<name>` | The name does not exist on npm, so there is no trusted publisher to authorise the publish. npm answers 404, not 403, when a credential carries no permission for the name | Publish that version by hand once, then set up the publisher for the releases after it: see [One-time setup on npmjs.com](#one-time-setup-on-npmjscom) |
 | `npm error 403 ... OIDC permission denied for this action` | npm's trusted publisher setting does not match this repository and workflow file | Compare the setting with [the table below](#one-time-setup-on-npmjscom), save it, and run the workflow by hand for the same tag |
 | Publish fails asking for a login or a token (`ENEEDAUTH`) | The job's npm is too old for trusted publishing, which needs 11.5.1 or later | Keep `node-version` in `release.yml` on a Node that ships such an npm (Node 24 does) |
 | The GitHub release exists but npm does not have the version | The run stopped after release-please | Run the workflow by hand for the same tag |
@@ -179,7 +180,18 @@ needs job by job.
 
 ## One-time setup on npmjs.com
 
-Trusted publishing is switched on per package, by an owner, in the browser:
+Trusted publishing is switched on per package, by an owner, and only for a package that already
+exists. npm cannot attach a publisher to a name nobody has published, and it answers an OIDC
+publish for such a name with `404 Not Found - PUT https://registry.npmjs.org/<name>`. A brand new
+name therefore takes one publish by hand first:
+
+```bash
+npm login                       # an owner's account, with 2FA enabled
+npm publish --access public     # from a clean checkout of the version being released
+```
+
+That first version carries no provenance. Every release after it does, once the publisher is set
+up. In the browser:
 
 1. Open https://www.npmjs.com/package/jev-advisor-gateway/access and find **Trusted Publisher**.
 2. Choose **GitHub Actions** and fill in:
@@ -194,6 +206,16 @@ Trusted publishing is switched on per package, by an owner, in the browser:
 3. Save. Then, on the same page under **Publishing access**, pick **Require two-factor
    authentication and disallow tokens**. After that the workflow is the only thing that can
    publish, and a leaked token is worth nothing.
+
+The same setting from the terminal, with npm 11.15 or later and 2FA enabled on the account:
+
+```bash
+npm trust github --file release.yml --repo 1arley/jev-advisor-gateway --allow-publish
+npm trust list jev-advisor-gateway    # what is configured right now
+```
+
+A publisher configuration that never completes a publish expires after two days, so set it up when
+the next release is close rather than months ahead.
 
 npm matches the repository and the workflow file name exactly. Renaming `release.yml`, or moving
 the `npm publish` step into a reusable workflow, breaks publishing until the setting is updated.
