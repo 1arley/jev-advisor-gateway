@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "jev-gateway",
+      "package-name": "jev-advisor-gateway",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
       "changelog-sections": [

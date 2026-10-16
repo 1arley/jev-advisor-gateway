@@ -1,4 +1,4 @@
-# Codex Jev Advisor
+# Jev Advisor Gateway
 
 A local gateway that keeps your session model on the session, asks [Jev](https://docs.typesafe.ai/introduction)
 to route tool decisions, and can consult a read-only advisor when Jev sees uncertainty, a planning
@@ -6,8 +6,9 @@ checkpoint, or repeated failure. The advisor is not tied to Codex or to GPT: `je
 pairs GPT-6 Luna with a GPT advisor, and `jev-claude-advisor` pairs Haiku with Opus. The client's own
 login and upstream remain in use.
 
-The gateway is based on [jev-gateway](https://github.com/vinilana/jev-gateway), which also provides
-launchers for Claude Code, OpenCode, Kilo, Gemini and Devin.
+The launchers cover Codex, Claude Code, OpenCode, Kilo, Gemini and Devin. The project began as a fork
+of [jev-gateway](https://github.com/vinilana/jev-gateway) by Vinicius Lana (MIT); the advisor and the
+dashboard's cost view are what it adds on top of Jev routing.
 
 > Independent project, not affiliated with or endorsed by TypeSafe. "Jev" is TypeSafe's model and
 > this gateway is a client of its public API.
@@ -20,11 +21,11 @@ Devin already installed and logged in.
 
 **1. Install**
 
-`codex-jev-advisor` is not on npm yet, so install from a checkout:
+`jev-advisor-gateway` is not on npm yet, so install from a checkout:
 
 ```bash
-git clone https://github.com/1arley/jev-codex-router
-cd jev-codex-router
+git clone https://github.com/1arley/jev-advisor-gateway
+cd jev-advisor-gateway
 npm install
 ```
 
@@ -35,13 +36,13 @@ normal use. Install it onto your `PATH` with:
 npm link
 ```
 
-Installing straight from the git URL (`npm install -g github:1arley/jev-codex-router`) does **not**
+Installing straight from the git URL (`npm install -g github:1arley/jev-advisor-gateway`) does **not**
 work: the package has no `prepare` script, so `dist/` is never built, and `files` does not ship
 `src/`.
 
 This checkout is self-contained and delivers every launcher above, `jev-codex-advisor` and
-`jev-codex` included. The older `jev-gateway` npm package is not needed: it predates the rebrand, so
-it ships neither Codex launcher, and installing it would only duplicate the shared ones
+`jev-codex` included. The upstream `jev-gateway` npm package is not needed: it ships neither advisor
+launcher, and installing it would only duplicate the shared ones
 (`jev-claude`, `jev-opencode`, ...) on your `PATH`.
 
 **2. Run your agent through the gateway**
