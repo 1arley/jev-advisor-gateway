@@ -162,20 +162,59 @@ const IDLE_MS = 5 * 60 * 1000;
 const MAX_ROWS = 200;
 const KEPT_PER_ROUTER = 1000;
 const JEV_USD_PER_MILLION_INPUT_TOKENS = 0.042;
-// USD per million tokens, matched by a fragment of the model name. Sol is the reference; Astra
-// bills 2.5× Sol's rates. A model not listed shows tokens with no price.
-// shortcut: hardcoded rates that drift — move to config if a third model needs one.
-const SOL_RATES = { input: 4, output: 20 };
-const MODEL_PRICES = [
-  ["gpt-5.6-sol", SOL_RATES],
-  ["gpt-6-sol", SOL_RATES],
-  ["gpt-6-astra", { input: SOL_RATES.input * 2.5, output: SOL_RATES.output * 2.5 }],
-];
-const priceOf = (model) => MODEL_PRICES.find(([name]) => (model ?? "").toLowerCase().includes(name))?.[1];
-// Input tokens are billed whole, cache included: the provider's cached rate is not known here.
+// USD per million tokens the providers publish: [input, output, cache read, cache write (5m)].
+// Matched on the model id with everything but letters and digits removed, the longest key first, so
+// `claude-opus-5-5` and `gpt-6.1-sol` both land on the right row while version digits stay apart
+// (`opus-4-5` outranks `opus-4`). Anthropic's 1h cache write and Haiku's >100k tier are not modelled.
+// shortcut: hardcoded rates that drift — move to config when they change or a model is added.
+const MODEL_PRICES = {
+  claudefable51: [10, 50, 0.25, 12.5],
+  claudemythos51: [10, 50, 0.25, 12.5],
+  claudeopus55: [4, 20, 0.2, 5],
+  claudesonnet55: [2, 10, 0.1, 2.5],
+  claudehaiku55: [0.1, 0.5, 0.01, 0.125],
+  claudefable5: [10, 50, 1, 12.5],
+  claudemythos5: [10, 50, 1, 12.5],
+  claudeopus5: [5, 25, 0.5, 6.25],
+  claudeopus48: [5, 25, 0.5, 6.25],
+  claudeopus47: [5, 25, 0.5, 6.25],
+  claudeopus46: [5, 25, 0.5, 6.25],
+  claudeopus45: [5, 25, 0.5, 6.25],
+  claudeopus41: [15, 75, 1.5, 18.75],
+  claudeopus4: [15, 75, 1.5, 18.75],
+  claudesonnet5: [2, 10, 0.2, 2.5],
+  claudesonnet46: [3, 15, 0.3, 3.75],
+  claudesonnet45: [3, 15, 0.3, 3.75],
+  claudesonnet4: [3, 15, 0.3, 3.75],
+  claudehaiku45: [1, 5, 0.1, 1.25],
+  claudehaiku35: [0.8, 4, 0.08, 1],
+  claude35haiku: [0.8, 4, 0.08, 1],
+  gpt6sol: [2, 10, 0.2, 0],
+  gpt61sol: [2, 10, 0.2, 0],
+  gpt6astra: [10, 50, 1, 0],
+  gpt6pro: [10, 50, 1, 0],
+  gpt56sol: [4, 20, 0.4, 0],
+  gptrosalindresearch: [5, 25, 0.5, 0],
+  gpt55pro: [30, 180, 30, 0], // no cache rate published: the cached part is billed as fresh
+  gpt55: [5, 30, 0.5, 0],
+  gpt53: [1.75, 14, 0.175, 0],
+};
+const priceOf = (model) => {
+  const id = (model ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  let best;
+  for (const [key, price] of Object.entries(MODEL_PRICES)) {
+    if (id.includes(key) && (!best || key.length > best[0].length)) best = [key, price];
+  }
+  return best?.[1];
+};
+// `usage.input` already includes the cached and cache-write parts, so each is billed at its own rate.
 const modelCost = (usage, model) => {
   const price = priceOf(model);
-  return price ? (usage.input * price.input + usage.output * price.output) / 1e6 : undefined;
+  if (!price) return undefined;
+  const cached = usage.cached ?? 0;
+  const written = usage.cacheWrite ?? 0;
+  const fresh = Math.max(0, usage.input - cached - written);
+  return (fresh * price[0] + cached * price[2] + written * price[3] + usage.output * price[1]) / 1e6;
 };
 const RANGES = [["15 min", 15 * 60e3], ["1 h", 60 * 60e3], ["24 h", 24 * 60 * 60e3], ["All", Infinity]];
 const CATEGORIES = [
@@ -419,7 +458,7 @@ function renderByModel(events) {
     ))),
   );
   $("models-note").textContent = sorted.length
-    ? "Metered LLM calls in this range, one row per model. The advisor's consult and any Codex subagent keep their own row, so their tokens are not counted as the session's. Cost is input (cache included) plus output at the model's rate; a model with no rate here shows tokens only."
+    ? "Metered LLM calls in this range, one row per model. The advisor's consult and any subagent keep their own row, so their tokens are not counted as the session's. Cost bills fresh input, cached input, cache writes and output at the model's rates; a model with no rate here shows tokens only."
     : "No metered LLM calls in this range yet.";
 }
 

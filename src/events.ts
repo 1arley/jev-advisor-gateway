@@ -23,7 +23,7 @@ export interface RouteEvent {
   usage?: { input: number; output: number; cached: number; cacheWrite: number; reasoning: number };
   /** Present whenever Jev answered, even if the router then let the LLM decide. */
   jev?: { choice: string; confidence: number; latencyMs: number; inputTokens: number; shortlist?: string[] };
-  /** The advisor consult and what it cost, when this router has one (Codex only). */
+  /** The advisor consult and what it cost, when this router has one. */
   advisor?: { model?: string; consulted: boolean; calls: number; usage?: { input: number; output: number; cached: number; cacheWrite: number; reasoning: number } };
 }
 

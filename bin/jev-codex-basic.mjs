@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Jev tool routing with the user's existing Codex model selection and no Astra advisor.
+// Jev tool routing with the user's existing Codex model selection and no advisor.
 import { codex } from "./clients.mjs";
 import { runLauncher } from "./launcher.mjs";
 

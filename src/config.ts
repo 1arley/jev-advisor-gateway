@@ -80,7 +80,8 @@ export function loadConfig(env: Env = process.env): Config {
     routerApiKey: str(env, "ROUTER_API_KEY"),
     // Codex sessions must stay on Luna; these generic gateway options would silently switch it.
     argsModel: client === "codex" ? undefined : str(env, "ARGS_MODEL"),
-    advisorModel: str(env, "JEV_ADVISOR_MODEL") ?? "gpt-6-astra",
+    // The advisor answers on the client's own upstream, so the default fits the wire format.
+    advisorModel: str(env, "JEV_ADVISOR_MODEL") ?? (client === "claude" ? "claude-opus-5-5" : "gpt-6-astra"),
     advisorEnabled: bool(env, "JEV_ADVISOR", client === "codex"),
     advisorTimeoutMs: num(env, "JEV_ADVISOR_TIMEOUT_MS", 30_000),
     advisorMaxOutputTokens: num(env, "JEV_ADVISOR_MAX_OUTPUT_TOKENS", 700),

@@ -8,7 +8,7 @@ import { exaAdapter } from "./adapters/exa.js";
 import { messagesAdapter } from "./adapters/messages.js";
 import { responsesAdapter } from "./adapters/responses.js";
 import type { ResponsesRequest } from "./adapters/responses.js";
-import { appendAdvisorNote, consultAstra } from "./codex/advisor.js";
+import { advisorFor, consultAdvisor } from "./codex/advisor.js";
 import { decideSessionAction } from "./codex/policy.js";
 import { addRecent, createSessionStore, readResponseId, type SessionState } from "./codex/session-state.js";
 import type { Config } from "./config.js";
@@ -179,16 +179,20 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     let tools: number | undefined;
     let session: SessionState | undefined;
     let sessionAction: Awaited<ReturnType<typeof decideSessionAction>> | undefined;
+    // Undefined for wire formats the advisor cannot speak (chat, gemini, exa): no consult, no policy.
+    const advisorImpl = advisorFor(adapter);
     if (!req) decision = { mode: "passthrough", reason: encoding ? "unsupported_encoding" : "unparseable_body" };
     else if (c.req.header("x-jev-gateway") === "off") decision = { mode: "passthrough", reason: "disabled_by_header" };
     else if (!routing) decision = { mode: "passthrough", reason: "routing_disabled" };
     else {
-      if (config.client === "codex" && advisorEnabled && adapter === responsesAdapter && req.model !== "codex-auto-review") {
+      // The session policy needs a conversation the router can read. Codex continues one by
+      // `previous_response_id`; Claude resends the whole conversation every turn, so its session
+      // is per-request (the advisor budget then caps calls within a turn, not across the chat).
+      if (advisorImpl && advisorEnabled && req.model !== "codex-auto-review") {
         try {
-          const codexReq = req as ResponsesRequest;
-          const input = responsesAdapter.toInput(codexReq, config.maxMessageChars);
+          const input = adapter.toInput(req, config.maxMessageChars);
           if (!("skip" in input)) {
-            session = sessions.resume(codexReq.previous_response_id);
+            session = sessions.resume((req as ResponsesRequest).previous_response_id);
             addRecent(session, input);
             try {
               sessionAction = await decideSessionAction(input, session, config, askJev);
@@ -204,33 +208,32 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     }
 
     let bodyOverride: string | undefined;
-    // Why the advisor did or did not answer, recorded on every Codex request. The route log
-    // carries the tool decision alone, and a consult that silently produced nothing is then
-    // indistinguishable from a gateway that never asked: this is the only place it shows up.
+    // Why the advisor did or did not answer, recorded on every request the advisor covers. The
+    // route log carries the tool decision alone, and a consult that silently produced nothing is
+    // then indistinguishable from a gateway that never asked: this is the only place it shows up.
     let advisor: Record<string, unknown> | undefined;
-    if (config.client === "codex" && advisorEnabled) {
+    if (advisorImpl && advisorEnabled) {
       advisor = { model: config.advisorModel, action: sessionAction?.action ?? "unknown", confidence: sessionAction?.confidence ?? 0, calls: session?.advisorCalls ?? 0 };
     }
-    if (req && session && sessionAction && config.client === "codex") {
-      const codexReq = req as ResponsesRequest;
+    if (req && session && sessionAction && advisorImpl) {
       const uncertain = decision.mode === "passthrough" && ["low_confidence", "jev_answers_disagree"].includes(decision.reason);
       if (sessionAction.action === "stop" && (tools ?? 0) > 0) {
         decision = { mode: "none", confidence: sessionAction.confidence, jev: decision.jev };
-      } else if (sessionAction.action === "consult_astra" || uncertain) {
+      } else if (sessionAction.action === "consult_advisor" || uncertain) {
         if (!advisorEnabled || session.advisorCalls >= config.advisorMaxCallsPerSession) {
           advisor = { ...advisor, consulted: false, skipped: advisorEnabled ? "session_budget" : "advisor_off" };
         } else {
-          const consult = await consultAstra(c.req.raw, codexReq, config, session, fetchImpl);
+          const consult = await consultAdvisor(c.req.raw, req, config, session, fetchImpl, advisorImpl);
           const note = "note" in consult ? consult.note : undefined;
           advisor = {
             ...advisor,
             consulted: true,
             noteAdded: note !== undefined,
             ...("usage" in consult && consult.usage ? { usage: consult.usage } : {}),
-            ...("reason" in consult ? { skipped: consult.reason, ...("status" in consult ? { astraStatus: consult.status } : {}), ...("detail" in consult ? { detail: consult.detail } : {}) } : {}),
+            ...("reason" in consult ? { skipped: consult.reason, ...("status" in consult ? { advisorStatus: consult.status } : {}), ...("detail" in consult ? { detail: consult.detail } : {}) } : {}),
           };
           if (note) {
-            req = appendAdvisorNote(codexReq, note) as Req;
+            req = advisorImpl.append(req, note);
             bodyOverride = JSON.stringify(req);
             session.lastAdvisorAt = Date.now();
             session.advisorCalls++;
@@ -288,7 +291,9 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
       const sent = { mode: decision.mode, model: rewritten.model, tool_choice: (rewritten as { tool_choice?: unknown }).tool_choice };
       dumpResponse("rejected", response, { sent });
       if (response.status !== 400 && response.status !== 422) {
-        if (session && response.ok) void readResponseId(response).then((id) => sessions.remember(id, session!));
+        // Only the Responses format continues by response id: a Claude session is per-request, so
+        // remembering it under the reply's own `msg_...` would fill the store with entries nothing reads.
+        if (session && response.ok && adapter === responsesAdapter) void readResponseId(response).then((id) => sessions.remember(id, session!));
         logWhenDone({ ...entry, ...decision }, response, startedAt);
         return response;
       }
@@ -302,7 +307,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
       ...(bodyOverride ? { body: bodyOverride } : { body: bytes }),
       responseHeaders: decisionHeaders(decision),
     });
-    if (session && response.ok) void readResponseId(response).then((id) => sessions.remember(id, session!));
+    if (session && response.ok && adapter === responsesAdapter) void readResponseId(response).then((id) => sessions.remember(id, session!));
     logWhenDone({ ...entry, ...decision }, response, startedAt);
     dumpResponse("upstream-error", response);
     return response;
@@ -355,7 +360,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
       config,
       events,
       { get: () => routing, set: (enabled) => void (routing = enabled) },
-      config.client === "codex"
+      config.client === "codex" || config.client === "claude"
         ? { get: () => advisorEnabled, set: (enabled) => void (advisorEnabled = enabled) }
         : undefined,
     ),
