@@ -28,7 +28,7 @@ describe("readUsage", () => {
         },
       ]),
     );
-    expect(usage).toEqual({ input: 13750, cached: 9600, cacheWrite: 0, output: 48, reasoning: 32 });
+    expect(usage).toEqual({ input: 13750, cached: 9600, cacheWrite: 0, cacheWrite1h: 0, output: 48, reasoning: 32 });
   });
 
   it("recognises a stream that comes without a content-type, as the ChatGPT Codex backend sends it", async () => {
@@ -49,7 +49,38 @@ describe("readUsage", () => {
         { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 210 } },
       ]),
     );
-    expect(usage).toEqual({ input: 9512, cached: 9000, cacheWrite: 500, output: 210, reasoning: 0 });
+    expect(usage).toEqual({ input: 9512, cached: 9000, cacheWrite: 500, cacheWrite1h: 0, output: 210, reasoning: 0 });
+  });
+
+  it("splits cache writes by TTL when the breakdown arrives, and falls back to 5m when it does not", async () => {
+    const withSplit = await readUsage(
+      sse([
+        {
+          type: "message_start",
+          message: {
+            usage: {
+              input_tokens: 12,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 900,
+              cache_creation: { ephemeral_5m_input_tokens: 400, ephemeral_1h_input_tokens: 500 },
+              output_tokens: 1,
+            },
+          },
+        },
+        { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 30 } },
+      ]),
+    );
+    expect(withSplit).toEqual({ input: 912, cached: 0, cacheWrite: 900, cacheWrite1h: 500, output: 30, reasoning: 0 });
+
+    const withoutSplit = await readUsage(
+      sse([
+        {
+          type: "message_start",
+          message: { usage: { input_tokens: 12, cache_read_input_tokens: 0, cache_creation_input_tokens: 900, output_tokens: 1 } },
+        },
+      ]),
+    );
+    expect(withoutSplit).toEqual({ input: 912, cached: 0, cacheWrite: 900, cacheWrite1h: 0, output: 1, reasoning: 0 });
   });
 
   it("reads plain JSON replies, and the Chat Completions vocabulary", async () => {
@@ -63,7 +94,7 @@ describe("readUsage", () => {
         },
       }),
     );
-    expect(usage).toEqual({ input: 100, cached: 64, cacheWrite: 0, output: 20, reasoning: 8 });
+    expect(usage).toEqual({ input: 100, cached: 64, cacheWrite: 0, cacheWrite1h: 0, output: 20, reasoning: 8 });
   });
 
   it("reports nothing rather than zeros when the reply never said", async () => {
@@ -88,7 +119,7 @@ describe("readUsage", () => {
       concat(utf8(1, "Tokens"), entry("input_tokens", 8448), entry("output_tokens", 85), entry("cached_input_tokens", 6752)),
     );
     const body = concat(frame(utf8(9, "done")), frame(stats), frame(new TextEncoder().encode("{}"), 0x2));
-    expect(await readUsage(connect(body))).toEqual({ input: 8448, output: 85, cached: 6752, cacheWrite: 0, reasoning: 0 });
+    expect(await readUsage(connect(body))).toEqual({ input: 8448, output: 85, cached: 6752, cacheWrite: 0, cacheWrite1h: 0, reasoning: 0 });
   });
 
   it("ignores counters it does not know and bodies it cannot peel", async () => {
