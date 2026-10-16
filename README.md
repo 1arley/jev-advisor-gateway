@@ -149,8 +149,9 @@ You will see:
 - **Token use by model:** every metered LLM call grouped by the model that answered it, with a
   cost column, so the advisor consult (the `JEV_ADVISOR_MODEL`) and any subagent on a model of its
   own keep their spend apart from the session's. The advisor also gets its own tile. Costs come from
-  a table of published rates per million tokens — input, output, cache read and cache write — covering
-  the current GPT and Claude models; a model not in the table shows tokens only. Set
+  a table of published rates per million tokens — input, output, cache read, and cache write split by
+  its 5m and 1h rates, with a model's long-context tier applied to a call that passes its threshold —
+  covering the current GPT and Claude models; a model not in the table shows tokens only. Set
   `JEV_ADVISOR_MODEL` to any model the upstream serves.
 - **A live table** of recent requests. A request appears when its reply finishes, because that is
   when the provider reports its tokens.
