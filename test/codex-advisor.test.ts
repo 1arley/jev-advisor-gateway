@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { appendAdvisorNote, buildAdvisorRequest, consultAstra, extractAdvisorText } from "../src/codex/advisor.js";
+import { advisorFor, appendAdvisorNote, buildAdvisorRequest, consultAdvisor, extractAdvisorText } from "../src/codex/advisor.js";
+import { responsesAdapter } from "../src/adapters/responses.js";
 import { createApp } from "../src/app.js";
 import { createEventLog } from "../src/events.js";
 import { NO_TOOL } from "../src/questions.js";
@@ -40,10 +41,10 @@ describe("Codex advisor request", () => {
   });
 
   it("records on every Codex request why the advisor answered or stayed silent", async () => {
-    // The route log carries the tool decision alone, so without this an Astra consult that
+    // The route log carries the tool decision alone, so without this an advisor consult that
     // produced nothing is indistinguishable from a gateway that never asked.
     const logs: Record<string, any>[] = [];
-    const jev = fakeJev({ session_action: { choice: "consult_astra" }, tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
+    const jev = fakeJev({ session_action: { choice: "consult_advisor" }, tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
     const app = createApp({
       config: testConfig({ client: "codex", advisorEnabled: true }),
       askJev: jev.askJev,
@@ -64,12 +65,12 @@ describe("Codex advisor request", () => {
 
     expect(res.status).toBe(200);
     await settled();
-    // Astra answered with no output_text, so no note was added; the request still went through.
-    expect(logs[0]!.advisor).toMatchObject({ action: "consult_astra", consulted: true, noteAdded: false, skipped: "astra_empty_reply" });
+    // The advisor answered with no output_text, so no note was added; the request still went through.
+    expect(logs[0]!.advisor).toMatchObject({ action: "consult_advisor", consulted: true, noteAdded: false, skipped: "advisor_empty_reply" });
   });
 
   it("meters the advisor consult, so the dashboard shows its cost apart from the session", async () => {
-    const jev = fakeJev({ session_action: { choice: "consult_astra" }, tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
+    const jev = fakeJev({ session_action: { choice: "consult_advisor" }, tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
     const events = createEventLog();
     const app = createApp({
       config: testConfig({ client: "codex", advisorEnabled: true, advisorModel: "gpt-6-astra" }),
@@ -144,7 +145,7 @@ describe("Codex advisor reply shapes", () => {
   const req = { model: "gpt-6-luna", input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "go" }] }] } as const;
   const incoming = new Request("http://127.0.0.1:8790/v1/responses", { method: "POST", headers: { "content-type": "application/json" } });
   const consultWith = (reply: string) =>
-    consultAstra(incoming, req as never, config, session, (async () => new Response(reply, { status: 200 })) as typeof fetch);
+    consultAdvisor(incoming, req as never, config, session, (async () => new Response(reply, { status: 200 })) as typeof fetch, advisorFor(responsesAdapter)!);
 
   // The ChatGPT Codex backend answers 400 to `stream: false`, so the advisor always reads SSE.
   it("reads the note from a streamed reply", async () => {
@@ -180,10 +181,10 @@ describe("Codex advisor reply shapes", () => {
   });
 
   it("reports a refusal with the upstream's own words", async () => {
-    const consult = await consultAstra(incoming, req as never, config, session, (async () =>
-      new Response('{"detail":"Stream must be set to true"}', { status: 400 })) as typeof fetch);
+    const consult = await consultAdvisor(incoming, req as never, config, session, (async () =>
+      new Response('{"detail":"Stream must be set to true"}', { status: 400 })) as typeof fetch, advisorFor(responsesAdapter)!);
 
-    expect(consult).toEqual({ reason: "astra_http_error", status: 400, detail: '{"detail":"Stream must be set to true"}' });
+    expect(consult).toEqual({ reason: "advisor_http_error", status: 400, detail: '{"detail":"Stream must be set to true"}' });
   });
 });
 

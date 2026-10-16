@@ -61,6 +61,12 @@ export const codex = codexSpec({
   name: "jev-codex", provider: "jev-codex", portEnv: "JEV_CODEX_BASIC_PORT", defaultPort: 8794, advisor: false, pinLuna: false,
 });
 
+const claudeConfigHelp = (launcher, origin) =>
+  `# Keep the gateway running (${launcher} --start), then either:\n` +
+  `#   ANTHROPIC_BASE_URL=${origin} claude\n` +
+  `# or add to ~/.claude/settings.json:\n` +
+  JSON.stringify({ env: { ANTHROPIC_BASE_URL: origin } }, null, 2);
+
 export const claude = {
   name: "jev-claude",
   client: "claude",
@@ -71,11 +77,21 @@ export const claude = {
   // Only the base URL is set. With no gateway credential alongside it, Claude Code keeps using its
   // saved claude.ai login, so a Pro/Max subscription (or an existing API key) keeps working as is.
   env: (origin) => ({ ANTHROPIC_BASE_URL: origin }),
-  configHelp: (origin) =>
-    `# Keep the gateway running (jev-claude --start), then either:\n` +
-    `#   ANTHROPIC_BASE_URL=${origin} claude\n` +
-    `# or add to ~/.claude/settings.json:\n` +
-    JSON.stringify({ env: { ANTHROPIC_BASE_URL: origin } }, null, 2),
+  configHelp: (origin) => claudeConfigHelp("jev-claude", origin),
+};
+
+/** Claude Code with an advisor: Opus reviews, Haiku codes. Both are overridable. */
+export const claudeAdvisor = {
+  ...claude,
+  name: "jev-claude-advisor",
+  portEnv: "JEV_CLAUDE_ADVISOR_PORT",
+  defaultPort: 8788,
+  // Separate log/pid from jev-claude: two launchers, one client.
+  state: "claude-advisor",
+  configHelp: (origin) => claudeConfigHelp("jev-claude-advisor", origin),
+  // Override the advisor with JEV_ADVISOR_MODEL, the coder with a `--model` after the launcher's.
+  gatewayEnv: { JEV_ADVISOR: "on", JEV_ADVISOR_MODEL: "claude-opus-5-5" },
+  args: () => ["--model", "claude-haiku-5-5"],
 };
 
 /** Where OpenCode traffic goes by default; override with JEV_OPENCODE_UPSTREAM_BASE_URL. */

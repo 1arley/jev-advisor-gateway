@@ -1,8 +1,10 @@
 # Codex Jev Advisor
 
-A local Codex launcher that keeps GPT-6 Luna on the session, asks [Jev](https://docs.typesafe.ai/introduction)
-to route tool decisions, and can consult GPT-6 Astra as a read-only advisor when Jev sees uncertainty,
-a planning checkpoint, or repeated failure. The normal Codex login and upstream remain in use.
+A local gateway that keeps your session model on the session, asks [Jev](https://docs.typesafe.ai/introduction)
+to route tool decisions, and can consult a read-only advisor when Jev sees uncertainty, a planning
+checkpoint, or repeated failure. The advisor is not tied to Codex or to GPT: `jev-codex-advisor`
+pairs GPT-6 Luna with a GPT advisor, and `jev-claude-advisor` pairs Haiku with Opus. The client's own
+login and upstream remain in use.
 
 The gateway is based on [jev-gateway](https://github.com/vinilana/jev-gateway), which also provides
 launchers for Claude Code, OpenCode, Kilo, Gemini and Devin.
@@ -45,9 +47,10 @@ it ships neither Codex launcher, and installing it would only duplicate the shar
 **2. Run your agent through the gateway**
 
 ```bash
-jev-codex-advisor --yolo # GPT-6 Luna + Jev + Astra advisor
-jev-codex --yolo         # your Codex default model + Jev tool routing, no Astra
+jev-codex-advisor --yolo # GPT-6 Luna + Jev + a GPT advisor
+jev-codex --yolo         # your Codex default model + Jev tool routing, no advisor
 codex-jev-advisor        # alias for jev-codex-advisor
+jev-claude-advisor       # Claude Code: Haiku coding + Opus advisor
 jev-claude     # use it exactly like `claude`
 jev-opencode   # use it exactly like `opencode` (stable v1)
 jev-kilo       # Kilo CLI, on free models unless KILO_API_KEY is set
@@ -143,10 +146,11 @@ You will see:
 - **LLM tokens:** input (and how much came from the prompt cache), output (and how much was hidden
   reasoning), and seconds per request.
 - **Token use by model:** every metered LLM call grouped by the model that answered it, with a
-  cost column, so the advisor consult (the `JEV_ADVISOR_MODEL`, Astra by default) and any Codex
-  subagent on a model of its own keep their spend apart from the session's. The advisor also gets
-  its own tile. Costs are per million tokens and shown for the models the page knows — Sol at
-  $4/$20, Astra at 2.5× Sol — while others show tokens only.
+  cost column, so the advisor consult (the `JEV_ADVISOR_MODEL`) and any subagent on a model of its
+  own keep their spend apart from the session's. The advisor also gets its own tile. Costs come from
+  a table of published rates per million tokens — input, output, cache read and cache write — covering
+  the current GPT and Claude models; a model not in the table shows tokens only. Set
+  `JEV_ADVISOR_MODEL` to any model the upstream serves.
 - **A live table** of recent requests. A request appears when its reply finishes, because that is
   when the provider reports its tokens.
 
@@ -585,10 +589,10 @@ list. The ones worth knowing:
 | `JEV_DIRECT_CALLS` | `true` | Set to `false` so the gateway never answers without the LLM |
 | `JEV_ROUTING` | `on` | Set to `off` to start in baseline mode |
 | `JEV_TIMEOUT_MS` | `4000` | How long to wait for Jev before letting the LLM decide |
-| `JEV_ADVISOR` | `on` for `jev-codex-advisor` | Consult Astra when Jev is unsure. The advisor call is synchronous, so its timeout is added to that turn's latency |
-| `JEV_ADVISOR_MODEL` | `gpt-6-astra` | Model the advisor answers with. It has to be a model your upstream actually serves |
+| `JEV_ADVISOR` | `on` for the advisor launchers | Consult the advisor when Jev is unsure. The advisor call is synchronous, so its timeout is added to that turn's latency |
+| `JEV_ADVISOR_MODEL` | `gpt-6-astra`, or `claude-opus-5-5` for Claude | Model the advisor answers with. It has to be a model your upstream actually serves |
 | `JEV_ADVISOR_TIMEOUT_MS` | `30000` | Deadline for the advisor call. A real model needs seconds, not the sub-second budget a tool-router call gets; too low and the stream is cut mid-answer, which arrives as an empty reply rather than an error |
-| `JEV_ADVISOR_MAX_CALLS` | `6` | Advisor consults per session |
+| `JEV_ADVISOR_MAX_CALLS_PER_SESSION` | `6` | Advisor consults per session |
 | `JEV_ADVISOR_MAX_OUTPUT_TOKENS` | `700` | Cap on the advisor's reply |
 | `ARGS_MODEL` | unset | A cheaper model for filling arguments in `forced` mode |
 | `HOST` | `127.0.0.1` | Interface to listen on. Set `ROUTER_API_KEY` before exposing it |
