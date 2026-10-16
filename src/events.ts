@@ -20,11 +20,11 @@ export interface RouteEvent {
   /** How long the whole request took, reply included. */
   durationMs?: number;
   /** What the LLM call cost, as the provider reported it; absent for `direct` and failed calls. */
-  usage?: { input: number; output: number; cached: number; cacheWrite: number; reasoning: number };
+  usage?: { input: number; output: number; cached: number; cacheWrite: number; cacheWrite1h: number; reasoning: number };
   /** Present whenever Jev answered, even if the router then let the LLM decide. */
   jev?: { choice: string; confidence: number; latencyMs: number; inputTokens: number; shortlist?: string[] };
   /** The advisor consult and what it cost, when this router has one. */
-  advisor?: { model?: string; consulted: boolean; calls: number; usage?: { input: number; output: number; cached: number; cacheWrite: number; reasoning: number } };
+  advisor?: { model?: string; consulted: boolean; calls: number; usage?: { input: number; output: number; cached: number; cacheWrite: number; cacheWrite1h: number; reasoning: number } };
 }
 
 export interface EventLog {
@@ -50,6 +50,7 @@ const usageOf = (value: unknown) => {
     output: number(raw.output) ?? 0,
     cached: number(raw.cached) ?? 0,
     cacheWrite: number(raw.cacheWrite) ?? 0,
+    cacheWrite1h: number(raw.cacheWrite1h) ?? 0,
     reasoning: number(raw.reasoning) ?? 0,
   };
 };
