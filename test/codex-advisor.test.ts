@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { appendAdvisorNote, buildAdvisorRequest, consultAstra, extractAdvisorText } from "../src/codex/advisor.js";
 import { createApp } from "../src/app.js";
+import { createEventLog } from "../src/events.js";
 import { NO_TOOL } from "../src/questions.js";
 import { addRecent, createSessionStore, readResponseId, type SessionState } from "../src/codex/session-state.js";
 import { fakeJev, fakeUpstream, settled, testConfig } from "./helpers.js";
@@ -65,6 +66,39 @@ describe("Codex advisor request", () => {
     await settled();
     // Astra answered with no output_text, so no note was added; the request still went through.
     expect(logs[0]!.advisor).toMatchObject({ action: "consult_astra", consulted: true, noteAdded: false, skipped: "astra_empty_reply" });
+  });
+
+  it("meters the advisor consult, so the dashboard shows its cost apart from the session", async () => {
+    const jev = fakeJev({ session_action: { choice: "consult_astra" }, tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
+    const events = createEventLog();
+    const app = createApp({
+      config: testConfig({ client: "codex", advisorEnabled: true, advisorModel: "gpt-6-astra" }),
+      askJev: jev.askJev,
+      events,
+      fetch: (async (_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body));
+        if (body.model !== "gpt-6-astra") return Response.json({ id: "resp_luna", output: [] });
+        const sse = [
+          'data: {"type":"response.output_text.delta","delta":"Check the retry path."}',
+          "",
+          'data: {"type":"response.completed","response":{"id":"resp_a","output":[{"type":"message","content":[{"type":"output_text","text":"Check the retry path."}]}],"usage":{"input_tokens":800,"output_tokens":40,"input_tokens_details":{"cached_tokens":600}}}}',
+          "",
+        ].join("\n");
+        return new Response(sse, { status: 200 });
+      }) as typeof fetch,
+    });
+    await app.request("/v1/responses", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "gpt-6-luna",
+        input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "fix the test" }] }],
+        tools: [{ type: "function", name: "shell", description: "Run a shell command", parameters: { type: "object", properties: {} } }],
+      }),
+    });
+
+    await settled();
+    const [event] = events.since(0);
+    expect(event!.advisor).toMatchObject({ model: "gpt-6-astra", consulted: true, usage: { input: 800, output: 40, cached: 600 } });
   });
 
   it("still logs the advisor block when Jev's session-action call fails", async () => {

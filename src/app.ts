@@ -209,7 +209,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     // indistinguishable from a gateway that never asked: this is the only place it shows up.
     let advisor: Record<string, unknown> | undefined;
     if (config.client === "codex" && advisorEnabled) {
-      advisor = { action: sessionAction?.action ?? "unknown", confidence: sessionAction?.confidence ?? 0, calls: session?.advisorCalls ?? 0 };
+      advisor = { model: config.advisorModel, action: sessionAction?.action ?? "unknown", confidence: sessionAction?.confidence ?? 0, calls: session?.advisorCalls ?? 0 };
     }
     if (req && session && sessionAction && config.client === "codex") {
       const codexReq = req as ResponsesRequest;
@@ -226,6 +226,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
             ...advisor,
             consulted: true,
             noteAdded: note !== undefined,
+            ...("usage" in consult && consult.usage ? { usage: consult.usage } : {}),
             ...("reason" in consult ? { skipped: consult.reason, ...("status" in consult ? { astraStatus: consult.status } : {}), ...("detail" in consult ? { detail: consult.detail } : {}) } : {}),
           };
           if (note) {
