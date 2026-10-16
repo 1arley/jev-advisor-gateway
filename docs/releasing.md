@@ -151,6 +151,8 @@ workflow run that built it.
 | The version in the release pull request is not what you expected | A commit has the wrong type, or a `!` that should not be there | Correct it with an override block, or force the version with `Release-As:` |
 | `Tag vX.Y.Z does not match package.json version` | Only with a tag made by hand, pushed without the version bump | Nothing was published. Delete the tag (`git push origin :vX.Y.Z`, `git tag -d vX.Y.Z`) and release through the pull request |
 | Type check, tests or build fail in the publish job | `main` was not green when the release pull request was merged | npm has nothing, but the tag and the GitHub release exist. Fix on `main` with a `fix:` commit and merge the next release pull request. Delete the orphaned GitHub release, or mark it as superseded |
+| The registry shows a `0.0.0-stage` version and `npm view jev-advisor-gateway version` returns it | The publish was staged instead of published. Staged publishing parks the version for a 2FA approval and, for a name that does not exist yet, publishes that placeholder so the name is reserved | `npm stage list jev-advisor-gateway`, inspect it with `npm stage view <id>`, then `npm stage approve <id>` — or `npm stage reject <id>` and let the workflow publish the same version with provenance |
+| `npm error 403 ... Granular access tokens that bypass two-factor authentication may not perform this action` | The credential in `~/.npmrc` is a 2FA-bypass token, and npm now demands an interactive 2FA challenge for account, package and trusted-publisher changes | `npm logout`, `npm login` again, and repeat the command |
 | `npm error 404 Not Found - PUT https://registry.npmjs.org/<name>` | The name does not exist on npm, so there is no trusted publisher to authorise the publish. npm answers 404, not 403, when a credential carries no permission for the name | Publish that version by hand once, then set up the publisher for the releases after it: see [One-time setup on npmjs.com](#one-time-setup-on-npmjscom) |
 | `npm error 403 ... OIDC permission denied for this action` | npm's trusted publisher setting does not match this repository and workflow file | Compare the setting with [the table below](#one-time-setup-on-npmjscom), save it, and run the workflow by hand for the same tag |
 | Publish fails asking for a login or a token (`ENEEDAUTH`) | The job's npm is too old for trusted publishing, which needs 11.5.1 or later | Keep `node-version` in `release.yml` on a Node that ships such an npm (Node 24 does) |
@@ -216,6 +218,11 @@ npm trust list jev-advisor-gateway    # what is configured right now
 
 A publisher configuration that never completes a publish expires after two days, so set it up when
 the next release is close rather than months ahead.
+
+npm requires an interactive 2FA challenge to change a trusted publisher, so a granular access token
+that bypasses 2FA cannot do it, by CLI or on the website. If the shell holds one, `npm logout` and
+`npm login` first: the error is `Granular access tokens that bypass two-factor authentication may
+not perform this action`.
 
 npm matches the repository and the workflow file name exactly. Renaming `release.yml`, or moving
 the `npm publish` step into a reusable workflow, breaks publishing until the setting is updated.
