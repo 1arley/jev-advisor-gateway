@@ -6,7 +6,7 @@ import type { SessionState } from "./session-state.js";
 
 const ACTION_KEY = "session_action";
 const ACTIONS = {
-  consult_astra: "Ask the independent advisor to review the current approach or repeated failure before the main agent continues.",
+  consult_advisor: "Ask the independent advisor to review the current approach or repeated failure before the main agent continues.",
   stop: "Do not make another tool call now; ask the user, report the result, or stop after repeated failure.",
   pass: "No intervention is needed; let the main agent decide and act normally.",
 };
@@ -35,7 +35,7 @@ export async function decideSessionAction(
           type: "choice",
           instructions:
             "Decide whether an independent review or a stop signal is useful for the next coding-agent step. " +
-            "Consult Astra before a high-stakes plan, after a repeated tool failure, when the tool decision is uncertain, " +
+            "Consult the independent advisor before a high-stakes plan, after a repeated tool failure, when the tool decision is uncertain, " +
             "or when a proposed completion needs a final check. Otherwise pass control to the main model.",
           criteria: ACTIONS,
         },

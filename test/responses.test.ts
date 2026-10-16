@@ -369,7 +369,7 @@ describe("POST /v1/responses", () => {
 
   it("routes continued Responses requests and preserves the Luna branch when Astra advises", async () => {
     const jev = fakeJev({
-      session_action: { choice: "consult_astra" },
+      session_action: { choice: "consult_advisor" },
       tool: { choice: NO_TOOL },
       needs_tool: { noul: 0.1 },
     });
