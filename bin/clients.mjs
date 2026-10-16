@@ -54,7 +54,7 @@ const codexSpec = ({ name, provider, portEnv, defaultPort, advisor, pinLuna }) =
 });
 
 export const codexAdvisor = codexSpec({
-  name: "jev-codex-advisor", provider: "codex-jev-advisor", portEnv: "JEV_CODEX_PORT", defaultPort: 8790, advisor: true, pinLuna: true,
+  name: "jev-codex-advisor", provider: "jev-advisor-gateway", portEnv: "JEV_CODEX_PORT", defaultPort: 8790, advisor: true, pinLuna: true,
 });
 
 export const codex = codexSpec({

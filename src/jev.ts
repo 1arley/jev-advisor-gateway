@@ -98,8 +98,8 @@ export function createAskJev(
         authorization: `Bearer ${config.jevApiKey}`,
         "content-type": "application/json",
         // OpenRouter attributes traffic by these; the others ignore them.
-        "http-referer": "https://github.com/vinilana/jev-gateway",
-        "x-title": "jev-gateway",
+        "http-referer": "https://github.com/1arley/jev-advisor-gateway",
+        "x-title": "jev-advisor-gateway",
       },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(config.jevTimeoutMs),

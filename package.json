@@ -1,7 +1,7 @@
 {
-  "name": "codex-jev-advisor",
+  "name": "jev-advisor-gateway",
   "version": "0.6.0",
-  "description": "Local Codex launcher with Jev routing and optional GPT-6 Astra advice for GPT-6 Luna sessions.",
+  "description": "Local gateway that routes coding-agent tool decisions through Jev and can attach a read-only advisor (GPT or Claude).",
   "keywords": [
     "llm",
     "gateway",
@@ -19,14 +19,14 @@
     "anthropic"
   ],
   "license": "MIT",
-  "author": "Vinicius Lana",
+  "author": "1arley",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vinilana/jev-gateway.git"
+    "url": "git+https://github.com/1arley/jev-advisor-gateway.git"
   },
-  "homepage": "https://github.com/vinilana/jev-gateway#readme",
+  "homepage": "https://github.com/1arley/jev-advisor-gateway#readme",
   "bugs": {
-    "url": "https://github.com/vinilana/jev-gateway/issues"
+    "url": "https://github.com/1arley/jev-advisor-gateway/issues"
   },
   "type": "module",
   "engines": {

@@ -46,10 +46,10 @@ export async function validateKey(provider, key, fetchImpl = fetch) {
   const ask = (model) =>
     fetchImpl(provider.url, {
       method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-title": "jev-gateway" },
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-title": "jev-advisor-gateway" },
       body: JSON.stringify({
         model,
-        state: "jev-gateway setup check",
+        state: "jev-advisor-gateway setup check",
         questions: { ok: { type: "noul", instructions: "Is this a setup check?" } },
       }),
       signal: AbortSignal.timeout(15_000),

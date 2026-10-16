@@ -1,4 +1,4 @@
-# Contributing to jev-gateway
+# Contributing to jev-advisor-gateway
 
 Bug reports, fixes, new clients and new wire formats are all welcome. OpenCode support, the Gemini
 adapter and the Homebrew automation each arrived as a pull request from outside.
@@ -12,8 +12,8 @@ You need Node.js 22.15 or newer and [pnpm](https://pnpm.io) (the exact version i
 `package.json`; `corepack enable` picks it up).
 
 ```bash
-git clone https://github.com/vinilana/jev-gateway.git
-cd jev-gateway
+git clone https://github.com/1arley/jev-advisor-gateway.git
+cd jev-advisor-gateway
 pnpm install
 pnpm test         # no keys and no network needed
 ```
@@ -221,8 +221,8 @@ that read `.agents/skills/` (Codex, OpenCode, Gemini CLI) load it on their own, 
 
 ## Reporting bugs and security issues
 
-Open an [issue](https://github.com/vinilana/jev-gateway/issues) with the launcher or endpoint you
-used, the gateway version (`npm ls -g jev-gateway`), and the relevant lines of
+Open an [issue](https://github.com/1arley/jev-advisor-gateway/issues) with the launcher or endpoint you
+used, the gateway version (`npm ls -g jev-advisor-gateway`), and the relevant lines of
 `~/.jev-gateway/<client>.log`. The `mode` and `reason` fields of those lines usually say what
 happened. Read log lines and debug dumps before attaching them: a `direct` decision logs the
 tool's arguments, and a dump holds the whole conversation.
