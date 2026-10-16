@@ -130,10 +130,10 @@ generated. To change them afterwards: `gh release edit vX.Y.Z --notes-file notes
 ## Checking a release
 
 ```bash
-npm view jev-gateway version                 # the new version
-npm view jev-gateway dist.attestations      # provenance is attached
+npm view jev-advisor-gateway version                 # the new version
+npm view jev-advisor-gateway dist.attestations      # provenance is attached
 gh release view v0.3.1                       # the notes
-npm install -g jev-gateway && jev-codex --status
+npm install -g jev-advisor-gateway && jev-codex --status
 ```
 
 The package page on npmjs.com shows a provenance badge that links to the commit and to the
@@ -155,7 +155,7 @@ workflow run that built it.
 | Publish fails asking for a login or a token (`ENEEDAUTH`) | The job's npm is too old for trusted publishing, which needs 11.5.1 or later | Keep `node-version` in `release.yml` on a Node that ships such an npm (Node 24 does) |
 | The GitHub release exists but npm does not have the version | The run stopped after release-please | Run the workflow by hand for the same tag |
 | The Homebrew stage fails | See the troubleshooting table in [homebrew-tap.md](homebrew-tap.md) | npm and the GitHub release are already done. Re-run only that part with `gh workflow run release-homebrew.yml -f tag=vX.Y.Z` |
-| A broken version reached npm | | Release a fixed patch version. To warn people off the broken one: `npm deprecate jev-gateway@X.Y.Z "reason"` (this one needs an owner's npm login, not the workflow) |
+| A broken version reached npm | | Release a fixed patch version. To warn people off the broken one: `npm deprecate jev-advisor-gateway@X.Y.Z "reason"` (this one needs an owner's npm login, not the workflow) |
 
 release-please tracks its own state in two places: `.release-please-manifest.json` holds the last
 released version, and the merged release pull request carries an `autorelease: pending` label
@@ -170,7 +170,7 @@ allow by default. In the repository, open **Settings → Actions → General →
 permissions** and tick **Allow GitHub Actions to create and approve pull requests**. Or:
 
 ```bash
-gh api -X PUT repos/vinilana/jev-gateway/actions/permissions/workflow \
+gh api -X PUT repos/1arley/jev-advisor-gateway/actions/permissions/workflow \
   -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 ```
 
@@ -181,13 +181,13 @@ needs job by job.
 
 Trusted publishing is switched on per package, by an owner, in the browser:
 
-1. Open https://www.npmjs.com/package/jev-gateway/access and find **Trusted Publisher**.
+1. Open https://www.npmjs.com/package/jev-advisor-gateway/access and find **Trusted Publisher**.
 2. Choose **GitHub Actions** and fill in:
 
    | Field | Value |
    | --- | --- |
-   | Organization or user | `vinilana` |
-   | Repository | `jev-gateway` |
+   | Organization or user | `1arley` |
+   | Repository | `jev-advisor-gateway` |
    | Workflow filename | `release.yml` |
    | Environment name | leave empty |
 
