@@ -13,6 +13,11 @@ export interface Usage {
   cached: number;
   /** Part of `input` written to the prompt cache (Anthropic only; billed at a premium). */
   cacheWrite: number;
+  /**
+   * Part of `cacheWrite` written with a 1h TTL, billed above the 5m rate. Stays zero when the
+   * upstream does not break the writes down by TTL, so billing falls back to the 5m rate.
+   */
+  cacheWrite1h: number;
   /** Part of `output` spent on hidden reasoning, when the provider says (OpenAI). */
   reasoning: number;
 }
@@ -34,6 +39,12 @@ function merge(into: Partial<Usage>, raw: Raw): void {
     // Anthropic, message_start: the input side, with a placeholder output count.
     into.cached = num(raw.cache_read_input_tokens);
     into.cacheWrite = num(raw.cache_creation_input_tokens);
+    // The TTL split only arrives in the breakdown; a later event that repeats the total without
+    // it must not wipe the split, so only overwrite when the breakdown is actually present.
+    const creation = obj(raw.cache_creation);
+    if ("ephemeral_1h_input_tokens" in creation || "ephemeral_5m_input_tokens" in creation) {
+      into.cacheWrite1h = num(creation.ephemeral_1h_input_tokens);
+    }
     into.input = num(raw.input_tokens) + into.cached + into.cacheWrite;
     into.output = num(raw.output_tokens);
   } else if ("promptTokenCount" in raw || "candidatesTokenCount" in raw) {
@@ -90,7 +101,7 @@ async function readConnectUsage(response: Response): Promise<Usage | undefined> 
     // A truncated body peels nothing: report nothing rather than guess.
   }
   if (found.input === undefined && found.output === undefined) return undefined;
-  return { input: 0, output: 0, cached: 0, cacheWrite: 0, reasoning: 0, ...found };
+  return { input: 0, output: 0, cached: 0, cacheWrite: 0, cacheWrite1h: 0, reasoning: 0, ...found };
 }
 
 /**
@@ -137,5 +148,5 @@ export async function readUsage(response: Response): Promise<Usage | undefined> 
     }
   }
   if (found.input === undefined && found.output === undefined) return undefined;
-  return { input: 0, output: 0, cached: 0, cacheWrite: 0, reasoning: 0, ...found };
+  return { input: 0, output: 0, cached: 0, cacheWrite: 0, cacheWrite1h: 0, reasoning: 0, ...found };
 }
