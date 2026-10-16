@@ -328,7 +328,7 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     const inQuery = c.req.path.startsWith("/dashboard") ? c.req.query("key") : undefined;
     const presented = c.req.header("authorization")?.replace(/^Bearer\s+/i, "") ?? inQuery ?? "";
     if (safeEqual(presented, config.routerApiKey)) return next();
-    return c.json({ error: { message: "Invalid codex-jev-advisor API key", type: "invalid_api_key" } }, 401);
+    return c.json({ error: { message: "Invalid jev-advisor-gateway API key", type: "invalid_api_key" } }, 401);
   });
 
   /**

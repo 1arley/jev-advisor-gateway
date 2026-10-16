@@ -109,8 +109,8 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if npm view "jev-gateway@$VERSION" version >/dev/null 2>&1; then
-            echo "::notice::jev-gateway@$VERSION is already on npm; nothing to publish."
+          if npm view "jev-advisor-gateway@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::jev-advisor-gateway@$VERSION is already on npm; nothing to publish."
             exit 0
           fi
           # Checks and build ran above, so package scripts stay out of the step that holds the
@@ -138,7 +138,7 @@ jobs:
             $0 ~ "^## " { printing = ($2 == version || index($2, "[" version "]") == 1); next }
             printing { print }
           ' CHANGELOG.md > notes.md
-          printf '\nInstall or upgrade: `npm install -g jev-gateway`\n' >> notes.md
+          printf '\nInstall or upgrade: `npm install -g jev-advisor-gateway`\n' >> notes.md
           gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag
 
   homebrew:
