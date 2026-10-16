@@ -1,9 +1,9 @@
 {
-  "0": "messages.ts",
+  "0": "Adapter",
   "1": "clients.mjs",
   "2": "exa.ts",
-  "3": "app.ts",
-  "4": "createApp",
+  "3": "advisor.ts",
+  "4": "app.ts",
   "5": "config.ts",
   "6": "Contributing to jev-gateway",
   "7": "package.json",
@@ -27,6 +27,7 @@
   "25": "mock-jev.mjs",
   "26": "responses.ts",
   "27": "events.ts",
-  "28": "policy.ts",
+  "28": "messages.ts",
+  "29": "debug.test.ts",
   "30": "chat.ts"
 }
