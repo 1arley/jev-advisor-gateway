@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.6.0...v0.7.0) (2026-10-16)
+
+
+### Added
+
+* **dashboard:** meter advisor consults separately per model ([0c1a472](https://github.com/1arley/jev-advisor-gateway/commit/0c1a47238435bc7b39321fd0360c8439322951db))
+* give Claude Code an advisor and price Claude models ([35bf08f](https://github.com/1arley/jev-advisor-gateway/commit/35bf08f11e7c5702b291e6c640ec0eee3f94d652))
+
+
+### Fixed
+
+* **dashboard:** bill 1h cache writes and Haiku's long-context tier ([4d4d812](https://github.com/1arley/jev-advisor-gateway/commit/4d4d812b04f892193a23f228780b345a167a77f6))
+
 ## [0.6.0](https://github.com/1arley/jev-codex-router/compare/v0.5.1...v0.6.0) (2026-10-12)
 
 
