@@ -1,11 +1,11 @@
 ---
-name: jev-gateway-conventions
-description: Conventions and style of the jev-gateway repository. Use before writing or reviewing anything here - code in src/, bin/ or test/, a commit message, a pull request title or description, README / CHANGELOG / docs prose, a workflow, or a release. Covers Conventional Commits and how they drive release-please, the invariants a change must not break, TypeScript and test idioms, comment style, and the voice of the documentation.
+name: jev-advisor-gateway-conventions
+description: Conventions and style of the jev-advisor-gateway repository. Use before writing or reviewing anything here - code in src/, bin/ or test/, a commit message, a pull request title or description, README / CHANGELOG / docs prose, a workflow, or a release. Covers Conventional Commits and how they drive release-please, the invariants a change must not break, TypeScript and test idioms, comment style, and the voice of the documentation.
 ---
 
-# jev-gateway conventions
+# jev-advisor-gateway conventions
 
-jev-gateway is a local gateway between a coding agent and its LLM provider. It handles the user's
+jev-advisor-gateway is a local gateway between a coding agent and its LLM provider. It handles the user's
 credentials and conversations, so the rules below are stricter about safety than about taste.
 Procedures live in `CONTRIBUTING.md` and `docs/releasing.md`; this file is the short version of
 how things are done, to apply while working. When one of those documents and this file disagree,
