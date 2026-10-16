@@ -23,6 +23,8 @@ export interface RouteEvent {
   usage?: { input: number; output: number; cached: number; cacheWrite: number; reasoning: number };
   /** Present whenever Jev answered, even if the router then let the LLM decide. */
   jev?: { choice: string; confidence: number; latencyMs: number; inputTokens: number; shortlist?: string[] };
+  /** The advisor consult and what it cost, when this router has one (Codex only). */
+  advisor?: { model?: string; consulted: boolean; calls: number; usage?: { input: number; output: number; cached: number; cacheWrite: number; reasoning: number } };
 }
 
 export interface EventLog {
@@ -40,11 +42,24 @@ const HISTORY_BYTES = 2 * 1024 * 1024;
 const text = (value: unknown, max = 200) => (typeof value === "string" ? value.slice(0, max) : undefined);
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
 
+/** A provider `usage` object, rebuilt field by field so nothing else it carries is exposed. */
+const usageOf = (value: unknown) => {
+  const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+  return raw && {
+    input: number(raw.input) ?? 0,
+    output: number(raw.output) ?? 0,
+    cached: number(raw.cached) ?? 0,
+    cacheWrite: number(raw.cacheWrite) ?? 0,
+    reasoning: number(raw.reasoning) ?? 0,
+  };
+};
+
 function toEvent(entry: Record<string, unknown>, seq: number): RouteEvent | undefined {
   const mode = text(entry.mode);
   if (entry.event !== "route" || !mode) return undefined;
   const jev = entry.jev && typeof entry.jev === "object" ? (entry.jev as Record<string, unknown>) : undefined;
-  const usage = entry.usage && typeof entry.usage === "object" ? (entry.usage as Record<string, unknown>) : undefined;
+  const advisor = entry.advisor && typeof entry.advisor === "object" ? (entry.advisor as Record<string, unknown>) : undefined;
+  const advisorUsage = usageOf(advisor?.usage);
   return {
     seq,
     time: text(entry.time) ?? new Date().toISOString(),
@@ -57,19 +72,19 @@ function toEvent(entry: Record<string, unknown>, seq: number): RouteEvent | unde
     confidence: number(entry.confidence),
     status: number(entry.status),
     durationMs: number(entry.durationMs),
-    usage: usage && {
-      input: number(usage.input) ?? 0,
-      output: number(usage.output) ?? 0,
-      cached: number(usage.cached) ?? 0,
-      cacheWrite: number(usage.cacheWrite) ?? 0,
-      reasoning: number(usage.reasoning) ?? 0,
-    },
+    usage: usageOf(entry.usage),
     jev: jev && {
       choice: text(jev.choice) ?? "",
       confidence: number(jev.confidence) ?? 0,
       latencyMs: number(jev.latencyMs) ?? 0,
       inputTokens: number(jev.inputTokens) ?? 0,
       shortlist: Array.isArray(jev.shortlist) ? jev.shortlist.flatMap((name) => text(name) ?? []) : undefined,
+    },
+    advisor: advisor && {
+      model: text(advisor.model),
+      consulted: advisor.consulted === true,
+      calls: number(advisor.calls) ?? 0,
+      ...(advisorUsage ? { usage: advisorUsage } : {}),
     },
   };
 }

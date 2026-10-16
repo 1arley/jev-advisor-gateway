@@ -2,6 +2,7 @@ import type { Config } from "../config.js";
 import type { ResponsesRequest } from "../adapters/responses.js";
 import { forward } from "../upstream.js";
 import { summarizeResponse } from "../debug.js";
+import { readUsage, type Usage } from "../usage.js";
 import type { SessionState } from "./session-state.js";
 
 interface AdvisorResponse {
@@ -108,7 +109,7 @@ export function extractAdvisorText(response: AdvisorResponse): string | undefine
  * look the same on the log, which is how a dead advisor passes for a healthy one.
  */
 export type AstraConsult =
-  | { note: string }
+  | { note: string; usage?: Usage }
   | { reason: "astra_http_error"; status: number; detail: string }
   | { reason: "astra_unreachable"; detail: string }
   | { reason: "astra_timeout" }
@@ -132,11 +133,15 @@ export async function consultAstra(
       const detail = (await response.text().catch(() => "")).slice(0, 200);
       return { reason: "astra_http_error", status: response.status, detail };
     }
-    const body = await response.text();
+    // The advisor is a real model call with a real price, and it is the one call whose tokens
+    // would otherwise never show up in the dashboard. Read them off a clone in parallel with the
+    // text parse (the tee buffers the reply, which is capped at 700 output tokens).
+    const copy = response.clone();
+    const [body, usage] = await Promise.all([response.text(), readUsage(copy)]);
     const note = extractAdvisorText(terminalResponse(body) ?? {});
     // A 200 with nothing to show is its own failure: say how the stream ended rather than
     // reporting a bare "empty", which cannot tell a truncated reply from an unparsed one.
-    return note ? { note } : { reason: "astra_empty_reply", detail: JSON.stringify(summarizeResponse(body)).slice(0, 200) };
+    return note ? { note, usage } : { reason: "astra_empty_reply", detail: JSON.stringify(summarizeResponse(body)).slice(0, 200) };
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
     return timedOut
