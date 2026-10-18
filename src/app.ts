@@ -58,6 +58,87 @@ function parseBody<Req>(bytes: Uint8Array, encoding: string | undefined): Req | 
   }
 }
 
+type HeadroomMetric = {
+  mode: "shadow" | "compress";
+  result: "ineligible" | "compressed" | "unchanged" | "error";
+  latencyMs?: number;
+  tokensBefore?: number;
+  tokensAfter?: number;
+};
+
+/** Compress one synthetic/live tool output without sending upstream credentials or following redirects. */
+async function compressToolOutput(
+  req: ResponsesRequest,
+  config: Config,
+  fetchImpl: typeof fetch,
+): Promise<{ output?: string; inputIndex?: number; metric: HeadroomMetric }> {
+  const metric: HeadroomMetric = { mode: config.headroomMode as "shadow" | "compress", result: "ineligible" };
+  const items = Array.isArray(req.input) ? req.input : [];
+  const outputs = items.filter((item) => item && typeof item.type === "string" && item.type.endsWith("_output"));
+  const item = outputs.length === 1 ? outputs[0] : undefined;
+  if (
+    config.client !== "codex" ||
+    !req.previous_response_id ||
+    outputs.length !== 1 ||
+    item?.type !== "function_call_output" ||
+    typeof item.call_id !== "string" ||
+    !item.call_id ||
+    typeof item.output !== "string" ||
+    !item.output ||
+    typeof req.model !== "string" ||
+    !config.headroomUrl
+  ) return { metric };
+
+  const startedAt = performance.now();
+  try {
+    const response = await fetchImpl(config.headroomUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: req.model, messages: [{ role: "tool", tool_call_id: item.call_id, content: item.output }] }),
+      redirect: "error",
+      signal: AbortSignal.timeout(config.headroomTimeoutMs),
+    });
+    if (!response.ok) throw new Error("Headroom rejected the request");
+    const data: unknown = await response.json();
+    if (!data || typeof data !== "object") throw new Error("Unexpected Headroom response");
+    const result = data as Record<string, unknown>;
+    const messages = result.messages;
+    if (!Array.isArray(messages) || messages.length !== 1 || !Array.isArray(result.ccr_hashes) || result.ccr_hashes.length !== 0) {
+      throw new Error("Unexpected Headroom response");
+    }
+    const message: unknown = messages[0];
+    if (!message || typeof message !== "object") throw new Error("Unexpected Headroom message");
+    const compressed = message as Record<string, unknown>;
+    if (
+      compressed.role !== "tool" ||
+      compressed.tool_call_id !== item.call_id ||
+      typeof compressed.content !== "string" ||
+      !compressed.content ||
+      compressed.content.length > item.output.length ||
+      Object.keys(compressed).some((key) => !["role", "tool_call_id", "content"].includes(key)) ||
+      /<<\s*ccr:|retrieve (?:more|original):\s*hash=/i.test(compressed.content)
+    ) throw new Error("Unexpected Headroom output");
+    metric.latencyMs = Math.round(performance.now() - startedAt);
+    if (typeof result.tokens_before === "number" && Number.isFinite(result.tokens_before) && result.tokens_before >= 0) {
+      metric.tokensBefore = result.tokens_before;
+    }
+    if (typeof result.tokens_after === "number" && Number.isFinite(result.tokens_after) && result.tokens_after >= 0) {
+      metric.tokensAfter = result.tokens_after;
+    }
+    if (compressed.content.length === item.output.length) {
+      metric.result = "unchanged";
+      return { metric };
+    }
+    if (compressed.content.length > item.output.length) throw new Error("Headroom output grew");
+    metric.result = "compressed";
+    return { output: compressed.content, inputIndex: items.indexOf(item), metric };
+  } catch {
+    metric.result = "error";
+    metric.latencyMs = Math.round(performance.now() - startedAt);
+    return { metric };
+  }
+}
+
 // A reason can quote whatever Jev's provider answered, such as an HTML block page. Headers.set
 // throws on line breaks and on characters beyond Latin-1, and it would throw after the request
 // had reached the upstream, so the client got a 500 instead of the reply it paid for.
@@ -286,29 +367,64 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
       }
     }
 
+    let preparedBody: string | Uint8Array = rewrittenBody ?? (bodyOverride ?? bytes);
+    let headroom: HeadroomMetric | undefined;
+    const responsesInput = req && adapter === responsesAdapter ? (req as ResponsesRequest).input : undefined;
+    const hasAgentMessage = Array.isArray(responsesInput) && responsesInput.some((item) => item?.type === "agent_message");
+    if (
+      req &&
+      adapter === responsesAdapter &&
+      config.headroomMode !== "off" &&
+      routing &&
+      c.req.header("x-jev-gateway") !== "off" &&
+      req.model !== "codex-auto-review" &&
+      !hasAgentMessage
+    ) {
+      const beforeHeadroom = preparedBody;
+      try {
+        const attempt = await compressToolOutput(req as ResponsesRequest, config, fetchImpl);
+        headroom = attempt.metric;
+        if (attempt.output !== undefined && attempt.inputIndex !== undefined && config.headroomMode === "compress") {
+          const preparedReq = (rewritten ?? req) as ResponsesRequest;
+          if (Array.isArray(preparedReq.input)) {
+            preparedBody = JSON.stringify({
+              ...preparedReq,
+              input: preparedReq.input.map((item, index) =>
+                index === attempt.inputIndex ? { ...item, output: attempt.output } : item,
+              ),
+            });
+          }
+        }
+      } catch {
+        preparedBody = beforeHeadroom;
+        headroom = { mode: config.headroomMode, result: "error" };
+      }
+    }
+
     if (rewrittenBody !== undefined && rewritten && decision.mode !== "passthrough") {
-      const response = await forward(c.req.raw, config, fetchImpl, { body: rewrittenBody, responseHeaders: decisionHeaders(decision) });
+      const response = await forward(c.req.raw, config, fetchImpl, { body: preparedBody, responseHeaders: decisionHeaders(decision) });
       const sent = { mode: decision.mode, model: rewritten.model, tool_choice: (rewritten as { tool_choice?: unknown }).tool_choice };
       dumpResponse("rejected", response, { sent });
       if (response.status !== 400 && response.status !== 422) {
         // Only the Responses format continues by response id: a Claude session is per-request, so
         // remembering it under the reply's own `msg_...` would fill the store with entries nothing reads.
         if (session && response.ok && adapter === responsesAdapter) void readResponseId(response).then((id) => sessions.remember(id, session!));
-        logWhenDone({ ...entry, ...decision }, response, startedAt);
+        logWhenDone({ ...entry, ...decision, ...(headroom ? { headroom } : {}) }, response, startedAt);
         return response;
       }
       // The upstream refused the rewritten request (some backends only accept tool_choice
       // "auto"): the router must never be the reason a request fails, so replay the original.
       await response.body?.cancel();
       decision = { mode: "passthrough", reason: `upstream_rejected_${decision.mode}`, jev: decision.jev };
+      preparedBody = bodyOverride ?? bytes;
     }
 
     const response = await forward(c.req.raw, config, fetchImpl, {
-      ...(bodyOverride ? { body: bodyOverride } : { body: bytes }),
+      body: preparedBody,
       responseHeaders: decisionHeaders(decision),
     });
     if (session && response.ok && adapter === responsesAdapter) void readResponseId(response).then((id) => sessions.remember(id, session!));
-    logWhenDone({ ...entry, ...decision }, response, startedAt);
+    logWhenDone({ ...entry, ...decision, ...(headroom ? { headroom } : {}) }, response, startedAt);
     dumpResponse("upstream-error", response);
     return response;
   };

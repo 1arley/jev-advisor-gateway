@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { PROVIDERS, resolveModel, resolveProvider, resolveUrl, type ProviderId } from "./jev.js";
 export interface Config {
   /** Interface to listen on. Loopback by default: the gateway forwards credentials and must not be reachable from the LAN. */
@@ -17,6 +18,10 @@ export interface Config {
   advisorTimeoutMs: number;
   advisorMaxOutputTokens: number;
   advisorMaxCallsPerSession: number;
+  /** Optional loopback-only Headroom /v1/compress endpoint. */
+  headroomUrl?: string;
+  headroomMode: "off" | "shadow" | "compress";
+  headroomTimeoutMs: number;
   /** Who serves Jev: TypeSafe itself, or a gateway that resells it. */
   jevProvider: ProviderId;
   /** The key for that provider; the launchers ask for it when it is missing. */
@@ -72,6 +77,36 @@ export function loadConfig(env: Env = process.env): Config {
   if (onNone !== "force_none" && onNone !== "passthrough") {
     throw new Error(`JEV_ON_NONE must be "force_none" or "passthrough", got "${onNone}"`);
   }
+  const headroomMode = str(env, "JEV_HEADROOM_MODE") ?? "off";
+  if (headroomMode !== "off" && headroomMode !== "shadow" && headroomMode !== "compress") {
+    throw new Error(`JEV_HEADROOM_MODE must be "off", "shadow" or "compress", got "${headroomMode}"`);
+  }
+  const headroomUrl = str(env, "JEV_HEADROOM_URL");
+  if (headroomMode !== "off" && !headroomUrl) {
+    throw new Error("JEV_HEADROOM_URL is required when JEV_HEADROOM_MODE is enabled");
+  }
+  if (headroomUrl) {
+    let parsed: URL;
+    try {
+      parsed = new URL(headroomUrl);
+    } catch {
+      throw new Error(`JEV_HEADROOM_URL must be an explicit loopback URL, got "${headroomUrl}"`);
+    }
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+    const ipv4 = hostname.split(".").map(Number);
+    const loopback = hostname === "localhost" || (isIP(hostname) === 4 && ipv4[0] === 127) || hostname === "::1";
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      !loopback ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      !parsed.pathname.endsWith("/v1/compress")
+    ) {
+      throw new Error(`JEV_HEADROOM_URL must be a loopback URL ending in /v1/compress, got "${headroomUrl}"`);
+    }
+  }
   const config: Config = {
     host: str(env, "HOST") ?? "127.0.0.1",
     port: num(env, "PORT", 8787),
@@ -86,6 +121,9 @@ export function loadConfig(env: Env = process.env): Config {
     advisorTimeoutMs: num(env, "JEV_ADVISOR_TIMEOUT_MS", 30_000),
     advisorMaxOutputTokens: num(env, "JEV_ADVISOR_MAX_OUTPUT_TOKENS", 700),
     advisorMaxCallsPerSession: num(env, "JEV_ADVISOR_MAX_CALLS_PER_SESSION", 6),
+    headroomUrl,
+    headroomMode,
+    headroomTimeoutMs: num(env, "JEV_HEADROOM_TIMEOUT_MS", 500),
     jevProvider,
     jevApiKey: str(env, PROVIDERS[jevProvider].keyEnv),
     jevUrl: resolveUrl(jevProvider, env),
@@ -103,6 +141,9 @@ export function loadConfig(env: Env = process.env): Config {
     client,
     logFile: str(env, "JEV_LOG_FILE"),
   };
+  if (config.headroomTimeoutMs <= 0 || config.headroomTimeoutMs > 5_000) {
+    throw new Error(`JEV_HEADROOM_TIMEOUT_MS must be between 1 and 5000, got "${config.headroomTimeoutMs}"`);
+  }
   if (config.routerApiKey && !config.upstreamApiKey) {
     throw new Error("ROUTER_API_KEY requires UPSTREAM_API_KEY (the client key is not valid upstream)");
   }
