@@ -590,6 +590,9 @@ list. The ones worth knowing:
 | `JEV_ARG_MIN_CERTAINTY` | `0.8` | Every argument must reach this for a `direct` answer |
 | `JEV_DIRECT_CALLS` | `true` | Set to `false` so the gateway never answers without the LLM |
 | `JEV_ROUTING` | `on` | Set to `off` to start in baseline mode |
+| `JEV_HEADROOM_MODE` | `off` | `shadow` measures an eligible result without changing the upstream request; `compress` applies a validated shorter result. Keep off until the pinned proxy passes the service and privacy audits |
+| `JEV_HEADROOM_URL` | unset | Explicit loopback URL ending in `/v1/compress`; required when Headroom is enabled. There is no default host or port |
+| `JEV_HEADROOM_TIMEOUT_MS` | `500` | One Headroom request deadline from 1 to 5000 ms, with no retry; failures pass the prepared request through |
 | `JEV_TIMEOUT_MS` | `4000` | How long to wait for Jev before letting the LLM decide |
 | `JEV_ADVISOR` | `on` for the advisor launchers | Consult the advisor when Jev is unsure. The advisor call is synchronous, so its timeout is added to that turn's latency |
 | `JEV_ADVISOR_MODEL` | `gpt-6-astra`, or `claude-opus-5-5` for Claude | Model the advisor answers with. It has to be a model your upstream actually serves |
@@ -601,6 +604,31 @@ list. The ones worth knowing:
 | `JEV_DEBUG_DUMP_DIR` | unset | Write requests and response summaries to this folder. Credentials in headers are redacted; bodies are written whole, system prompts and conversation included, in files only you can read |
 
 Each request also logs one JSON line to stdout, or to `~/.jev-gateway/<client>.log` under a launcher.
+
+### Headroom compression
+
+The gateway calls the configured local service directly through its injected `fetch`. It does not
+install or start Headroom. The feature applies only to Codex Responses continuations that contain
+`previous_response_id` and exactly one textual `function_call_output`. Parallel outputs, non-text
+results, internal review requests, and other unsupported requests pass through without a
+Headroom call.
+
+`shadow` sends the eligible result to Headroom for measurement and forwards the pre-compression
+request upstream. `compress` applies only a response with the expected tool item and matching
+`tool_call_id` (copied from Responses `call_id`), a non-empty shorter text, and no CCR marker.
+This structural check does not establish semantic fidelity; the synthetic evaluation against the
+pinned service remains a separate gate. Timeout, service error, redirects, malformed or unexpected
+responses fall back to the body already prepared by the router/advisor. No retry is made. Headroom
+receives no upstream authorization or other upstream headers.
+
+Both modes send the tool result to the local service. Keep the feature `off` until the pinned
+Headroom version has passed synthetic checks and its persistence, telemetry, remote calls and CCR
+behavior have been audited. This is an operational requirement, not a runtime-enforced lock: if an
+operator configures `shadow` or `compress`, eligible content is sent to the configured service.
+The repository tests use a fake service; they do not prove compression or semantic fidelity against
+Headroom v0.41.0. Until that service-level gate is complete, use only synthetic fixtures. Headroom
+log fields contain only mode/result, latency and token counts, never the result text, headers or
+credentials.
 
 ## Known trade-offs
 

@@ -53,6 +53,20 @@ describe("choosing a provider", () => {
     expect(loadConfig({ TYPESAFE_API_KEY: "k", TYPESAFE_BASE_URL: "http://127.0.0.1:8799/" }).jevUrl).toBe("http://127.0.0.1:8799/v1/systemone");
   });
 
+  it("requires Headroom to be explicitly loopback and pins its deadline", () => {
+    expect(loadConfig({ JEV_HEADROOM_MODE: "shadow", JEV_HEADROOM_URL: "http://127.0.0.1:8788/v1/compress" }))
+      .toMatchObject({ headroomMode: "shadow", headroomTimeoutMs: 500 });
+    expect(() => loadConfig({ JEV_HEADROOM_MODE: "compress" })).toThrow(/JEV_HEADROOM_URL is required/);
+    for (const headroomUrl of [
+      "https://headroom.example/v1/compress",
+      "http://127.0.0.1:8788/v1/compress?forward=1",
+      "http://user@127.0.0.1:8788/v1/compress",
+    ]) {
+      expect(() => loadConfig({ JEV_HEADROOM_URL: headroomUrl })).toThrow(/JEV_HEADROOM_URL/);
+    }
+    expect(() => loadConfig({ JEV_HEADROOM_TIMEOUT_MS: "5001" })).toThrow(/JEV_HEADROOM_TIMEOUT_MS/);
+  });
+
   it("uses OpenCode's free model unless the paid one is selected", () => {
     expect(loadConfig({ OPENCODE_API_KEY: "ock" })).toMatchObject({
       jevProvider: "opencode",
