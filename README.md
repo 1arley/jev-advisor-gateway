@@ -21,26 +21,25 @@ Devin already installed and logged in.
 
 **1. Install**
 
-`jev-advisor-gateway` is not on npm yet, so install from a checkout:
+```bash
+npm install -g jev-advisor-gateway
+```
+
+From a checkout instead:
 
 ```bash
 git clone https://github.com/1arley/jev-advisor-gateway
 cd jev-advisor-gateway
 npm install
-```
-
-The launchers run the TypeScript sources directly from the checkout, so nothing needs building for
-normal use. Install it onto your `PATH` with:
-
-```bash
 npm link
 ```
 
-Installing straight from the git URL (`npm install -g github:1arley/jev-advisor-gateway`) does **not**
-work: the package has no `prepare` script, so `dist/` is never built, and `files` does not ship
-`src/`.
+An installed package runs the built `dist/`; a checkout runs the TypeScript sources directly through
+`tsx`, so nothing needs building in either case. Installing straight from the git URL
+(`npm install -g github:1arley/jev-advisor-gateway`) does **not** work: the package has no `prepare`
+script, so `dist/` is never built, and `files` does not ship `src/`.
 
-This checkout is self-contained and delivers every launcher above, `jev-codex-advisor` and
+This package is self-contained and delivers every launcher above, `jev-codex-advisor` and
 `jev-codex` included. The upstream `jev-gateway` npm package is not needed: it ships neither advisor
 launcher, and installing it would only duplicate the shared ones
 (`jev-claude`, `jev-opencode`, ...) on your `PATH`.
@@ -111,6 +110,7 @@ All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-kilo`, `j
 | `jev-codex --dashboard` | Open the monitoring dashboard in your browser |
 | `jev-codex --routing off` | Baseline mode: stop asking Jev, keep counting tokens |
 | `jev-codex --routing on` | Let Jev decide again |
+| `jev-codex --advisor on` / `--advisor off` | Consult, or not, the read-only advisor on uncertain turns (Codex and Claude launchers only) |
 | `jev-codex --status` | Is the gateway running, and where does it forward to? |
 | `jev-codex --logs` | Follow routing decisions live (use a second terminal) |
 | `jev-codex --start` | Start the gateway without opening the agent |
@@ -119,9 +119,11 @@ All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-kilo`, `j
 | `jev-codex --print-config` | Print settings to point plain `codex` at the gateway permanently |
 | `jev-codex --gateway-help` | List all of the above |
 
-Codex uses port 8790, Claude Code 8789, OpenCode 8791, Gemini clients 8788, Devin 8792 and Kilo
-8793. Change them with `JEV_CODEX_PORT`, `JEV_CLAUDE_PORT`, `JEV_OPENCODE_PORT`,
-`JEV_GEMINI_PORT`, `JEV_DEVIN_PORT` and `JEV_KILO_PORT`.
+Default ports: `jev-codex-advisor` 8790, plain `jev-codex` 8794, `jev-claude` 8789,
+`jev-claude-advisor` 8788, OpenCode 8791, Gemini 8788, Devin 8792 and Kilo 8793. Change them with
+`JEV_CODEX_PORT`, `JEV_CODEX_BASIC_PORT`, `JEV_CLAUDE_PORT`, `JEV_CLAUDE_ADVISOR_PORT`,
+`JEV_OPENCODE_PORT`, `JEV_GEMINI_PORT`, `JEV_DEVIN_PORT` and `JEV_KILO_PORT`. `jev-claude-advisor`
+and `jev-gemini` share the default 8788: set one of the two variables if you run both at once.
 
 ## Dashboard
 
@@ -216,8 +218,10 @@ Override either with `JEV_CODEX_UPSTREAM_BASE_URL`.
 
 Codex speaks the Responses API, so the gateway handles `POST /v1/responses`, including Codex's
 free-form tools such as `apply_patch`, tools declared inside the conversation, and compressed
-request bodies. If the backend rejects a rewritten request, the gateway resends the original, so
-Codex never sees an error caused by the gateway.
+request bodies. `direct` answers are off on this path: a synthetic tool call would put a response
+id Codex's upstream history does not know into the conversation, so Codex always gets `forced`
+(the LLM fills the arguments) or one of the other modes. If the backend rejects a rewritten
+request, the gateway resends the original, so Codex never sees an error caused by the gateway.
 
 ## Using it with Claude Code
 
@@ -555,7 +559,7 @@ and the value of every closed-set argument. The answer selects a mode, which is 
 
 | Mode | When | What happens |
 | --- | --- | --- |
-| `direct` | Jev is confident about the tool and every argument is an enum, boolean, or constant | The gateway builds the tool call itself, streaming included. **No LLM call.** Never with extended thinking on (Claude Code): the next turn would replay a tool call with no thinking block, which the API rejects, so such a request gets `hint` instead |
+| `direct` | Jev is confident about the tool and every argument is an enum, boolean, or constant | The gateway builds the tool call itself, streaming included. **No LLM call.** Off for Codex (the synthetic call would carry a response id the upstream history does not know; it falls back to `forced`) and never with extended thinking on (Claude Code), which gets `hint` instead, or with `JEV_DIRECT_CALLS=false` |
 | `forced` | Jev is confident about the tool, but some arguments are open-ended | Forwarded with `tool_choice` set to that tool, so the LLM only fills in arguments. `ARGS_MODEL` can send these to a cheaper model |
 | `hint` | Jev is confident, but `tool_choice` cannot be changed (Anthropic with thinking on, or a cached conversation) | Forwarded with a one-line suggestion added after the client's last block, so cached prefixes stay valid |
 | `none` | Jev is confident that no tool is needed | Forwarded with `tool_choice: "none"` |
@@ -599,7 +603,8 @@ list. The ones worth knowing:
 | `JEV_ADVISOR_TIMEOUT_MS` | `30000` | Deadline for the advisor call. A real model needs seconds, not the sub-second budget a tool-router call gets; too low and the stream is cut mid-answer, which arrives as an empty reply rather than an error |
 | `JEV_ADVISOR_MAX_CALLS_PER_SESSION` | `6` | Advisor consults per session |
 | `JEV_ADVISOR_MAX_OUTPUT_TOKENS` | `700` | Cap on the advisor's reply |
-| `ARGS_MODEL` | unset | A cheaper model for filling arguments in `forced` mode |
+| `ARGS_MODEL` | unset | A cheaper model for filling arguments in `forced` mode. Not applied to Codex sessions, which must stay on the model the session started with |
+| `JEV_ON_NONE` | `force_none` | What to do when Jev is sure no tool is needed: `force_none` (`tool_choice: "none"`) or `passthrough` |
 | `HOST` | `127.0.0.1` | Interface to listen on. Set `ROUTER_API_KEY` before exposing it |
 | `JEV_DEBUG_DUMP_DIR` | unset | Write requests and response summaries to this folder. Credentials in headers are redacted; bodies are written whole, system prompts and conversation included, in files only you can read |
 
