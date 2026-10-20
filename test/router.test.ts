@@ -185,6 +185,22 @@ describe("POST /v1/chat/completions", () => {
     expect(upstream.calls).toHaveLength(1);
   });
 
+  it("passes the request through when Jev returns malformed answers", async () => {
+    const upstream = fakeUpstream();
+    const app = createApp({
+      config: testConfig(),
+      askJev: async () => ({ answers: { tool: null }, usage: {} }) as never,
+      fetch: upstream.fetchImpl,
+    });
+    const body = chat("hi");
+    const res = await app.request("/v1/chat/completions", { method: "POST", body: JSON.stringify(body) });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-jev-gateway-mode")).toBe("passthrough");
+    expect(res.headers.get("x-jev-gateway-reason")).toBe("jev_unexpected_answer");
+    expect(upstream.calls[0]!.body).toEqual(body);
+  });
+
   // A block page from a proxy in front of Jev (Cloudflare answers 403 with HTML) put newlines into
   // the reason header, and Headers.set threw after the upstream had already been called.
   it.each([
