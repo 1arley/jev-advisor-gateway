@@ -86,17 +86,23 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
     if (!id) io.print(`Please answer with a number from 1 to ${ids.length}.`);
   }
   const provider = providers[id];
-  io.print(`\nGet a key at ${provider.keyUrl}`);
+  if (provider.keyUrl) io.print(`\nGet a key at ${provider.keyUrl}`);
+  else io.print(`\n${provider.label} needs no remote key; what you enter below is only a placeholder.`);
 
+  let model = provider.model;
+  if (provider.askModel) {
+    const answered = (await io.ask(`Model your ${provider.label} backend serves [${provider.model}]: `)).trim();
+    if (answered) model = answered;
+  }
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const key = (await io.askSecret(`Paste your ${provider.label} API key (input is hidden): `)).trim();
+    const keyPrompt = provider.keyIgnored ? "Paste anything as the key (input is hidden; it is ignored): " : `Paste your ${provider.label} API key (input is hidden): `;
+    const key = (await io.askSecret(keyPrompt)).trim();
     if (!key) {
       io.print("Nothing entered. Run this again whenever you have a key.");
       return undefined;
     }
     io.print("Checking the key with Jev…");
-    let result = await validate(provider, key);
-    let model = provider.model;
+    let result = await validate({ ...provider, model }, key);
     if (result.freeUnavailable && provider.paidModel) {
       const paid = (await io.ask(`Use paid ${provider.paidModel} for Jev? Its key check may be billed. [y/N]: `)).trim().toLowerCase();
       if (paid === "y" || paid === "yes") {
@@ -121,7 +127,7 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
       io.print(`The key works (Jev answered in ${result.ms} ms).`);
     }
     const values = { JEV_PROVIDER: id, [provider.keyEnv]: key };
-    if (provider.paidModel) values.JEV_MODEL = model;
+    if (provider.paidModel || provider.askModel) values.JEV_MODEL = model;
     save(envFile, values);
     io.print(`Saved to ${envFile}. Change it any time with \`${name} --setup\`.\n`);
     return values;

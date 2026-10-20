@@ -8,13 +8,17 @@ interface Provider {
   label: string;
   note: string;
   keyEnv: string;
-  keyUrl: string;
+  keyUrl?: string;
   url: string;
   model: string;
   /** Only providers that must refuse unlisted ids have a list: the rest tell theirs apart by a slash. */
   models?: string[];
   /** A paid model setup can offer only with the user's consent. */
   paidModel?: string;
+  /** Setup asks which model the upstream serves instead of assuming the table's default. */
+  askModel?: boolean;
+  /** The upstream ignores Authorization, so the saved "key" is only a placeholder. */
+  keyIgnored?: boolean;
 }
 
 /**
@@ -51,6 +55,9 @@ export function resolveModel(provider: ProviderId, requested: string | undefined
   const { model, models } = providers[provider];
   if (!requested) return model;
   if (models) return models.includes(requested) ? requested : model;
+  // openjev passes the id straight to its own backend (groq/decider/…), whose
+  // namespaces vary: groq's real ids ("openai/gpt-oss-20b") carry a slash.
+  if (provider === "openjev") return requested.trim() ? requested : model;
   const fits = requested.includes("/") === (provider !== "typesafe") && !providers.opencode.models?.includes(requested);
   return fits ? requested : model;
 }

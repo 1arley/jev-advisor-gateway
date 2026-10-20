@@ -55,6 +55,21 @@ describe("runSetup", () => {
     expect(user.printed.join("\n")).not.toContain("or-key");
   });
 
+  it("openjev: asks the backend model, takes a placeholder key, and saves JEV_MODEL", async () => {
+    const user = script(["openjev", "", "local"]);
+    const saved: unknown[] = [];
+    const checked: unknown[] = [];
+    const values = await runSetup({
+      name: "jev-codex", providers, envFile, io: user.io,
+      validate: async (provider: { label: string; model: string }, key: string) => (checked.push([provider.label, provider.model, key]), { ok: true, ms: 5 }),
+      save: (file: string, entries: unknown) => saved.push([file, entries]),
+    });
+    expect(values).toEqual({ JEV_PROVIDER: "openjev", OPENJEV_KEY: "local", JEV_MODEL: "llama-3.1-8b-instant" });
+    expect(checked).toEqual([["OpenJev", "llama-3.1-8b-instant", "local"]]);
+    expect(saved).toEqual([[envFile, values]]);
+    expect(user.printed.join("\n")).toContain("needs no remote key");
+  });
+
   it("defaults to TypeSafe and lets a refused key be retried", async () => {
     const user = script(["", "wrong", "right"]);
     const values = await runSetup({
