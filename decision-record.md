@@ -56,3 +56,18 @@ Referência da versão pesquisada: https://github.com/headroomlabs-ai/headroom/t
 1. Fixar e executar o Headroom v0.41.0 em ambiente local controlado com fixtures sintéticas; validar redução, fidelidade semântica e duas continuações.
 2. Auditar persistência, telemetria, chamadas remotas e CCR do serviço.
 3. Só então decidir se `compress` pode receber conteúdo real. A configuração permanece desligada por padrão.
+
+## Melhorias do projeto: decisões iniciais
+
+Data: 2026-10-20
+Status: recomendações confirmadas pelo usuário; implementação não iniciada
+
+| Tema | Decisão |
+|---|---|
+| Motivos de erro | Substituir mensagens brutas de exceção por códigos estáveis nos caminhos de decisão, preservando o fail-open. Reproduzir a exposição atual com erros sintéticos, mapear seus destinos e, após a correção, verificar que o texto não chega a headers, logs, eventos do dashboard ou respostas de decisão e que a requisição segue sendo encaminhada. |
+| Rust | Considerar Rust somente se profiling mostrar que parsing ou serialização local contribuem de forma relevante para a latência total. |
+| Mudanças de roteamento | Exigir evidência de qualidade, latência e tokens antes de alterar a estratégia de roteamento. |
+
+## Proveniência e limites
+
+O usuário confirmou as três recomendações em 2026-10-20. Essas respostas são decisões humanas, não respostas do JEV; nenhuma resposta validada do JEV foi recebida nesta rodada. O levantamento local identificou mensagens de exceção incluídas em motivos e a documentação registra impacto variável por modelo e tarefa, com amostras pequenas. Nenhuma implementação foi iniciada. Confirmar este registro com o usuário antes de agir.
