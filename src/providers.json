@@ -32,5 +32,14 @@
     "model": "jev-1.13-free",
     "models": ["jev-1.13-free", "jev-1.13"],
     "paidModel": "jev-1.13"
+  },
+  "openjev": {
+    "label": "OpenJev",
+    "note": "OpenJev local as System One (default http://localhost:6767); no remote key — its backend (groq/decider) does the billing",
+    "keyEnv": "OPENJEV_KEY",
+    "url": "http://localhost:6767/v1/systemone",
+    "model": "llama-3.1-8b-instant",
+    "askModel": true,
+    "keyIgnored": true
   }
 }

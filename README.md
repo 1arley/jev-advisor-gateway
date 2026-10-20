@@ -185,6 +185,13 @@ and return the same answers, so the choice is about whose account and billing yo
 | OpenRouter | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `typesafe-ai/jev` | [Vercel dashboard](https://vercel.com/dashboard/ai-gateway/api-keys) |
 | OpenCode | `OPENCODE_API_KEY` | `jev-1.13-free` | [OpenCode Zen](https://opencode.ai/auth) |
+| OpenJev (local) | `OPENJEV_KEY` (placeholder) | `llama-3.1-8b-instant` | none — runs at `http://localhost:6767` |
+
+OpenJev is a local System One endpoint ([OpenJev playground](https://github.com/1arley/OpenJev)): it serves
+`POST /v1/systemone`, so no remote key is needed — its own backend (an OpenAI-compatible key such as
+Groq's, or a local Mapika/decider GPU server) does the billing. Setup asks which model id the backend
+serves and saves it as `JEV_MODEL`; the upstream ignores Authorization, so `OPENJEV_KEY` is only a
+placeholder that marks the provider as configured.
 
 OpenCode serves two ids at the same endpoint: `jev-1.13-free` (free,
 [for a limited time](https://opencode.ai/docs/zen/#jev)) and the paid `jev-1.13`. The gateway
@@ -589,7 +596,7 @@ list. The ones worth knowing:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY` or `OPENCODE_API_KEY` | one is required | The key for Jev; the launchers ask for it on first run |
-| `JEV_PROVIDER` | whichever key is set | `typesafe`, `openrouter`, `vercel` or `opencode` |
+| `JEV_PROVIDER` | whichever key is set | `typesafe`, `openrouter`, `vercel`, `opencode` or `openjev` |
 | `JEV_MIN_CONFIDENCE` | `0.7` | Below this confidence, the LLM decides. Lower it to route more, raise it to be more careful |
 | `JEV_ARG_MIN_CERTAINTY` | `0.8` | Every argument must reach this for a `direct` answer |
 | `JEV_DIRECT_CALLS` | `true` | Set to `false` so the gateway never answers without the LLM |
