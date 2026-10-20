@@ -69,17 +69,34 @@ export function resolveUrl(provider: ProviderId, env: Env): string {
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504, 529]);
 const MODEL_GONE = new Set([404, 410]);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Some gateways return choice answers without a confidence; the winning probability stands in. */
-function normalize(result: SystemOneResult<Questions>): SystemOneResult<Questions> {
+function normalize(result: unknown): SystemOneResult<Questions> {
+  if (!isRecord(result)) return result as SystemOneResult<Questions>;
+  const sourceAnswers = isRecord(result.answers) ? result.answers : {};
+  const usage = isRecord(result.usage) ? result.usage : {};
   const answers: Record<string, unknown> = {};
-  for (const [name, answer] of Object.entries(result.answers ?? {})) {
-    const probabilities = "probabilities" in answer ? Object.values(answer.probabilities as Record<string, number>) : [];
+  for (const [name, answer] of Object.entries(sourceAnswers)) {
+    if (!isRecord(answer)) {
+      answers[name] = answer;
+      continue;
+    }
+    const probabilities = isRecord(answer.probabilities)
+      ? Object.values(answer.probabilities).filter((value): value is number => typeof value === "number")
+      : [];
     answers[name] =
       answer.type !== "noul" && typeof answer.confidence !== "number" && probabilities.length
         ? { ...answer, confidence: Math.max(...probabilities) }
         : answer;
   }
-  return { model: result.model, answers, usage: { input_tokens: result.usage?.input_tokens ?? 0, output_tokens: result.usage?.output_tokens ?? 0 } } as SystemOneResult<Questions>;
+  return {
+    model: result.model,
+    answers,
+    usage: { input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0 },
+  } as SystemOneResult<Questions>;
 }
 
 /** The one call the gateway makes to Jev, for whichever provider is configured. */
@@ -111,7 +128,7 @@ export function createAskJev(
         : "";
       throw Object.assign(new Error(`${response.status} from ${provider.label}: ${paidHint}${detail}`), { status: response.status });
     }
-    return normalize((await response.json()) as SystemOneResult<Questions>);
+    return normalize(await response.json());
   };
   // One fast retry only: past that, failing open to the LLM is quicker.
   return async (request) => {

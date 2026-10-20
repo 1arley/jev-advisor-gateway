@@ -45,6 +45,41 @@ export type Decision = { jev?: JevTrace } & (
 
 type Answers = SystemOneResult<Questions>["answers"];
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProbability(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function isTokenCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function validAnswer(question: Questions[string], value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (question.type === "noul") return value.type === "noul" && isProbability(value.noul);
+  if (question.type !== "choice" || value.type !== "choice" || typeof value.choice !== "string") return false;
+  if (!isProbability(value.confidence) || !Object.hasOwn(question.criteria, value.choice)) return false;
+  const distribution = value.probabilities;
+  if (!isRecord(distribution)) return false;
+
+  const probabilities = Object.keys(distribution);
+  return Object.hasOwn(distribution, value.choice) && probabilities.every((option) =>
+    Object.hasOwn(question.criteria, option) && isProbability(distribution[option]),
+  );
+}
+
+function validResult(result: unknown, questions: Questions): result is SystemOneResult<Questions> {
+  if (!isRecord(result) || !isRecord(result.answers) || !isRecord(result.usage)) return false;
+  if (!isTokenCount(result.usage.input_tokens) || !isTokenCount(result.usage.output_tokens)) return false;
+  const answers = result.answers;
+  return Object.entries(questions).every(([key, question]) =>
+    Object.hasOwn(answers, key) && validAnswer(question, answers[key]),
+  );
+}
+
 /**
  * A tool's name is whatever the client sent, and the client got it from wherever its tools come
  * from: an MCP server, a plugin, a package. The gateway offers it to Jev as an option and, in
@@ -106,9 +141,10 @@ async function shortlist(
   state: SystemOneRequest<Questions>["state"],
   config: Config,
   askJev: AskJev,
-): Promise<{ tools: RouterTool[]; inputTokens: number }> {
+): Promise<{ tools: RouterTool[]; inputTokens: number } | undefined> {
   const { questions, shards } = buildShortlistQuestions(tools);
   const result = await askJev({ state, questions, model: config.jevModel });
+  if (!validResult(result, questions)) return undefined;
   const kept = shards.flatMap((shard, index) => {
     const answer = result.answers[shardKey(index)];
     if (answer?.type !== "choice") return [];
@@ -134,7 +170,9 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   let plans: ToolPlan[];
   try {
     if (tools.length > MAX_TOOLS) {
-      ({ tools, inputTokens: shortlistTokens } = await shortlist(tools, state, config, askJev));
+      const shortlisted = await shortlist(tools, state, config, askJev);
+      if (!shortlisted) return { mode: "passthrough", reason: "jev_unexpected_answer" };
+      ({ tools, inputTokens: shortlistTokens } = shortlisted);
       if (tools.length === 0) return { mode: "passthrough", reason: "jev_unexpected_answer" };
     }
     const built = buildQuestions(tools, {
@@ -143,6 +181,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     });
     plans = built.plans;
     result = await askJev({ state, questions: built.questions, model: config.jevModel });
+    if (!validResult(result, built.questions)) return { mode: "passthrough", reason: "jev_unexpected_answer" };
   } catch (error) {
     // Fail open: a Jev outage must never take the gateway down with it.
     return { mode: "passthrough", reason: `jev_error: ${error instanceof Error ? error.message : String(error)}` };
