@@ -186,6 +186,7 @@ and return the same answers, so the choice is about whose account and billing yo
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `typesafe-ai/jev` | [Vercel dashboard](https://vercel.com/dashboard/ai-gateway/api-keys) |
 | OpenCode | `OPENCODE_API_KEY` | `jev-1.13-free` | [OpenCode Zen](https://opencode.ai/auth) |
 | OpenJev (local) | `OPENJEV_KEY` (placeholder) | `llama-3.1-8b-instant` | none — runs at `http://localhost:6767` |
+| Laya (local) | `LAYA_API_KEY`, optional | `multilingual` | no key; see [Laya (local, offline)](#laya-local-offline) |
 
 OpenJev is a local System One endpoint ([OpenJev playground](https://github.com/1arley/OpenJev)): it serves
 `POST /v1/systemone`, so no remote key is needed — its own backend (an OpenAI-compatible key such as
@@ -208,6 +209,55 @@ dashboard show which provider is in use.
 
 With no terminal to ask in (CI, scripts), a launcher does not wait for input: it exits and names
 the variables it looked for.
+
+## Laya (local, offline)
+
+[Laya](https://github.com/NandhaKishorM/laya) is a non-autoregressive decision model that answers
+the same typed questions (`choice`, `score`, `noul`) as Jev, and its server — `laya-serve` —
+implements Jev's `/v1/systemone` wire protocol, so it can be a local stand-in for the remote API:
+tool routing keeps working with nothing sent off the machine and no key at all.
+
+Run the server (Python 3.10+), then point the gateway at it:
+
+```bash
+pip install "laya[serve]"
+LAYA_HOST=127.0.0.1 laya-serve          # answers on http://127.0.0.1:8000
+```
+
+```bash
+JEV_PROVIDER=laya jev-codex             # or put it in ~/.jev-gateway/.env ...
+# JEV_PROVIDER=laya in the file, no key line, is enough
+```
+
+`--setup` offers Laya as a fifth choice and saves `JEV_PROVIDER=laya` with no key. A different
+port needs `JEV_URL=http://127.0.0.1:<port>/v1/systemone`; a serve restricted with a bearer key
+takes `LAYA_API_KEY`. Three checkpoints answer, selected as `JEV_MODEL` (default `multilingual`):
+
+| Checkpoint | For |
+| --- | --- |
+| `english` | English, 512-token context |
+| `multilingual` | 100+ languages, 1024 tokens, 2x faster |
+| `typed-decisions` | tool-style typed decisions, 1024 tokens |
+
+What to know before trusting it against the remote Jev:
+
+- **Accuracy is zero-shot.** On Laya's own typed-decisions benchmark the base checkpoint scores
+  0.362 where its fine-tuned one scores 0.766; Jev's API is tuned for tool routing. Measure on your
+  own sessions (baseline mode) before switching.
+- **Short window.** Jev reads 32k tokens; Laya's checkpoints read 512–1024. Long conversations are
+  truncation-heavy, so `direct`, `forced` and `none` decisions ride on less context.
+- **Limits of the serve process.** It refuses a state above 50,000 characters (the gateway's
+  `JEV_MAX_STATE_CHARS` default drops to 50,000 under Laya), more than 64 questions, and a choice
+  over 100 options — so rosters between 100 and 120 tools, which single-pass Jev handles, need the
+  serve started with `LAYA_TOURNAMENT_GROUP=3`. The gateway fails open: an over-limit request goes
+  through untouched as `jev_error:<status>` on the dashboard.
+- **Confidence scale.** Laya's own confidence is normalized entropy; the gateway reads
+  `x_jev_confidence` — Laya's report of Jev's formula — so `JEV_MIN_CONFIDENCE=0.7` and
+  `JEV_ARG_MIN_CERTAINTY=0.8` keep the same meaning they had against Jev. With
+  `LAYA_JEV_STRICT=1` on the serve, that report is absent and Laya's scale applies instead.
+- The TypeSafe and OpenCode paths are run against the real APIs; Laya is wired the same way
+  (provider table, transport, wizard) and unit-tested, but routing quality on a real session has
+  not been measured.
 
 The TypeSafe and OpenCode paths are run against the real APIs. On 2026-09-24, the setup key
 check succeeded with a real OpenCode Zen key for both `jev-1.13-free` and paid `jev-1.13`. This
@@ -596,7 +646,7 @@ list. The ones worth knowing:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY` or `OPENCODE_API_KEY` | one is required | The key for Jev; the launchers ask for it on first run |
-| `JEV_PROVIDER` | whichever key is set | `typesafe`, `openrouter`, `vercel`, `opencode` or `openjev` |
+| `JEV_PROVIDER` | whichever key is set | `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya` |
 | `JEV_MIN_CONFIDENCE` | `0.7` | Below this confidence, the LLM decides. Lower it to route more, raise it to be more careful |
 | `JEV_ARG_MIN_CERTAINTY` | `0.8` | Every argument must reach this for a `direct` answer |
 | `JEV_DIRECT_CALLS` | `true` | Set to `false` so the gateway never answers without the LLM |

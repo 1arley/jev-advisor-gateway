@@ -19,6 +19,8 @@ interface Provider {
   askModel?: boolean;
   /** The upstream ignores Authorization, so the saved "key" is only a placeholder. */
   keyIgnored?: boolean;
+  /** A local service that answers without a key (Laya): setup asks for none, and none is sent. */
+  keyless?: boolean;
 }
 
 /**
@@ -94,10 +96,16 @@ function normalize(result: unknown): SystemOneResult<Questions> {
     const probabilities = isRecord(answer.probabilities)
       ? Object.values(answer.probabilities).filter((value): value is number => typeof value === "number")
       : [];
-    answers[name] =
+    const normalized =
       answer.type !== "noul" && typeof answer.confidence !== "number" && probabilities.length
         ? { ...answer, confidence: Math.max(...probabilities) }
         : answer;
+    // Laya's own confidence is normalized entropy; x_jev_confidence carries Jev's formula, the
+    // scale the gateway's confidence thresholds were tuned around, so it wins when reported.
+    if (typeof answer.confidence === "number" && typeof answer.x_jev_confidence === "number") {
+      (normalized as { confidence: number }).confidence = answer.x_jev_confidence;
+    }
+    answers[name] = normalized;
   }
   return {
     model: result.model,
@@ -112,14 +120,16 @@ export function createAskJev(
   fetchImpl: typeof fetch = fetch,
 ): AskJev {
   const provider = providers[config.jevProvider];
-  if (!config.jevApiKey) {
+  if (!config.jevApiKey && !provider.keyless) {
     throw new Error(`No API key for Jev: set ${provider.keyEnv} (${provider.label}), or run jev-codex --setup.`);
   }
   const once = async (request: SystemOneRequest<Questions>) => {
     const response = await fetchImpl(config.jevUrl, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${config.jevApiKey}`,
+        // A keyless provider answers with no Authorization header; a configured key is still sent,
+        // because laya-serve accepts an optional bearer key of its own.
+        ...(config.jevApiKey ? { authorization: `Bearer ${config.jevApiKey}` } : {}),
         "content-type": "application/json",
         // OpenRouter attributes traffic by these; the others ignore them.
         "http-referer": "https://github.com/1arley/jev-advisor-gateway",
