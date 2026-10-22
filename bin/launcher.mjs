@@ -73,7 +73,8 @@ export async function runLauncher(spec) {
   ${spec.name} --gateway-help     this text (\`--help\` shows ${spec.client}'s own help)
 
 Environment (or ${ENV_FILES.at(-1)}):
-  A key for Jev is required. ${spec.name} asks for it the first time and saves it; it can be
+  A key for Jev is required, except for Laya (a local checkpoint; no key). ${spec.name} asks for
+  it the first time and saves it; it can be
   ${keysList} (JEV_PROVIDER picks when several are set)
   ${spec.portEnv}   router port for ${spec.client} (default ${spec.defaultPort})
   ${spec.upstreamHelp}
@@ -122,7 +123,7 @@ Environment (or ${ENV_FILES.at(-1)}):
     if (configuredProvider(process.env, providers)) return;
     if (process.stdin.isTTY && process.stdout.isTTY) return setup();
     const names = Object.values(providers).map((provider) => provider.keyEnv).join(", ");
-    console.error(`${spec.name}: no API key for Jev. Run \`${spec.name} --setup\` in a terminal, or set one of ${names} (environment or ${envFile}).`);
+    console.error(`${spec.name}: no API key for Jev. Run \`${spec.name} --setup\` in a terminal, or set one of ${names} — or JEV_PROVIDER=laya for a local checkpoint (environment or ${envFile}).`);
     process.exit(1);
   };
 

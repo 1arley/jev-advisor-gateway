@@ -41,5 +41,15 @@
     "model": "llama-3.1-8b-instant",
     "askModel": true,
     "keyIgnored": true
+  },
+  "laya": {
+    "label": "Laya (local)",
+    "note": "a local Laya checkpoint on your machine: offline, no key needed",
+    "keyEnv": "LAYA_API_KEY",
+    "keyUrl": "https://nandhakishorm.github.io/laya/",
+    "url": "http://127.0.0.1:8000/v1/systemone",
+    "model": "multilingual",
+    "models": ["english", "multilingual", "typed-decisions"],
+    "keyless": true
   }
 }

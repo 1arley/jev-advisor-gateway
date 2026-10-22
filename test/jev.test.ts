@@ -118,6 +118,40 @@ describe("asking Jev", () => {
   });
 });
 
+describe("asking Laya locally", () => {
+  const answer = { model: "m", answers: { tool: { type: "choice", choice: "a", confidence: 0.5, x_jev_confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } }, needs_tool: { type: "noul", noul: 0.9 } }, usage: { input_tokens: 10, output_tokens: 0 } };
+
+  it("answers with no key at all, and sends no Authorization header unless one is configured", async () => {
+    const keyless = loadConfig({ JEV_PROVIDER: "laya" });
+    expect(keyless).toMatchObject({ jevProvider: "laya", jevApiKey: undefined, jevModel: "multilingual", jevUrl: "http://127.0.0.1:8000/v1/systemone", maxStateChars: 50_000 });
+    const { calls, fetchImpl } = capture(() => Response.json(answer));
+    const result = await createAskJev(keyless, fetchImpl)(request);
+    expect(calls[0]!.headers.get("authorization")).toBeNull();
+    // x_jev_confidence stands in for Laya's entropy confidence: it is the scale the thresholds count on.
+    expect(result.answers.tool).toMatchObject({ choice: "a", confidence: 0.9 });
+    expect(result.answers.needs_tool).toMatchObject({ noul: 0.9 });
+
+    const withKey = loadConfig({ JEV_PROVIDER: "laya", LAYA_API_KEY: "k" });
+    const keyed = capture(() => Response.json(answer));
+    await createAskJev(withKey, keyed.fetchImpl)(request);
+    expect(keyed.calls[0]!.headers.get("authorization")).toBe("Bearer k");
+  });
+
+  it("pins JEV_MODEL to a checkpoint Laya actually serves", () => {
+    expect(resolveModel("laya", undefined)).toBe("multilingual");
+    expect(resolveModel("laya", "english")).toBe("english");
+    expect(resolveModel("laya", "typed-decisions")).toBe("typed-decisions");
+    expect(resolveModel("laya", "jev-latest")).toBe("multilingual");
+    expect(resolveModel("laya", "typesafe/jev-1.13")).toBe("multilingual");
+  });
+
+  it("names the local checkpoint in the config when only an optional key is present", () => {
+    expect(resolveProvider({ LAYA_API_KEY: "k" })).toBe("laya");
+    expect(resolveProvider({ TYPESAFE_API_KEY: "k", LAYA_API_KEY: "k" })).toBe("typesafe");
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_URL: "http://127.0.0.1:9200/" }).jevUrl).toBe("http://127.0.0.1:9200/");
+  });
+});
+
 describe("OpenCode model availability", () => {
   const answer = { model: "m", answers: { tool: { type: "choice", choice: "a", confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } } }, usage: { input_tokens: 10, output_tokens: 0 } };
 

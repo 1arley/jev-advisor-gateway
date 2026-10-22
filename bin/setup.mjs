@@ -18,7 +18,8 @@ const present = (env, name) => Boolean(env[name]?.trim());
 export function configuredProvider(env, providers) {
   const chosen = env.JEV_PROVIDER?.trim().toLowerCase();
   const id = chosen && providers[chosen] ? chosen : Object.keys(providers).find((name) => present(env, providers[name].keyEnv));
-  return id && present(env, providers[id].keyEnv) ? id : undefined;
+  // A keyless provider counts once it is named: it answers without a key of its own.
+  return id && (present(env, providers[id].keyEnv) || providers[id].keyless) ? id : undefined;
 }
 
 /** Set `values` in the text of a .env file, replacing lines that exist and keeping everything else. */
@@ -85,9 +86,22 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
     id = ids[Number(answer) - 1] ?? ids.find((candidate) => candidate === answer.toLowerCase());
     if (!id) io.print(`Please answer with a number from 1 to ${ids.length}.`);
   }
-  const provider = providers[id];
-  if (provider.keyUrl) io.print(`\nGet a key at ${provider.keyUrl}`);
+  let provider = providers[id];
+  const keyless = Boolean(provider.keyless);
+  if (keyless) io.print(`\n${provider.label} needs no key: it runs on your machine (docs: ${provider.keyUrl}).`);
+  else if (provider.keyUrl) io.print(`\nGet a key at ${provider.keyUrl}`);
   else io.print(`\n${provider.label} needs no remote key; what you enter below is only a placeholder.`);
+
+  // A keyless provider runs where the user started it: Enter takes the served default, and a custom
+  // one gets JEV_URL. A base URL is completed, because the gateway's JEV_URL is the full endpoint.
+  let layaUrl;
+  if (keyless) {
+    const answer = (await io.ask(`Laya URL [${provider.url}]: `)).trim().replace(/\/+$/, "");
+    if (answer) {
+      layaUrl = answer.endsWith("/v1/systemone") ? answer : `${answer}/v1/systemone`;
+      provider = { ...provider, url: layaUrl };
+    }
+  }
 
   let model = provider.model;
   if (provider.askModel) {
@@ -96,13 +110,19 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
   }
   for (let attempt = 1; attempt <= 3; attempt++) {
     const keyPrompt = provider.keyIgnored ? "Paste anything as the key (input is hidden; it is ignored): " : `Paste your ${provider.label} API key (input is hidden): `;
-    const key = (await io.askSecret(keyPrompt)).trim();
-    if (!key) {
+    let key = keyless ? "" : (await io.askSecret(keyPrompt)).trim();
+    if (!key && !keyless) {
       io.print("Nothing entered. Run this again whenever you have a key.");
       return undefined;
     }
-    io.print("Checking the key with Jev…");
+    io.print(keyless ? "Checking that Laya answers…" : "Checking the key with Jev…");
     let result = await validate({ ...provider, model }, key);
+    if (keyless && result.refused) {
+      // The serve was started with LAYA_API_KEY, so it wants the bearer key this wizard never asked for.
+      key = (await io.askSecret(`laya-serve asks for a bearer key (it was started with LAYA_API_KEY). Paste it (input is hidden): `)).trim();
+      io.print("Checking that Laya answers…");
+      result = await validate({ ...provider, model }, key);
+    }
     if (result.freeUnavailable && provider.paidModel) {
       const paid = (await io.ask(`Use paid ${provider.paidModel} for Jev? Its key check may be billed. [y/N]: `)).trim().toLowerCase();
       if (paid === "y" || paid === "yes") {
@@ -118,15 +138,19 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
       continue;
     }
     if (!result.ok) {
-      io.print(`Could not check the key: ${result.reason}`);
+      io.print(keyless
+        ? `Laya did not answer: ${result.reason}. Start it with: pip install "laya[serve]" && laya-serve`
+        : `Could not check the key: ${result.reason}`);
       const keep = (await io.ask("Save it anyway? [y/N]: ")).trim().toLowerCase();
       if (keep !== "y" && keep !== "yes") return undefined;
     } else if (result.paidModel) {
       io.print(`The key works with paid ${result.paidModel}; the free model is unavailable.`);
     } else {
-      io.print(`The key works (Jev answered in ${result.ms} ms).`);
+      io.print(keyless ? `Laya answered in ${result.ms} ms.` : `The key works (Jev answered in ${result.ms} ms).`);
     }
-    const values = { JEV_PROVIDER: id, [provider.keyEnv]: key };
+    const values = { JEV_PROVIDER: id };
+    if (key) values[provider.keyEnv] = key;
+    if (layaUrl) values.JEV_URL = layaUrl;
     if (provider.paidModel || provider.askModel) values.JEV_MODEL = model;
     save(envFile, values);
     io.print(`Saved to ${envFile}. Change it any time with \`${name} --setup\`.\n`);

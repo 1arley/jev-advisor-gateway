@@ -22,7 +22,7 @@ export interface Config {
   headroomUrl?: string;
   headroomMode: "off" | "shadow" | "compress";
   headroomTimeoutMs: number;
-  /** Who serves Jev: TypeSafe itself, or a gateway that resells it. */
+  /** Who serves Jev: TypeSafe itself, a gateway that resells it, or a local Laya checkpoint. */
   jevProvider: ProviderId;
   /** The key for that provider; the launchers ask for it when it is missing. */
   jevApiKey?: string;
@@ -135,7 +135,9 @@ export function loadConfig(env: Env = process.env): Config {
     // Synthetic Responses IDs are not known to Codex's upstream history store.
     directCalls: client === "codex" ? false : bool(env, "JEV_DIRECT_CALLS", true),
     routing: bool(env, "JEV_ROUTING", true),
-    maxStateChars: num(env, "JEV_MAX_STATE_CHARS", 60_000),
+    // laya-serve refuses a state above 50,000 characters; the laya default keeps under it so no
+    // request goes unrouted for size.
+    maxStateChars: num(env, "JEV_MAX_STATE_CHARS", jevProvider === "laya" ? 50_000 : 60_000),
     maxMessageChars: num(env, "JEV_MAX_MESSAGE_CHARS", 4_000),
     debugDumpDir: str(env, "JEV_DEBUG_DUMP_DIR"),
     client,

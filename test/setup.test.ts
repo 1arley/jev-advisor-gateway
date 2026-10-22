@@ -33,6 +33,11 @@ describe("configuredProvider", () => {
     expect(configuredProvider({ JEV_PROVIDER: "openrouter", TYPESAFE_API_KEY: "k" }, providers)).toBeUndefined();
     expect(configuredProvider({ TYPESAFE_API_KEY: "  " }, providers)).toBeUndefined();
   });
+
+  it("counts a named keyless provider with no key, because it answers without one", () => {
+    expect(configuredProvider({ JEV_PROVIDER: "laya" }, providers)).toBe("laya");
+    expect(configuredProvider({}, providers)).toBeUndefined();
+  });
 });
 
 describe("runSetup", () => {
@@ -68,6 +73,45 @@ describe("runSetup", () => {
     expect(checked).toEqual([["OpenJev", "llama-3.1-8b-instant", "local"]]);
     expect(saved).toEqual([[envFile, values]]);
     expect(user.printed.join("\n")).toContain("needs no remote key");
+  });
+
+  it("sets a keyless provider up with no key prompt, checking that the service answers", async () => {
+    const user = script(["laya", ""]);
+    const checked: unknown[] = [];
+    const values = await runSetup({
+      name: "jev-codex", providers, envFile, io: user.io,
+      validate: async (provider: { label: string }, key: string) => (checked.push([provider.label, key]), { ok: true, ms: 33 }),
+      save: () => {},
+    });
+    expect(values).toEqual({ JEV_PROVIDER: "laya" });
+    expect(checked).toEqual([["Laya (local)", ""]]);
+    expect(user.printed.join("\n")).toContain("needs no key");
+    expect(user.printed.join("\n")).toContain("Laya answered");
+    // No secret was ever asked for.
+    expect(user.printed.join("\n")).not.toContain("(input is hidden)");
+  });
+
+  it("completes a base URL into the systemone endpoint and saves it as JEV_URL", async () => {
+    const seen: string[] = [];
+    const values = await runSetup({
+      name: "x", providers, envFile, io: script(["laya", "http://127.0.0.1:9200"]).io,
+      validate: async (provider: { url: string }) => (seen.push(provider.url), { ok: true, ms: 1 }),
+      save: () => {},
+    });
+    expect(seen).toEqual(["http://127.0.0.1:9200/v1/systemone"]);
+    expect(values).toEqual({ JEV_PROVIDER: "laya", JEV_URL: "http://127.0.0.1:9200/v1/systemone" });
+  });
+
+  it("asks for the serve's bearer key only when laya-serve refuses the keyless check", async () => {
+    const user = script(["laya", "", "serve-key"]);
+    const checked: unknown[] = [];
+    const values = await runSetup({
+      name: "x", providers, envFile, io: user.io,
+      validate: async (_provider: unknown, key: string) => (checked.push(key), key === "serve-key" ? { ok: true, ms: 4 } : { ok: false, refused: true, reason: "401" }),
+      save: () => {},
+    });
+    expect(checked).toEqual(["", "serve-key"]);
+    expect(values).toEqual({ JEV_PROVIDER: "laya", LAYA_API_KEY: "serve-key" });
   });
 
   it("defaults to TypeSafe and lets a refused key be retried", async () => {
