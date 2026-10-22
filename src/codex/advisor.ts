@@ -232,15 +232,20 @@ const chatAdvisor: Advisor<ChatRequest> = {
     model: config.advisorModel,
     messages: [
       { role: "system", content: ADVISOR_INSTRUCTIONS },
+      // Keep tool results out: only the conversation itself reaches the advisor, and this is the
+      // note-carrying format the gateway points at arbitrary OpenAI-compatible upstreams.
       ...req.messages.filter((message) => ["user", "assistant"].includes(message.role) && message.content != null),
       { role: "user", content: advisorPrompt(session) },
     ],
     stream: true,
     max_tokens: config.advisorMaxOutputTokens,
   }),
+  // A `user` turn, not `developer`: this is the only advisor note sent to arbitrary
+  // OpenAI-compatible upstreams, some of which reject the newer `developer` role — and a
+  // passthrough body carries no upstream-rejection fallback back to the original bytes.
   append: (req, note) => ({
     ...req,
-    messages: [...req.messages, { role: "developer", content: asNote(note) }],
+    messages: [...req.messages, { role: "user", content: asNote(note) }],
   }),
   text: (body) => {
     try {
