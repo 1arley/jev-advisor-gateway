@@ -155,6 +155,10 @@ You will see:
   its 5m and 1h rates, with a model's long-context tier applied to a call that passes its threshold —
   covering the current GPT and Claude models; a model not in the table shows tokens only. Set
   `JEV_ADVISOR_MODEL` to any model the upstream serves.
+- **A routing accuracy tile:** of the requests where Jev picked a tool, the share whose reply
+  actually called that tool (hover over a row's Tool cell to see which one it was). Requests where
+  Jev said no tool was needed count as hits when the reply called nothing. This is your per-session
+  evidence for tuning: baseline before changing a threshold and check whether the number moves.
 - **A live table** of recent requests. A request appears when its reply finishes, because that is
   when the provider reports its tokens.
 
@@ -197,7 +201,8 @@ placeholder that marks the provider as configured.
 OpenCode serves two ids at the same endpoint: `jev-1.13-free` (free,
 [for a limited time](https://opencode.ai/docs/zen/#jev)) and the paid `jev-1.13`. The gateway
 defaults to the free one. If OpenCode says the free model is gone (404 or 410), the request goes
-to the LLM unchanged. The reason names `JEV_MODEL=jev-1.13`, which opts into the paid model.
+to the LLM unchanged. The reason is the stable code `jev_http_404` or `jev_http_410`, which the
+dashboard explains; that code is the cue to set `JEV_MODEL=jev-1.13` and opt into the paid model.
 The setup wizard offers to save that setting if only the paid model answers its key check.
 
 `jev-codex --setup` (or any other launcher) switches between them and restarts the gateway with the
@@ -250,11 +255,22 @@ What to know before trusting it against the remote Jev:
   `JEV_MAX_STATE_CHARS` default drops to 50,000 under Laya), more than 64 questions, and a choice
   over 100 options — so rosters between 100 and 120 tools, which single-pass Jev handles, need the
   serve started with `LAYA_TOURNAMENT_GROUP=3`. The gateway fails open: an over-limit request goes
-  through untouched as `jev_error:<status>` on the dashboard.
+  through untouched with a stable reason code (`jev_http_<status>`), which the dashboard explains
+  instead of printing the serve's raw error text.
+- **Warm-up.** The serve loads a checkpoint on its first question, which takes seconds. When the
+  gateway starts with `JEV_PROVIDER=laya`, it fires one warm-up ping at startup so the load happens
+  before your first real turn.
 - **Confidence scale.** Laya's own confidence is normalized entropy; the gateway reads
   `x_jev_confidence` — Laya's report of Jev's formula — so `JEV_MIN_CONFIDENCE=0.7` and
   `JEV_ARG_MIN_CERTAINTY=0.8` keep the same meaning they had against Jev. With
   `LAYA_JEV_STRICT=1` on the serve, that report is absent and Laya's scale applies instead.
+- **Which checkpoint.** The default stays `multilingual`: a 6-question synthetic measurement
+  (`scripts/laya-checkpoints.mjs`, against a real serve) scored `typed-decisions` 3 to 2, but its
+  confidence came out degenerate (0.05–0.28 — nothing clears `JEV_MIN_CONFIDENCE=0.7`) and it was
+  2.4x slower. Synthetic fixtures are a small, self-authored sample; if you want to compare the
+  checkpoints on your own sessions, run the script and then watch the "Routing accuracy" tile on
+  the dashboard. Switching `JEV_MODEL` remains your call; the default would change only on
+  real-session evidence.
 - The TypeSafe and OpenCode paths are run against the real APIs; Laya is wired the same way
   (provider table, transport, wizard) and unit-tested, but routing quality on a real session has
   not been measured.
@@ -683,14 +699,20 @@ pinned service remains a separate gate. Timeout, service error, redirects, malfo
 responses fall back to the body already prepared by the router/advisor. No retry is made. Headroom
 receives no upstream authorization or other upstream headers.
 
-Both modes send the tool result to the local service. Keep the feature `off` until the pinned
-Headroom version has passed synthetic checks and its persistence, telemetry, remote calls and CCR
-behavior have been audited. This is an operational requirement, not a runtime-enforced lock: if an
-operator configures `shadow` or `compress`, eligible content is sent to the configured service.
-The repository tests use a fake service; they do not prove compression or semantic fidelity against
-Headroom v0.41.0. Until that service-level gate is complete, use only synthetic fixtures. Headroom
-log fields contain only mode/result, latency and token counts, never the result text, headers or
-credentials.
+Both modes send the tool result to the local service. The pinned-service gate (Headroom v0.41.0,
+2026-10-22) is complete: the response shape, `tool_call_id` preservation, two sequential
+continuations and the absence of CCR markers and writes on disk all check out, and the service's
+beacon is confirmed on by default (an operator running the proxy needs `HEADROOM_BEACON=off`,
+`DO_NOT_TRACK=1` or `HEADROOM_OFFLINE=1` to keep it quiet). One finding shaped the default: for
+the eligible case the gateway sends — a single textual `function_call_output` that is one complete
+JSON document — v0.41.0's protected-JSON guard and its read protection return the content
+unchanged (`router:noop`), so `compress` has nothing to apply on today's traffic; reduction was
+observed only on truncated JSON log streams, with fidelity sentinels preserved (details in
+`decision-record.md`). The repository tests use a fake service; they do not prove compression or
+semantic fidelity against Headroom v0.41.0. Headroom log fields contain only mode/result, latency
+and token counts, never the result text, headers or credentials.
+Configuring `shadow` or `compress` sends eligible content to the configured service; that is
+operational, not enforced by the code. `decision-record.md` has the full validation and audit.
 
 ## Known trade-offs
 
