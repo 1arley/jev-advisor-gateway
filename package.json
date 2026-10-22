@@ -1,6 +1,6 @@
 {
   "name": "jev-advisor-gateway",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Local gateway that routes coding-agent tool decisions through Jev and can attach a read-only advisor (GPT or Claude).",
   "keywords": [
     "llm",
