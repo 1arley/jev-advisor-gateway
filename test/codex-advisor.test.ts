@@ -1,11 +1,45 @@
 import { describe, expect, it } from "vitest";
 import { advisorFor, appendAdvisorNote, buildAdvisorRequest, consultAdvisor, extractAdvisorText } from "../src/codex/advisor.js";
 import { responsesAdapter } from "../src/adapters/responses.js";
+import { chatAdapter } from "../src/adapters/chat.js";
 import { createApp } from "../src/app.js";
 import { createEventLog } from "../src/events.js";
 import { NO_TOOL } from "../src/questions.js";
 import { addRecent, createSessionStore, readResponseId, type SessionState } from "../src/codex/session-state.js";
 import { fakeJev, fakeUpstream, settled, testConfig } from "./helpers.js";
+
+describe("OpenAI Chat Completions advisor", () => {
+  it("sends only conversation messages and parses JSON and streamed replies", () => {
+    const advisor = advisorFor(chatAdapter)!;
+    const request = advisor.request({
+      model: "jev-gateway/gpt-5",
+      messages: [
+        { role: "system", content: "agent system prompt" },
+        { role: "user", content: "Fix the failing test" },
+        { role: "assistant", content: "I will inspect the test." },
+        { role: "tool", content: "secret tool result" },
+      ],
+    }, testConfig({ advisorModel: "gpt-6-astra" }), {
+      recent: ["tool result: test failed"], lastAdvisorAt: 0, advisorCalls: 0,
+    }) as any;
+
+    expect(request).toMatchObject({ model: "gpt-6-astra", stream: true });
+    expect(request.messages.map((message: { role: string }) => message.role)).toEqual(["system", "user", "assistant", "user"]);
+    expect(JSON.stringify(request)).not.toContain("agent system prompt");
+    expect(JSON.stringify(request)).not.toContain("secret tool result");
+    expect(advisor.text('{"choices":[{"message":{"content":"Check the assertion."}}]}')).toBe("Check the assertion.");
+    expect(advisor.text('data: {"choices":[{"delta":{"content":"Check "}}]}\ndata: {"choices":[{"delta":{"content":"the assertion."}}]}\ndata: [DONE]\n')).toBe("Check the assertion.");
+  });
+
+  it("appends the note as a user turn, not a developer role", () => {
+    const advisor = advisorFor(chatAdapter)!;
+    const appended = advisor.append({ model: "m", messages: [{ role: "user", content: "hi" }] } as any, "Consider the retry path.");
+    expect((appended as any).messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: expect.stringContaining("Untrusted read-only advisor note") },
+    ]);
+  });
+});
 
 describe("Codex advisor request", () => {
   it("branches from the Luna response without exposing tools or replacing the main chain", () => {

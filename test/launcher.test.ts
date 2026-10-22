@@ -20,6 +20,7 @@ interface LauncherSpec {
 }
 
 const opencode = clients.opencode as LauncherSpec;
+const opencodeAdvisor = clients.opencodeAdvisor as LauncherSpec;
 const codex = clients.codex as LauncherSpec;
 const codexAdvisor = clients.codexAdvisor as LauncherSpec;
 const claude = clients.claude as LauncherSpec;
@@ -214,5 +215,19 @@ describe("existing launchers", () => {
     expect(claude.defaultPort).toBe(8789);
     expect(claude.upstream()).toBe("https://api.anthropic.com/v1");
     expect(claude.env!(origin)).toEqual({ ANTHROPIC_BASE_URL: origin });
+  });
+});
+
+describe("OpenCode advisor launcher", () => {
+  it("uses a separate port and enables the advisor for OpenCode", () => {
+    expect(opencodeAdvisor.name).toBe("jev-opencode-advisor");
+    expect(opencodeAdvisor.client).toBe("opencode");
+    expect(opencodeAdvisor.portEnv).toBe("JEV_OPENCODE_ADVISOR_PORT");
+    expect(opencodeAdvisor.defaultPort).not.toBe(opencode.defaultPort);
+    expect(opencodeAdvisor.gatewayEnv).toEqual({ JEV_ADVISOR: "on" });
+
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as any;
+    expect(pkg.bin["jev-opencode-advisor"]).toBe("bin/jev-opencode-advisor.mjs");
+    expect(pkg.scripts["opencode-advisor"]).toBe("node bin/jev-opencode-advisor.mjs");
   });
 });

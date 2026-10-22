@@ -55,7 +55,7 @@ describe("Claude advisor request", () => {
 
   it("offers the advisor only to the formats it can speak", () => {
     expect(advisorFor(messagesAdapter)).toBeDefined();
-    expect(advisorFor(chatAdapter)).toBeUndefined();
+    expect(advisorFor(chatAdapter)).toBeDefined();
   });
 });
 

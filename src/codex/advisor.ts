@@ -1,10 +1,12 @@
 import type { Adapter } from "../adapters/adapter.js";
+import { chatAdapter } from "../adapters/chat.js";
 import { messagesAdapter, type MessagesRequest } from "../adapters/messages.js";
 import { responsesAdapter, type ResponsesRequest } from "../adapters/responses.js";
 import type { Config } from "../config.js";
 import { summarizeResponse } from "../debug.js";
 import { forward } from "../upstream.js";
 import { readUsage, type Usage } from "../usage.js";
+import type { ChatRequest } from "../types.js";
 import type { SessionState } from "./session-state.js";
 
 /**
@@ -225,9 +227,50 @@ const messagesAdvisor: Advisor<MessagesRequest> = {
   append: appendMessagesAdvisorNote,
   text: extractMessagesAdvisorText,
 };
+const chatAdvisor: Advisor<ChatRequest> = {
+  request: (req, config, session) => ({
+    model: config.advisorModel,
+    messages: [
+      { role: "system", content: ADVISOR_INSTRUCTIONS },
+      // Keep tool results out: only the conversation itself reaches the advisor, and this is the
+      // note-carrying format the gateway points at arbitrary OpenAI-compatible upstreams.
+      ...req.messages.filter((message) => ["user", "assistant"].includes(message.role) && message.content != null),
+      { role: "user", content: advisorPrompt(session) },
+    ],
+    stream: true,
+    max_tokens: config.advisorMaxOutputTokens,
+  }),
+  // A `user` turn, not `developer`: this is the only advisor note sent to arbitrary
+  // OpenAI-compatible upstreams, some of which reject the newer `developer` role — and a
+  // passthrough body carries no upstream-rejection fallback back to the original bytes.
+  append: (req, note) => ({
+    ...req,
+    messages: [...req.messages, { role: "user", content: asNote(note) }],
+  }),
+  text: (body) => {
+    try {
+      const content = JSON.parse(body).choices?.[0]?.message?.content;
+      if (typeof content === "string") return bounded(content);
+    } catch {
+      // Streaming Chat Completions arrive as SSE rather than one JSON object.
+    }
+    const chunks: string[] = [];
+    for (const line of body.split(/\r?\n/)) {
+      if (!line.startsWith("data:") || line.slice(5).trim() === "[DONE]") continue;
+      try {
+        const content = JSON.parse(line.slice(5)).choices?.[0]?.delta?.content;
+        if (typeof content === "string") chunks.push(content);
+      } catch {
+        // Ignore non-JSON SSE frames; the gateway fails open if no text was returned.
+      }
+    }
+    return bounded(chunks.join(""));
+  },
+};
 
 /** The advisor for this wire format, or none: only the formats it has a request shape for. */
 export function advisorFor<Req extends { model?: string; stream?: boolean }>(adapter: Adapter<Req>): Advisor<Req> | undefined {
+  if (adapter === (chatAdapter as unknown as Adapter<Req>)) return chatAdvisor as unknown as Advisor<Req>;
   if (adapter === responsesAdapter) return responsesAdvisor as unknown as Advisor<Req>;
   if (adapter === messagesAdapter) return messagesAdvisor as unknown as Advisor<Req>;
   return undefined;
