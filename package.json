@@ -39,6 +39,7 @@
     "jev-claude": "bin/jev-claude.mjs",
     "jev-claude-advisor": "bin/jev-claude-advisor.mjs",
     "jev-opencode": "bin/jev-opencode.mjs",
+    "jev-opencode-advisor": "bin/jev-opencode-advisor.mjs",
     "jev-gemini": "bin/jev-gemini.mjs",
     "jev-devin": "bin/jev-devin.mjs",
     "jev-kilo": "bin/jev-kilo.mjs"
@@ -62,6 +63,7 @@
     "claude": "node bin/jev-claude.mjs",
     "claude-advisor": "node bin/jev-claude-advisor.mjs",
     "opencode": "node bin/jev-opencode.mjs",
+    "opencode-advisor": "node bin/jev-opencode-advisor.mjs",
     "kilo": "node bin/jev-kilo.mjs",
     "gemini": "node bin/jev-gemini.mjs",
     "devin": "node bin/jev-devin.mjs",

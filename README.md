@@ -53,6 +53,7 @@ codex-jev-advisor        # alias for jev-codex-advisor
 jev-claude-advisor       # Claude Code: Haiku coding + Opus advisor
 jev-claude     # use it exactly like `claude`
 jev-opencode   # use it exactly like `opencode` (stable v1)
+jev-opencode-advisor # OpenCode with the read-only advisor enabled
 jev-kilo       # Kilo CLI, on free models unless KILO_API_KEY is set
 jev-gemini     # Gemini CLI, with a Gemini API key
 jev-devin      # use it exactly like `devin`
@@ -101,8 +102,8 @@ gateway.
 
 ## Commands
 
-All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-kilo`, `jev-gemini` and
-`jev-devin`.
+All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-opencode-advisor`,
+`jev-kilo`, `jev-gemini` and `jev-devin`.
 
 | Command | What it does |
 | --- | --- |
@@ -110,7 +111,8 @@ All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-kilo`, `j
 | `jev-codex --dashboard` | Open the monitoring dashboard in your browser |
 | `jev-codex --routing off` | Baseline mode: stop asking Jev, keep counting tokens |
 | `jev-codex --routing on` | Let Jev decide again |
-| `jev-codex --advisor on` / `--advisor off` | Consult, or not, the read-only advisor on uncertain turns (Codex and Claude launchers only) |
+| `jev-codex --advisor on` / `--advisor off` | Consult, or not, the read-only advisor on uncertain turns |
+| `jev-opencode-advisor` | OpenCode with the read-only advisor enabled |
 | `jev-codex --status` | Is the gateway running, and where does it forward to? |
 | `jev-codex --logs` | Follow routing decisions live (use a second terminal) |
 | `jev-codex --start` | Start the gateway without opening the agent |
@@ -120,9 +122,9 @@ All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-kilo`, `j
 | `jev-codex --gateway-help` | List all of the above |
 
 Default ports: `jev-codex-advisor` 8790, plain `jev-codex` 8794, `jev-claude` 8789,
-`jev-claude-advisor` 8788, OpenCode 8791, Gemini 8788, Devin 8792 and Kilo 8793. Change them with
+`jev-claude-advisor` 8788, OpenCode 8791, Gemini 8788, Devin 8792, Kilo 8793 and OpenCode advisor 8795. Change them with
 `JEV_CODEX_PORT`, `JEV_CODEX_BASIC_PORT`, `JEV_CLAUDE_PORT`, `JEV_CLAUDE_ADVISOR_PORT`,
-`JEV_OPENCODE_PORT`, `JEV_GEMINI_PORT`, `JEV_DEVIN_PORT` and `JEV_KILO_PORT`. `jev-claude-advisor`
+`JEV_OPENCODE_PORT`, `JEV_OPENCODE_ADVISOR_PORT`, `JEV_GEMINI_PORT`, `JEV_DEVIN_PORT` and `JEV_KILO_PORT`. `jev-claude-advisor`
 and `jev-gemini` share the default 8788: set one of the two variables if you run both at once.
 
 ## Dashboard
@@ -369,6 +371,7 @@ jev-opencode --dashboard      # open the monitoring dashboard in your browser
 | `JEV_OPENCODE_UPSTREAM_BASE_URL` | `https://api.openai.com/v1` | Where the gateway forwards OpenCode traffic: your LLM provider, not the TypeSafe endpoint |
 | `JEV_OPENCODE_MODEL` | `gpt-5` | Model selected as `jev-gateway/<model>` |
 | `JEV_OPENCODE_PORT` | `8791` | Router port for OpenCode |
+| `JEV_OPENCODE_ADVISOR_PORT` | `8795` | Router port for OpenCode with advisor |
 | `JEV_OPENCODE_CHECK` | on | `off` skips asking OpenCode which agents bypass the gateway, which saves about a second at start-up |
 
 The gateway forwards the client's `Authorization` header to the LLM upstream. A launcher-spawned
