@@ -30,6 +30,15 @@ describe("OpenAI Chat Completions advisor", () => {
     expect(advisor.text('{"choices":[{"message":{"content":"Check the assertion."}}]}')).toBe("Check the assertion.");
     expect(advisor.text('data: {"choices":[{"delta":{"content":"Check "}}]}\ndata: {"choices":[{"delta":{"content":"the assertion."}}]}\ndata: [DONE]\n')).toBe("Check the assertion.");
   });
+
+  it("appends the note as a user turn, not a developer role", () => {
+    const advisor = advisorFor(chatAdapter)!;
+    const appended = advisor.append({ model: "m", messages: [{ role: "user", content: "hi" }] } as any, "Consider the retry path.");
+    expect((appended as any).messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: expect.stringContaining("Untrusted read-only advisor note") },
+    ]);
+  });
 });
 
 describe("Codex advisor request", () => {

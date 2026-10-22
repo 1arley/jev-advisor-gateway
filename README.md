@@ -3,8 +3,8 @@
 A local gateway that keeps your session model on the session, asks [Jev](https://docs.typesafe.ai/introduction)
 to route tool decisions, and can consult a read-only advisor when Jev sees uncertainty, a planning
 checkpoint, or repeated failure. The advisor is not tied to Codex or to GPT: `jev-codex-advisor`
-pairs GPT-6 Luna with a GPT advisor, and `jev-claude-advisor` pairs Haiku with Opus. The client's own
-login and upstream remain in use.
+pairs GPT-6 Luna with a GPT advisor, `jev-claude-advisor` pairs Haiku with Opus, and
+`jev-opencode-advisor` pairs any OpenAI-compatible upstream with a Chat Completions advisor. The client's own login and upstream remain in use.
 
 The launchers cover Codex, Claude Code, OpenCode, Kilo, Gemini and Devin. The project began as a fork
 of [jev-gateway](https://github.com/vinilana/jev-gateway) by Vinicius Lana (MIT); the advisor and the
@@ -122,8 +122,8 @@ All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-opencode-
 | `jev-codex --gateway-help` | List all of the above |
 
 Default ports: `jev-codex-advisor` 8790, plain `jev-codex` 8794, `jev-claude` 8789,
-`jev-claude-advisor` 8788, OpenCode 8791, Gemini 8788, Devin 8792, Kilo 8793 and OpenCode advisor 8795. Change them with
-`JEV_CODEX_PORT`, `JEV_CODEX_BASIC_PORT`, `JEV_CLAUDE_PORT`, `JEV_CLAUDE_ADVISOR_PORT`,
+`jev-claude-advisor` 8788, `jev-opencode-advisor` 8795, OpenCode 8791, Gemini 8788, Devin 8792 and
+Kilo 8793. Change them with `JEV_CODEX_PORT`, `JEV_CODEX_BASIC_PORT`, `JEV_CLAUDE_PORT`, `JEV_CLAUDE_ADVISOR_PORT`,
 `JEV_OPENCODE_PORT`, `JEV_OPENCODE_ADVISOR_PORT`, `JEV_GEMINI_PORT`, `JEV_DEVIN_PORT` and `JEV_KILO_PORT`. `jev-claude-advisor`
 and `jev-gemini` share the default 8788: set one of the two variables if you run both at once.
 

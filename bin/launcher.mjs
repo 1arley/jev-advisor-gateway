@@ -239,7 +239,7 @@ Environment (or ${ENV_FILES.at(-1)}):
   }
   if (flag === "--advisor") {
     const wanted = process.argv[3];
-    if (!advisorCapable) return console.error(`${spec.name}: --advisor is only available for Codex and Claude.`);
+    if (!advisorCapable) return console.error(`${spec.name}: --advisor is only available for Codex, Claude and OpenCode.`);
     if (wanted !== "on" && wanted !== "off") return console.error(`usage: ${spec.name} --advisor on|off`);
     await ensureRouter();
     const key = process.env.ROUTER_API_KEY ? `&key=${encodeURIComponent(process.env.ROUTER_API_KEY)}` : "";
