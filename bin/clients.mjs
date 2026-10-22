@@ -283,6 +283,15 @@ export const opencode = {
     );
   },
 };
+export const opencodeAdvisor = {
+  ...opencode,
+  name: "jev-opencode-advisor",
+  portEnv: "JEV_OPENCODE_ADVISOR_PORT",
+  defaultPort: 8795,
+  state: "opencode-advisor",
+  gatewayEnv: { JEV_ADVISOR: "on" },
+};
+
 export const devin = {
   name: "jev-devin",
   client: "devin",

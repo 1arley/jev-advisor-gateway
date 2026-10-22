@@ -50,8 +50,8 @@ export async function runLauncher(spec) {
   const state = spec.state ?? spec.client;
   const logFile = join(STATE_DIR, `${state}.log`);
   const pidFile = join(STATE_DIR, `${state}.pid`);
-  // The wire formats the advisor can speak: Codex (responses) and Claude (messages).
-  const advisorCapable = spec.client === "codex" || spec.client === "claude";
+  // Wire formats the advisor can speak: Chat Completions, Codex Responses, and Claude Messages.
+  const advisorCapable = ["codex", "claude", "opencode"].includes(spec.client);
 
   const providers = loadProviders(ROOT);
   const providerLabels = Object.values(providers).map((p) => p.label).join(", ");
@@ -63,7 +63,7 @@ export async function runLauncher(spec) {
   ${spec.name} [${spec.client} args]    start the gateway if needed, then run ${spec.client} through it
   ${spec.name} --dashboard        open the monitoring dashboard in your browser
   ${spec.name} --routing on|off   off = baseline mode: stop asking Jev, keep counting tokens
-  ${spec.name} --advisor on|off   consult the read-only advisor on uncertain turns (Codex and Claude)
+  ${spec.name} --advisor on|off   consult the read-only advisor on uncertain turns (supported clients)
   ${spec.name} --status           is the gateway running, and where does it forward to?
   ${spec.name} --logs             follow routing decisions live (use a second terminal)
   ${spec.name} --start            start the gateway without opening ${spec.client}
