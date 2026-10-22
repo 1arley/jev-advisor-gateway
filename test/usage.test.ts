@@ -2,13 +2,61 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { frame } from "../src/proto/connect.js";
 import { concat, encodeVarint, field, utf8 } from "../src/proto/wire.js";
-import { readUsage } from "../src/usage.js";
+import { readReply, readUsage } from "../src/usage.js";
 import { chat, fakeJev, settled, testConfig } from "./helpers.js";
 
 const sse = (events: object[]) =>
   new Response(events.map((event) => `event: x\ndata: ${JSON.stringify(event)}\n\n`).join(""), {
     headers: { "content-type": "text/event-stream" },
   });
+
+describe("readReply", () => {
+  it("names the tool a Responses stream called", async () => {
+    const reply = await readReply(sse([
+      { type: "response.output_item.added", item: { type: "function_call", name: "get_weather", arguments: "", status: "in_progress" } },
+      {
+        type: "response.completed",
+        response: {
+          // The tool roster is echoed too: definitions must not pass for calls.
+          tools: [{ type: "function", name: "get_weather" }],
+          usage: { input_tokens: 10, output_tokens: 2 },
+        },
+      },
+    ]));
+    expect(reply.tool).toBe("get_weather");
+    expect(reply.usage).toMatchObject({ input: 10, output: 2 });
+  });
+
+  it("names the tool a Chat Completions reply called", async () => {
+    const reply = await readReply(Response.json({
+      choices: [{ message: { role: "assistant", tool_calls: [{ id: "c1", type: "function", function: { name: "get_weather", arguments: "{}" } }] } }],
+      usage: { prompt_tokens: 5, completion_tokens: 3 },
+    }));
+    expect(reply.tool).toBe("get_weather");
+    expect(reply.usage).toMatchObject({ input: 5, output: 3 });
+  });
+
+  it("names a tool_use block and a Gemini functionCall", async () => {
+    const anthropic = await readReply(Response.json({
+      content: [{ type: "tool_use", id: "t1", name: "Bash", input: {} }],
+      usage: { input_tokens: 9, output_tokens: 4 },
+    }));
+    expect(anthropic.tool).toBe("Bash");
+    const gemini = await readReply(Response.json({
+      candidates: [{ content: { parts: [{ functionCall: { name: "read_file" } }] } }],
+      usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 2 },
+    }));
+    expect(gemini.tool).toBe("read_file");
+  });
+
+  it("tools' rosters and plain text never pass for a tool call", async () => {
+    const reply = await readReply(Response.json({
+      choices: [{ message: { role: "assistant", content: 'we call this "tool_calls" in the docs' } }],
+    }));
+    expect(reply.tool).toBeUndefined();
+    expect(reply.usage).toBeUndefined();
+  });
+});
 
 describe("readUsage", () => {
   it("reads a Responses stream, reasoning and cache included", async () => {
