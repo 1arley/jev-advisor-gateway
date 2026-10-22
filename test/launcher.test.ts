@@ -1,7 +1,18 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+// A PATH whose `opencode` answers `--version` with a version of our choosing; used because
+// `--print-config` prints the config shape the installed OpenCode understands.
+function fakeOpencodeVersion(version: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "jev-fake-opencode-"));
+  writeFileSync(join(dir, "opencode"), `#!/bin/sh\necho "opencode v${version}"\n`);
+  chmodSync(join(dir, "opencode"), 0o755);
+  return dir;
+}
 
 // @ts-ignore: bin/ is plain JavaScript outside the tsconfig include; resolved at runtime.
 const clients = await import("../bin/clients.mjs");
@@ -16,7 +27,7 @@ interface LauncherSpec {
   upstreamHelp: string;
   args?: (origin: string) => string[];
   env?: (origin: string) => Record<string, string>;
-  configHelp: (origin: string) => string;
+  configHelp: (origin: string, env?: Record<string, string>) => string | Promise<string>;
 }
 
 const opencode = clients.opencode as LauncherSpec;
@@ -107,34 +118,49 @@ describe("jev-opencode spec", () => {
     expect(typeof opencode.env).toBe("function");
   });
 
-  it("prints permanent wiring help rooted at the gateway", () => {
-    const help = opencode.configHelp(origin);
-    expect(help).toContain(`${origin}/v1`);
-    expect(help).toContain("jev-gateway/gpt-5");
-    expect(help).toContain("opencode.json");
-    expect(help).toContain("jev-opencode --start");
-    expect(help).toContain("--model jev-gateway/gpt-5");
-    // The file workflow below needs no shell quoting; the JSON block must parse as-is.
-    const jsonBlock = help.slice(help.indexOf("{"), help.lastIndexOf("}") + 1);
-    const parsed = JSON.parse(jsonBlock) as any;
-    expect(parsed.model).toBe("jev-gateway/gpt-5");
-    expect(parsed.provider["jev-gateway"].options.baseURL).toBe(`${origin}/v1`);
-    // No raw-JSON shell one-liner: single-quoting breaks on apostrophes in custom model IDs.
-    expect(help).not.toContain("OPENCODE_CONFIG_CONTENT='");
+  it("prints permanent wiring help rooted at the gateway", async () => {
+    const dir = fakeOpencodeVersion("1.18.31");
+    try {
+      const help = await opencode.configHelp(origin, { PATH: dir });
+      expect(help).toContain(`${origin}/v1`);
+      expect(help).toContain("jev-gateway/gpt-5");
+      expect(help).toContain("opencode.json");
+      expect(help).toContain("jev-opencode --start");
+      expect(help).toContain("--model jev-gateway/gpt-5");
+      // The file workflow below needs no shell quoting; the JSON block must parse as-is.
+      const jsonBlock = help.slice(help.indexOf("{"), help.lastIndexOf("}") + 1);
+      const parsed = JSON.parse(jsonBlock) as any;
+      expect(parsed.model).toBe("jev-gateway/gpt-5");
+      expect(parsed.provider["jev-gateway"].options.baseURL).toBe(`${origin}/v1`);
+      // No raw-JSON shell one-liner: single-quoting breaks on apostrophes in custom model IDs.
+      expect(help).not.toContain("OPENCODE_CONFIG_CONTENT='");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
     process.env.JEV_OPENCODE_MODEL = "other-model";
-    expect(opencode.configHelp(origin)).toContain("jev-gateway/other-model");
+    const dir2 = fakeOpencodeVersion("1.18.31");
+    try {
+      expect(await opencode.configHelp(origin, { PATH: dir2 })).toContain("jev-gateway/other-model");
+    } finally {
+      rmSync(dir2, { recursive: true, force: true });
+    }
   });
 
-  it("stays safe when a custom model ID contains an apostrophe", () => {
+  it("stays safe when a custom model ID contains an apostrophe", async () => {
     process.env.JEV_OPENCODE_MODEL = "o'brien";
     const config = inlineConfig();
     expect(config.model).toBe("jev-gateway/o'brien");
     expect(Object.keys(config.provider["jev-gateway"].models)).toEqual(["o'brien"]);
-    const help = opencode.configHelp(origin);
-    expect(help).not.toContain("OPENCODE_CONFIG_CONTENT='");
-    const jsonBlock = help.slice(help.indexOf("{"), help.lastIndexOf("}") + 1);
-    expect(() => JSON.parse(jsonBlock)).not.toThrow();
-    expect((JSON.parse(jsonBlock) as any).model).toBe("jev-gateway/o'brien");
+    const dir = fakeOpencodeVersion("1.18.31");
+    try {
+      const help = await opencode.configHelp(origin, { PATH: dir });
+      expect(help).not.toContain("OPENCODE_CONFIG_CONTENT='");
+      const jsonBlock = help.slice(help.indexOf("{"), help.lastIndexOf("}") + 1);
+      expect(() => JSON.parse(jsonBlock)).not.toThrow();
+      expect((JSON.parse(jsonBlock) as any).model).toBe("jev-gateway/o'brien");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
