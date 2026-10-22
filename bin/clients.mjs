@@ -109,8 +109,9 @@ const OPENCODE_PROVIDER = "jev-gateway";
 /**
  * Stable custom-provider config for the launched OpenCode process. Injected through
  * OPENCODE_CONFIG_CONTENT — inline config merges over the user's global/project files, which
- * are never written. `@ai-sdk/openai-compatible` speaks `/v1/chat/completions` off
- * `${origin}/v1`, an endpoint the gateway already routes. `{env:OPENAI_API_KEY}` reuses the
+ * are never written. OpenCode v2 ignores that variable and every other config one, so its
+ * provider comes from opencodeV2Config through opencode.json instead. `@ai-sdk/openai-compatible`
+ * speaks `/v1/chat/completions` off `${origin}/v1`, an endpoint the gateway already routes. `{env:OPENAI_API_KEY}` reuses the
  * user's own OpenAI credential untouched (resolving to empty when unset, like OpenCode's own
  * local-provider examples). The launcher-spawned gateway forwards that client credential
  * untouched: launcher.mjs strips UPSTREAM_API_KEY/ROUTER_API_KEY by design, so no gateway
@@ -128,6 +129,29 @@ function opencodeInlineConfig(origin) {
         npm: "@ai-sdk/openai-compatible",
         name: "Jev Gateway",
         options: { baseURL: `${origin}/v1`, apiKey: "{env:OPENAI_API_KEY}" },
+        models: { [model]: { name: `Jev Gateway (${model})` } },
+      },
+    },
+  };
+}
+
+/**
+ * The same default models and provider for OpenCode v2, which renamed the shapes: `providers`
+ * (plural), a `package` naming the runtime package, and `settings` for the package options. v2
+ * resolves no configuration from environment variables at all, so this is the block the launcher
+ * asks to be added to opencode.json once.
+ */
+function opencodeV2Config(origin) {
+  const model = opencodeModel();
+  return {
+    $schema: "https://opencode.ai/config.json",
+    model: `${OPENCODE_PROVIDER}/${model}`,
+    small_model: `${OPENCODE_PROVIDER}/${model}`,
+    providers: {
+      [OPENCODE_PROVIDER]: {
+        package: "@opencode/ai/providers/openai-compatible",
+        name: "Jev Gateway",
+        settings: { baseURL: `${origin}/v1`, apiKey: "{env:OPENAI_API_KEY}" },
         models: { [model]: { name: `Jev Gateway (${model})` } },
       },
     },
@@ -169,6 +193,41 @@ export function opencodeConfigContent(origin, inherited) {
 
 const providerOf = (model) => (typeof model === "string" && model.includes("/") ? model.slice(0, model.indexOf("/")) : undefined);
 
+/**
+ * The `provider/model` id of a model reference. v1 config spells it a string, and v2's
+ * `debug config` hands it over as `{ providerID, model }`.
+ */
+const modelIdOf = (model) => {
+  if (typeof model === "string") return model;
+  if (isObject(model) && typeof model.providerID === "string" && typeof model.model === "string") return `${model.providerID}/${model.model}`;
+  return undefined;
+};
+
+/**
+ * OpenCode v2's `opencode debug config` prints one document per config source; v1 printed the
+ * merged object. The documents arrived already ordered, so a shallow assign at the object's own
+ * levels is the merge OpenCode applied: within `model`, the `agents` and `providers` maps, a
+ * later source that names them replaces what an earlier one held.
+ */
+function mergeConfigDocuments(documents) {
+  const merged = {};
+  for (const document of documents) {
+    const info = isObject(document) ? (document.information ?? document.info) : undefined;
+    if (isObject(info)) Object.assign(merged, info);
+  }
+  return merged;
+}
+
+/** The string of OpenCode's major version, from the binary itself, so `--print-config` shows today's shape. */
+function opencodeVersion(env) {
+  return new Promise((resolve) => {
+    execFile("opencode", ["--version"], { env, timeout: 5000 }, (error, stdout) => {
+      const major = /v?(\d+)\./.exec(stdout ?? "")?.[1];
+      resolve(major ? Number(major) : undefined);
+    });
+  });
+}
+
 /** The value of `-m` / `--model` among the arguments meant for OpenCode, if there is one. */
 function modelFlag(argv) {
   for (const [index, arg] of argv.entries()) {
@@ -206,10 +265,17 @@ export function opencodeOutsideGateway(resolved, argv = [], origin) {
   const flag = modelFlag(argv);
   if (flag !== undefined && !covered(flag)) outside.push(`this session (--model ${flag})`);
   if (isObject(resolved)) {
-    if (!covered(resolved.model)) outside.push(`the default model (${resolved.model ?? "none"})`);
-    for (const [name, agent] of Object.entries(isObject(resolved.agent) ? resolved.agent : {})) {
-      if (!isObject(agent) || agent.disable === true || typeof agent.model !== "string") continue;
-      if (!covered(agent.model)) outside.push(`agent "${name}" (${agent.model})`);
+    const defaultModel = modelIdOf(resolved.model);
+    if (!covered(defaultModel)) outside.push(`the default model (${defaultModel ?? "none"})`);
+    // v1 spells the agent map `agent`, v2 `agents`, and v2 keeps the singular name for backwards
+    // compatibility; both appear only when the user wrote them, and `agents` is the later source.
+    const agents = { ...(isObject(resolved.agent) ? resolved.agent : {}), ...(isObject(resolved.agents) ? resolved.agents : {}) };
+    for (const [name, agent] of Object.entries(agents)) {
+      if (!isObject(agent)) continue;
+      if (agent.disable === true || agent.disabled === true) continue;
+      const model = modelIdOf(agent.model);
+      if (model === undefined) continue;
+      if (!covered(model)) outside.push(`agent "${name}" (${model})`);
     }
   }
   if (outside.length === 0) return [];
@@ -220,21 +286,42 @@ export function opencodeOutsideGateway(resolved, argv = [], origin) {
   ];
 }
 
-/** Ask OpenCode how it resolves its configuration with ours laid over it. Undefined when it cannot say. */
+/**
+ * Ask OpenCode how it resolves its configuration with the launcher's config over the user's.
+ * Undefined when it cannot say. v2's answer is an array of per-source documents; v1's is the
+ * merged object itself. The shape decides what `notices` says, so both travel together.
+ */
 function opencodeResolvedConfig(env) {
   return new Promise((resolve) => {
     execFile("opencode", ["debug", "config"], { env, timeout: 5000, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
       if (error) return resolve(undefined);
-      // Log lines may come first, and may hold braces of their own: the JSON starts on a line of its own.
-      const start = stdout.search(/^\{/m);
+      // Log lines may come first, and may hold braces or a bracket of their own: the JSON starts
+      // on a line of its own.
+      const start = stdout.search(/^[{[]/m);
       if (start < 0) return resolve(undefined);
       try {
-        resolve(JSON.parse(stdout.slice(start)));
+        const parsed = JSON.parse(stdout.slice(start));
+        resolve(Array.isArray(parsed) ? { v2: true, resolved: mergeConfigDocuments(parsed) } : { v2: false, resolved: parsed });
       } catch {
         resolve(undefined);
       }
     });
   });
+}
+
+/**
+ * The v2 block cannot be injected: v2 resolves no configuration from environment variables, so
+ * the only honest thing the launcher can do is say where it goes.
+ */
+function opencodeSetupLines(origin) {
+  const block = JSON.stringify(opencodeV2Config(origin), null, 2).split("\n").map((line) => `  ${line}`);
+  return [
+    "OpenCode v2 reads no configuration from environment variables, so the provider this launcher",
+    "spawns cannot be injected for the process. Add this once to ~/.config/opencode/opencode.json",
+    "(a project opencode.json wins over it), keep the gateway running, and plain `opencode` as well as",
+    "this launcher route through the gateway:",
+    ...block,
+  ];
 }
 
 export const opencode = {
@@ -264,15 +351,36 @@ export const opencode = {
       ? ["OPENCODE_CONFIG_CONTENT in your environment is not a JSON object, so this session gets only the gateway's settings from it."]
       : [];
     if (inherited.JEV_OPENCODE_CHECK === "off") return dropped;
-    const resolved = await opencodeResolvedConfig({ ...inherited, ...opencode.env(origin, inherited) });
-    const outside = opencodeOutsideGateway(resolved, argv, origin);
-    // The launcher prefixes only the first line with its name; a second notice needs its own.
-    return dropped.length && outside.length ? [...dropped, `${opencode.name}: ${outside[0]}`, ...outside.slice(1)] : [...dropped, ...outside];
+    const found = await opencodeResolvedConfig({ ...inherited, ...opencode.env(origin, inherited) });
+    if (!found) return dropped;
+    // On v2 the injected config is inert, so the whole v1 flow of saying what bypasses the gateway
+    // would measure nothing: say the setup step instead until the block is in opencode.json.
+    const setup = found.v2 && !(isObject(found.resolved) && isObject(found.resolved.providers) && isObject(found.resolved.providers[OPENCODE_PROVIDER]))
+      ? opencodeSetupLines(origin)
+      : [];
+    const outside = opencodeOutsideGateway(found.resolved, argv, origin);
+    // The launcher prefixes only the first line with its name; what follows needs its own.
+    const tail = [...setup, ...outside];
+    if (!tail.length) return dropped;
+    const lines = [...dropped, ...tail];
+    return [...lines.slice(0, dropped.length), `${opencode.name}: ${tail[0]}`, ...lines.slice(dropped.length + 1)];
   },
-  configHelp: (origin) => {
+  configHelp: async (origin, env = process.env) => {
     // No OPENCODE_CONFIG_CONTENT one-liner here: single-quoting raw JSON breaks when a custom
     // model ID contains an apostrophe. The opencode.json file workflow below needs no shell
     // quoting and matches what `jev-opencode --print-config` documents.
+    if ((await opencodeVersion(env)) === 2) {
+      const config = opencodeV2Config(origin);
+      const manual = JSON.stringify(config, null, 2);
+      return (
+        `# OpenCode v2 reads no configuration from environment variables, so the launcher cannot\n` +
+        `# inject the provider per process. Add to opencode.json (project root or\n` +
+        `# ~/.config/opencode/opencode.json), with the gateway running (${opencode.name} --start):\n` +
+        `${manual}\n` +
+        `# Then plain \`opencode\` routes through the gateway too. An agent or \`-m\` naming another\n` +
+        `# provider keeps going straight to it, as the launcher says at startup.\n`
+      );
+    }
     const config = opencodeInlineConfig(origin);
     const manual = JSON.stringify({ model: config.model, small_model: config.small_model, provider: config.provider }, null, 2);
     return (

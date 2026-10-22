@@ -27,6 +27,76 @@ const resolved = {
 };
 
 describe("what jev-opencode says will not go through the gateway", () => {
+  it("reads OpenCode v2's agents map, spelled `agents`, as it reads v1's `agent`", () => {
+    const v2 = {
+      model: "9router/main",
+      agents: { explorer: { mode: "subagent", model: "9router/slm" } },
+      providers: { "9router": {} },
+    };
+    const lines = opencodeOutsideGateway(v2 as never, [], origin) as string[];
+    expect(lines.join("\n")).toContain("the default model (9router/main)");
+    expect(lines.join("\n")).toContain('agent "explorer" (9router/slm)');
+  });
+
+  it("says the v2 setup block when v2 gives no way to inject the provider", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jev-opencode-"));
+    writeFileSync(
+      join(dir, "opencode"),
+      `#!/bin/sh\nprintf '%s\\n' '[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":"9router/main","agents":{},"providers":{"9router":{}}}}]'\n`,
+    );
+    chmodSync(join(dir, "opencode"), 0o755);
+    try {
+      const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
+      const joined = lines.join("\n");
+      expect(joined).toContain("reads no configuration from environment variables");
+      expect(joined).toContain("~/.config/opencode/opencode.json");
+      expect(joined).toContain("jev-gateway/gpt-5");
+      expect(joined).toContain(`${origin}/v1`);
+      expect(joined).toContain('"providers"');
+      // The whole block is valid JSON, so pasting it works without editing.
+      const start = joined.indexOf("{");
+      const end = joined.lastIndexOf("}") + 1;
+      expect(() => JSON.parse(joined.slice(start, end))).not.toThrow();
+      expect(start).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("on v2, once the provider is in opencode.json, falls back to saying what bypasses the gateway", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jev-opencode-"));
+    writeFileSync(
+      join(dir, "opencode"),
+      `#!/bin/sh\nprintf '%s\\n' '[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":{"providerID":"9router","model":"main"},"agents":{"explorer":{"mode":"subagent","model":{"providerID":"9router","model":"slm"}}},"providers":{"9router":{},"jev-gateway":{}}}}]'\n`,
+    );
+    chmodSync(join(dir, "opencode"), 0o755);
+    try {
+      const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
+      const joined = lines.join("\n");
+      expect(joined).not.toContain("reads no configuration from environment variables");
+      expect(joined).toContain("the default model (9router/main)");
+      expect(joined).toContain('agent "explorer" (9router/slm)');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("v1 keeps the old flow unchanged", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "jev-opencode-"));
+    writeFileSync(
+      join(dir, "opencode"),
+      `#!/bin/sh\nprintf '%s\\n' '{"model":"openai/gpt-5","agent":{},"provider":{"openai":{}}}'\n`,
+    );
+    chmodSync(join(dir, "opencode"), 0o755);
+    try {
+      const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
+      expect(lines.join("\n")).toContain("the default model (openai/gpt-5)");
+      expect(lines.join("\n")).not.toContain("environment variables");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("names every agent that selects another provider's model, however it was defined", () => {
     const lines = opencodeOutsideGateway(resolved) as string[];
     expect(lines.join("\n")).toContain('agent "build" (anthropic/claude-sonnet-4-5)');

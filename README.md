@@ -52,7 +52,7 @@ jev-codex --yolo         # your Codex default model + Jev tool routing, no advis
 codex-jev-advisor        # alias for jev-codex-advisor
 jev-claude-advisor       # Claude Code: Haiku coding + Opus advisor
 jev-claude     # use it exactly like `claude`
-jev-opencode   # use it exactly like `opencode` (stable v1)
+jev-opencode   # use it exactly like `opencode` (v1 and v2)
 jev-opencode-advisor # OpenCode with the read-only advisor enabled
 jev-kilo       # Kilo CLI, on free models unless KILO_API_KEY is set
 jev-gemini     # Gemini CLI, with a Gemini API key
@@ -295,8 +295,8 @@ free to ignore. Expect better tool picks on large tool lists, not lower cost or 
 
 ## Using it with OpenCode
 
-Tested with stable OpenCode v1.18.31. OpenCode v2 is out of scope: no `previous_response_id`
-chaining, namespaces, or `additional_tools` behavior is assumed.
+Tested end to end with stable OpenCode v1.18.31 and with OpenCode v2.1.2. The two versions wire
+the gateway in differently, and the launcher picks the one the installed `opencode` understands.
 
 **Quick path**
 
@@ -311,6 +311,34 @@ untouched. The launcher uses stable `@ai-sdk/openai-compatible`, so OpenCode spe
 `POST /v1/chat/completions` off `http://127.0.0.1:8791/v1` by default, an endpoint the gateway
 already routes.
 
+**OpenCode v2 (2.x).** v2 reads no configuration from environment variables, so the launcher
+cannot inject the provider for one process. The launcher says so instead and prints a
+v2-shaped block (`providers`, `package`, `settings`), which `jev-opencode --print-config` also
+prints:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "jev-gateway/gpt-5",
+  "small_model": "jev-gateway/gpt-5",
+  "providers": {
+    "jev-gateway": {
+      "package": "@opencode/ai/providers/openai-compatible",
+      "name": "Jev Gateway",
+      "settings": { "baseURL": "http://127.0.0.1:8791/v1", "apiKey": "{env:OPENAI_API_KEY}" },
+      "models": { "gpt-5": { "name": "Jev Gateway (gpt-5)" } }
+    }
+  }
+}
+```
+
+Add it once to `~/.config/opencode/opencode.json` (a project `opencode.json` wins over it). With
+it in place, plain `opencode` routes through the gateway too — the block points at the gateway of
+the launcher that printed it, so keep that gateway running (`jev-opencode --start`); if you run
+both `jev-opencode` and `jev-opencode-advisor`, pick one port and use that launcher's block. An
+agent or `-m` naming another provider keeps bypassing the gateway, as in the v1 flow. The two
+experimental flags are not set on v2; v2 has no `OPENCODE_EXPERIMENTAL_*` knobs to steer.
+
 ### What goes through the gateway, and what does not
 
 Codex and Claude Code have one endpoint, so pointing them at the gateway covers everything they
@@ -321,7 +349,7 @@ send. OpenCode chooses a provider per model, and the launcher only makes a gatew
 | --- | --- |
 | Agents and subagents with no `model` of their own (`build`, `plan`, `general` out of the box) | Yes: they use the default |
 | Session titles and other small-model work | Yes (`small_model` is set too), so some traffic on the dashboard does not mean your agents are covered |
-| An agent with its own `model`, in `opencode.json` (`agent.<name>.model`) or in its markdown file (`model:`) | **No.** It goes straight to that model's provider, and Jev never sees it |
+| An agent with its own `model`, in `opencode.json` (`agent.<name>.model`, v2 `agents.<name>.model`) or in its markdown file (`model:`) | **No.** It goes straight to that model's provider, and Jev never sees it |
 | A session started with `-m` / `--model` naming another provider | **No**, by your choice |
 
 The launcher does not rewrite the models you chose. It tells you instead: before OpenCode starts,
@@ -346,6 +374,7 @@ An `OPENCODE_CONFIG_CONTENT` you already set is kept, comments and trailing comm
 launcher lays its default models and the `jev-gateway` provider over it, and leaves the rest
 (agents, permissions, other providers) alone. Content that is not a JSON object cannot be merged,
 so the session gets only the launcher's settings, and the launcher says so before OpenCode starts.
+This variable is v1 only: v2 skips it entirely, whatever it holds, and relies on `opencode.json`.
 
 On the dashboard, a gateway that shows **Idle** received nothing, which is what a bypassing agent
 looks like. One that shows **Passthrough only** received requests and did not route them, with
