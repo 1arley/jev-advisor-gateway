@@ -47,6 +47,7 @@
     "dist",
     "bin",
     "scripts/mock-jev.mjs",
+    "scripts/laya-checkpoints.mjs",
     ".env.example",
     "CHANGELOG.md"
   ],

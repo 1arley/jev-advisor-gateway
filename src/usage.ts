@@ -75,6 +75,40 @@ function collect(payload: unknown, into: Partial<Usage>): void {
   }
 }
 
+/**
+ * The name of the first tool the reply called, whatever it streamed in: Chat Completions deltas
+ * and JSON carry `tool_calls: [{ function: { name } }]`, Responses items are `function_call` /
+ * `custom_tool_call` with the name on top, Anthropic blocks are `tool_use`, Gemini parts are
+ * `functionCall`. Only tool-shaped nodes count, so an assistant answering with the word "tool"
+ * in text never becomes one.
+ */
+function firstToolName(node: unknown): string | undefined {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const name = firstToolName(item);
+      if (name !== undefined) return name;
+    }
+    return undefined;
+  }
+  const raw = obj(node);
+  const calls = Array.isArray(raw.tool_calls) ? raw.tool_calls : [];
+  for (const call of calls) {
+    const name = obj(obj(call).function).name;
+    if (typeof name === "string") return name;
+  }
+  if (
+    typeof raw.name === "string" &&
+    (raw.type === "function_call" || raw.type === "custom_tool_call" || raw.type === "tool_use")
+  ) return raw.name;
+  const called = obj(raw.functionCall);
+  if (typeof called.name === "string") return called.name;
+  for (const value of Object.values(raw)) {
+    const name = firstToolName(value);
+    if (name !== undefined) return name;
+  }
+  return undefined;
+}
+
 /** exa's counters ride in field-28 stats groups: entries keyed by name, valued as fixed32
  *  floats — the wire carries "model" strings in the same shape, so unknown keys are skipped. */
 async function readConnectUsage(response: Response): Promise<Usage | undefined> {
@@ -104,25 +138,42 @@ async function readConnectUsage(response: Response): Promise<Usage | undefined> 
   return { input: 0, output: 0, cached: 0, cacheWrite: 0, cacheWrite1h: 0, reasoning: 0, ...found };
 }
 
+/** What one reply carries: its cost, and the first tool it called (see `firstToolName`). */
+export interface Reply {
+  usage?: Usage;
+  tool?: string;
+}
+
 /**
- * Read a reply to its end and report what it cost. Works on a clone, in the background: the
- * client's own stream is never delayed. A stream cut short (Codex hangs up as soon as it has
- * `response.completed`) still yields whatever usage arrived before the cut.
+ * Read a reply to its end and report what it cost, and the tool it called. Works on a clone, in
+ * the background: the client's own stream is never delayed. A stream cut short (Codex hangs up as
+ * soon as it has `response.completed`) still yields whatever arrived before the cut.
  */
-export async function readUsage(response: Response): Promise<Usage | undefined> {
-  // Connect streams are binary: peel envelopes instead of scanning lines.
-  if (response.headers.get("content-type")?.includes("connect+proto")) return readConnectUsage(response);
+export async function readReply(response: Response): Promise<Reply> {
+  // Connect streams are binary: peel envelopes instead of scanning lines. A Connect reply's tool
+  // calls live in its own unary encoding, which the usage reader does not parse, so only usage
+  // comes back for those.
+  if (response.headers.get("content-type")?.includes("connect+proto")) {
+    const usage = await readConnectUsage(response);
+    return usage ? { usage } : {};
+  }
   const found: Partial<Usage> = {};
+  let tool: string | undefined;
   // Told apart by content, not by header: the ChatGPT Codex backend streams events without
   // sending any content-type at all.
   let streaming: boolean | undefined;
   let pending = "";
   const scan = (line: string) => {
-    // Most stream events are text deltas; only the few that mention usage are worth parsing.
-    // (`"usage` with no closing quote also matches Gemini's `usageMetadata`.)
-    if (!line.startsWith("data:") || !line.includes('"usage')) return;
+    // Most stream events are text deltas; deltas that carry usage or a tool shape are worth
+    // parsing. (`"usage` with no closing quote also matches Gemini's `usageMetadata`.)
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5);
+    if (!(data.includes('"usage') || data.includes('"tool') || data.includes('"function_c') || data.includes('"functionCall'))) return;
     try {
-      collect(JSON.parse(line.slice(5)), found);
+      const payload: unknown = JSON.parse(data);
+      collect(payload, found);
+      const name = firstToolName(payload);
+      if (name !== undefined && tool === undefined) tool = name;
     } catch {
       // A line cut short by the client hanging up.
     }
@@ -142,11 +193,22 @@ export async function readUsage(response: Response): Promise<Usage | undefined> 
   if (streaming) scan(pending);
   else {
     try {
-      collect(JSON.parse(pending), found);
+      const payload: unknown = JSON.parse(pending);
+      collect(payload, found);
+      const name = firstToolName(payload);
+      if (name !== undefined && tool === undefined) tool = name;
     } catch {
       // Not JSON (an HTML error page, an empty body): nothing to report.
     }
   }
-  if (found.input === undefined && found.output === undefined) return undefined;
-  return { input: 0, output: 0, cached: 0, cacheWrite: 0, cacheWrite1h: 0, reasoning: 0, ...found };
+  const usage: Usage | undefined =
+    found.input === undefined && found.output === undefined
+      ? undefined
+      : { input: 0, output: 0, cached: 0, cacheWrite: 0, cacheWrite1h: 0, reasoning: 0, ...found };
+  return { ...(usage ? { usage } : {}), ...(tool !== undefined ? { tool } : {}) };
+}
+
+/** The cost of one reply, alone; tool observation rides along in the same read. */
+export async function readUsage(response: Response): Promise<Usage | undefined> {
+  return (await readReply(response)).usage;
 }

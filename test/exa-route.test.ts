@@ -117,7 +117,7 @@ describe("the exa route", () => {
       const res = await post(app(jev.askJev, upstream.fetchImpl), PATH, body);
       expect(res.status).toBe(200);
       expect(res.headers.get("x-jev-gateway-mode")).toBe("passthrough");
-      expect(res.headers.get("x-jev-gateway-reason")).toContain("router_error: encode exploded");
+      expect(res.headers.get("x-jev-gateway-reason")).toBe("router_error");
       expect(upstream.calls[0]?.body).toEqual(body);
     } finally {
       exaAdapter.encode = encode;
