@@ -358,7 +358,7 @@ describe("opencode chat completions (stable @ai-sdk/openai-compatible)", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(opencodeChatRequest()),
     });
-    expect(failingRes.headers.get("x-jev-gateway-reason")).toContain("jev_error");
+    expect(failingRes.headers.get("x-jev-gateway-reason")).toBe("jev_error");
     expect(failing.calls).toHaveLength(1);
 
     const chatUpstream = fakeUpstream();

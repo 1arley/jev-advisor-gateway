@@ -17,7 +17,7 @@ import { redactHeaders, summarizeResponse, type Dump } from "./debug.js";
 import { decide, type AskJev, type Decision } from "./decide.js";
 import { createEventLog, type EventLog } from "./events.js";
 import { forward } from "./upstream.js";
-import { readUsage } from "./usage.js";
+import { readReply } from "./usage.js";
 
 export interface Deps {
   config: Config;
@@ -169,12 +169,19 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
 
   /**
    * Log a forwarded request once its reply has ended, because that is when the provider says what
-   * it cost. The reply is read from a clone in the background, so the client is never delayed.
+   * it cost and which tool the model actually called. The reply is read from a clone in the
+   * background, so the client is never delayed.
    */
   const logWhenDone = (entry: Record<string, unknown>, response: Response, startedAt: number) => {
     const copy = response.clone();
-    void readUsage(copy).then((usage) =>
-      log({ ...entry, status: response.status, durationMs: Math.round(performance.now() - startedAt), ...(usage ? { usage } : {}) }),
+    void readReply(copy).then((reply) =>
+      log({
+        ...entry,
+        status: response.status,
+        durationMs: Math.round(performance.now() - startedAt),
+        ...(reply.tool ? { actualTool: reply.tool } : {}),
+        ...(reply.usage ? { usage: reply.usage } : {}),
+      }),
     );
   };
 
@@ -232,8 +239,9 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     }
     try {
       return { decision: await decide(input, config, askJev), tools: input.tools.length };
-    } catch (error) {
-      return { decision: { mode: "passthrough", reason: `router_error: ${error instanceof Error ? error.message : String(error)}` }, tools: input.tools.length };
+    } catch {
+      // Same rule as decide(): the reason reaches headers and logs, so it stays a stable code.
+      return { decision: { mode: "passthrough", reason: "router_error" }, tools: input.tools.length };
     }
   };
 
@@ -330,7 +338,8 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     // request still goes upstream: the router must never be the reason a request fails.
     const giveUp = (error: unknown): Decision => ({
       mode: "passthrough",
-      reason: `router_error: ${error instanceof Error ? error.message : String(error)}`,
+      // A stable code, because the reason reaches headers and logs (see decide()).
+      reason: "router_error",
       jev: decision.jev,
     });
 

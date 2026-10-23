@@ -49,6 +49,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * A stable reason code for a failed Jev call. Reasons reach response headers, the request log and
+ * the dashboard, and a provider's error body is someone else's text (Cloudflare once served an
+ * HTML block page that ended up in the reason header): so a failure is named by class, never by
+ * the exception's own words.
+ */
+function failureReason(error: unknown): string {
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) return "jev_timeout";
+  const status = isRecord(error) && typeof error.status === "number" ? error.status : undefined;
+  if (status !== undefined && status >= 100 && status <= 599) return `jev_http_${status}`;
+  return "jev_error";
+}
+
 function isProbability(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 }
@@ -184,7 +197,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     if (!validResult(result, built.questions)) return { mode: "passthrough", reason: "jev_unexpected_answer" };
   } catch (error) {
     // Fail open: a Jev outage must never take the gateway down with it.
-    return { mode: "passthrough", reason: `jev_error: ${error instanceof Error ? error.message : String(error)}` };
+    return { mode: "passthrough", reason: failureReason(error) };
   }
 
   const picked = result.answers[TOOL_KEY];
