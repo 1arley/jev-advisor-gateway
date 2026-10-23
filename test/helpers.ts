@@ -10,8 +10,8 @@ import type { ToolDef } from "../src/types.js";
 
 /**
  * A fresh PATH directory whose `opencode` runs the given shell snippet for every invocation.
- * The launcher only ever asks OpenCode one thing — `debug config` or `--version` — and the
- * snippet overrides the answer outright, log lines and all, so tests shape the client's reply.
+ * The launcher only ever asks OpenCode one thing — `debug config` — and the snippet overrides
+ * the answer outright, log lines and all, so tests shape the client's reply.
  */
 export function fakeOpencodeDir(script: string): string {
   const dir = mkdtempSync(join(tmpdir(), "jev-fake-opencode-"));
