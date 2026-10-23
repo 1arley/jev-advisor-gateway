@@ -88,6 +88,21 @@ describe("what jev-opencode says will not go through the gateway", () => {
     }
   });
 
+  it("says the second notice with the name of the launcher speaking it", async () => {
+    const advisor: { name: string; notices: (...a: unknown[]) => Promise<string[]> } = {
+      ...(opencode as never as { name: string; notices: (...a: unknown[]) => Promise<string[]> }),
+      name: "jev-opencode-advisor",
+    };
+    const dir = fakeOpencodeDir(says(`{"model":"openai/gpt-5","agent":{},"provider":{"openai":{"options":{}}}}`));
+    try {
+      const lines = (await advisor.notices(origin, [], { PATH: dir, OPENCODE_CONFIG_CONTENT: "{ not json" })) as string[];
+      expect(lines.some((line) => line.startsWith("jev-opencode-advisor:"))).toBe(true);
+      expect(lines.some((line) => line.startsWith("jev-opencode:"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("counts a provider the user pointed at the gateway as covered, by either shape of its endpoint", () => {
     const bySettings = { model: "9router/main", providers: { "9router": { settings: { baseURL: `${origin}` } }, "jev-gateway": {} } };
     expect(opencodeOutsideGateway(bySettings as never, [], origin)).toEqual([]);

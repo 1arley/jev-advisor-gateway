@@ -341,8 +341,10 @@ export const opencode = {
     OPENCODE_EXPERIMENTAL_CODE_MODE: "false",
   }),
   // Asking OpenCode costs about a second, which is OpenCode loading its configuration.
-  // JEV_OPENCODE_CHECK=off skips that part; an inline config that had to be dropped is always said.
-  notices: async (origin, argv, inherited = process.env) => {
+  // JEV_OPENCODE_CHECK=off skips that part; an inline config that had to be dropped is always
+  // said. With the check off there is no version probe, so a v2 (which ignores the variable)
+  // still hears this v1 notice — the known cost of the opt-out, not worth a spawn to avoid.
+  notices: async function (origin, argv, inherited = process.env) {
     const content = inherited.OPENCODE_CONFIG_CONTENT;
     const dropped = content?.trim() && !isObject(parseJsonc(content))
       ? ["OPENCODE_CONFIG_CONTENT in your environment is not a JSON object, so this session gets only the gateway's settings from it."]
@@ -365,9 +367,9 @@ export const opencode = {
     if (!tail.length) return live;
     if (!live.length) return tail;
     const lines = [...live, ...tail];
-    return [...lines.slice(0, live.length), `${opencode.name}: ${tail[0]}`, ...lines.slice(live.length + 1)];
+    return [...lines.slice(0, live.length), `${this.name}: ${tail[0]}`, ...lines.slice(live.length + 1)];
   },
-  configHelp: async (origin, env = process.env) => {
+  configHelp: async function (origin, env = process.env) {
     // No OPENCODE_CONFIG_CONTENT one-liner here: single-quoting raw JSON breaks when a custom
     // model ID contains an apostrophe. The opencode.json file workflow below needs no shell
     // quoting and matches what `jev-opencode --print-config` documents.
@@ -381,7 +383,7 @@ export const opencode = {
       return (
         `# OpenCode v2 reads no configuration from environment variables, so the launcher cannot\n` +
         `# inject the provider per process. Add to opencode.json (project root or\n` +
-        `# ~/.config/opencode/opencode.json), with the gateway running (${opencode.name} --start):\n` +
+        `# ~/.config/opencode/opencode.json), with the gateway running (${this.name} --start):\n` +
         `${manual}\n` +
         `# Then plain \`opencode\` routes through the gateway too. An agent or \`-m\` naming another\n` +
         `# provider keeps going straight to it, as the launcher says at startup.\n`
