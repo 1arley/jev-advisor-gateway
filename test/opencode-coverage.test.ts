@@ -3,10 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { fakeOpencodeDir } from "./helpers.js";
+
 // @ts-ignore: bin/ is plain JavaScript outside the tsconfig include; resolved at runtime.
 const { opencode, opencodeConfigContent, opencodeOutsideGateway } = await import("../bin/clients.mjs");
 
 const origin = "http://127.0.0.1:8791";
+// Plain shell one-liners: each overridable fake answers whatever the launcher asks it.
+const says = (json: string) => `printf '%s\\n' '${json}'`;
 
 /**
  * What `opencode debug config` printed (OpenCode 1.18.31) for a project whose opencode.json gives
@@ -39,12 +43,7 @@ describe("what jev-opencode says will not go through the gateway", () => {
   });
 
   it("says the v2 setup block when v2 gives no way to inject the provider", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "jev-opencode-"));
-    writeFileSync(
-      join(dir, "opencode"),
-      `#!/bin/sh\nprintf '%s\\n' '[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":"9router/main","agents":{},"providers":{"9router":{}}}}]'\n`,
-    );
-    chmodSync(join(dir, "opencode"), 0o755);
+    const dir = fakeOpencodeDir(says(`[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":"9router/main","agents":{},"providers":{"9router":{}}}}]`));
     try {
       const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
       const joined = lines.join("\n");
@@ -64,34 +63,44 @@ describe("what jev-opencode says will not go through the gateway", () => {
   });
 
   it("on v2, once the provider is in opencode.json, falls back to saying what bypasses the gateway", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "jev-opencode-"));
-    writeFileSync(
-      join(dir, "opencode"),
-      `#!/bin/sh\nprintf '%s\\n' '[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":{"providerID":"9router","model":"main"},"agents":{"explorer":{"mode":"subagent","model":{"providerID":"9router","model":"slm"}}},"providers":{"9router":{},"jev-gateway":{}}}}]'\n`,
-    );
-    chmodSync(join(dir, "opencode"), 0o755);
+    const dir = fakeOpencodeDir(says(`[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":{"providerID":"9router","model":"main"},"agents":{"explorer":{"mode":"subagent","model":{"providerID":"9router","model":"slm"}}},"providers":{"9router":{},"jev-gateway":{}}}}]`));
     try {
       const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
       const joined = lines.join("\n");
       expect(joined).not.toContain("reads no configuration from environment variables");
       expect(joined).toContain("the default model (9router/main)");
       expect(joined).toContain('agent "explorer" (9router/slm)');
+      // The launcher names the first line; notices do not say their own name again.
+      expect(lines[0]).not.toMatch(/jev-opencode:/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("v1 keeps the old flow unchanged", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "jev-opencode-"));
-    writeFileSync(
-      join(dir, "opencode"),
-      `#!/bin/sh\nprintf '%s\\n' '{"model":"openai/gpt-5","agent":{},"provider":{"openai":{}}}'\n`,
-    );
-    chmodSync(join(dir, "opencode"), 0o755);
+    const dir = fakeOpencodeDir(says(`{"model":"openai/gpt-5","agent":{},"provider":{"openai":{}}}`));
     try {
       const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
       expect(lines.join("\n")).toContain("the default model (openai/gpt-5)");
       expect(lines.join("\n")).not.toContain("environment variables");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("counts a provider the user pointed at the gateway as covered, by either shape of its endpoint", () => {
+    const bySettings = { model: "9router/main", providers: { "9router": { settings: { baseURL: `${origin}` } }, "jev-gateway": {} } };
+    expect(opencodeOutsideGateway(bySettings as never, [], origin)).toEqual([]);
+    const byOptions = { model: "9router/main", providers: { "9router": { options: { baseURL: `${origin}/v1` } } } };
+    expect(opencodeOutsideGateway(byOptions as never, [], origin)).toEqual([]);
+  });
+
+  it("on v2 says nothing about the inline content OpenCode will not read", async () => {
+    const dir = fakeOpencodeDir(says(`[{"type":"document","information":{"providers":{"jev-gateway":{}},"model":"jev-gateway/gpt-5"}}]`));
+    try {
+      const lines = (await opencode.notices(origin, [], { PATH: dir, OPENCODE_CONFIG_CONTENT: "not json" })) as string[];
+      expect(lines.join("\n")).not.toContain("OPENCODE_CONFIG_CONTENT");
+      expect(lines).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
