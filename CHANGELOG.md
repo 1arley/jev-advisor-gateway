@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.9.0...v0.10.0) (2026-10-23)
+
+
+### Added
+
+* OpenCode v2 support and advisor chat note ([bed2786](https://github.com/1arley/jev-advisor-gateway/commit/bed278623072b4e2da8b986d2fc96859231bbb9a))
+* **opencode:** support OpenCode v2 through opencode.json ([ebcc279](https://github.com/1arley/jev-advisor-gateway/commit/ebcc279c528db830362e5ad9ffdcde3a2f8b225b))
+
+
+### Fixed
+
+* **dashboard:** scan the jev-codex and jev-opencode-advisor default ports ([a8a641e](https://github.com/1arley/jev-advisor-gateway/commit/a8a641eaa0115f6e158c7fe8d4d0efc52f4fea12))
+* **opencode:** read v2 provider maps and notice shapes the install really sends ([8a98cec](https://github.com/1arley/jev-advisor-gateway/commit/8a98cec7db208e61b9f6855bbf76747fd8456b4d))
+* **opencode:** speak the launcher's own name and leave the v1 quirk where it belongs ([259e0d9](https://github.com/1arley/jev-advisor-gateway/commit/259e0d9571938fec5313b449b3445f9b827aa6a3))
+
 ## [0.9.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.8.0...v0.9.0) (2026-10-22)
 
 
