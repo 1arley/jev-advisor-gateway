@@ -19,6 +19,8 @@ export interface RouteEvent {
   status?: number;
   /** How long the whole request took, reply included. */
   durationMs?: number;
+  /** The first tool the reply actually called, read off the response in the background. */
+  actualTool?: string;
   /** What the LLM call cost, as the provider reported it; absent for `direct` and failed calls. */
   usage?: { input: number; output: number; cached: number; cacheWrite: number; cacheWrite1h: number; reasoning: number };
   /** Present whenever Jev answered, even if the router then let the LLM decide. */
@@ -73,6 +75,7 @@ function toEvent(entry: Record<string, unknown>, seq: number): RouteEvent | unde
     confidence: number(entry.confidence),
     status: number(entry.status),
     durationMs: number(entry.durationMs),
+    actualTool: text(entry.actualTool),
     usage: usageOf(entry.usage),
     jev: jev && {
       choice: text(jev.choice) ?? "",

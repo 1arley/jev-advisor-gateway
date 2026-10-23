@@ -181,7 +181,7 @@ describe("POST /v1/chat/completions", () => {
     });
     const res = await app.request("/v1/chat/completions", { method: "POST", body: JSON.stringify(chat("hi")) });
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-jev-gateway-reason")).toContain("jev_error");
+    expect(res.headers.get("x-jev-gateway-reason")).toBe("jev_error");
     expect(upstream.calls).toHaveLength(1);
   });
 
@@ -202,20 +202,37 @@ describe("POST /v1/chat/completions", () => {
   });
 
   // A block page from a proxy in front of Jev (Cloudflare answers 403 with HTML) put newlines into
-  // the reason header, and Headers.set threw after the upstream had already been called.
-  it.each([
-    ["an HTML error page", '403 from TypeSafe: <!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->'],
-    ["characters a header cannot carry", "503 from TypeSafe: overloaded \u2014 try again"],
-  ])("fails open when a Jev error carries %s", async (_, message) => {
+  // the reason header, and Headers.set threw after the upstream had already been called. Reasons
+  // are stable codes now, and the provider's own words must not survive anywhere.
+  it.each<[string, string | undefined, string | undefined]>([
+    ["an HTML error page", '<!DOCTYPE html>\n<!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US"> <![endif]-->', undefined],
+    ["characters a header cannot carry", "overloaded \u2014 try again", undefined],
+    ["a timeout", undefined, "TimeoutError"],
+  ])("fails open with a stable code when Jev fails with %s", async (_what, message, name) => {
     const upstream = fakeUpstream();
     const app = createApp({
       config: testConfig(),
-      askJev: async () => Promise.reject(new Error(message)),
+      askJev: async () => {
+        if (name) throw Object.assign(new Error("The operation was aborted due to timeout"), { name });
+        throw new Error(message);
+      },
       fetch: upstream.fetchImpl,
     });
     const res = await app.request("/v1/chat/completions", { method: "POST", body: JSON.stringify(chat("hi")) });
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-jev-gateway-reason")).toMatch(/^jev_error: [\x20-\x7e]+$/);
+    expect(res.headers.get("x-jev-gateway-reason")).toBe(name ? "jev_timeout" : "jev_error");
+    expect(upstream.calls).toHaveLength(1);
+  });
+
+  it("names an HTTP failure for what it is, without the provider's body", async () => {
+    const upstream = fakeUpstream();
+    const app = createApp({
+      config: testConfig(),
+      askJev: async () => Promise.reject(Object.assign(new Error("503 from TypeSafe: overloaded"), { status: 503 })),
+      fetch: upstream.fetchImpl,
+    });
+    const res = await app.request("/v1/chat/completions", { method: "POST", body: JSON.stringify(chat("hi")) });
+    expect(res.headers.get("x-jev-gateway-reason")).toBe("jev_http_503");
     expect(upstream.calls).toHaveLength(1);
   });
 

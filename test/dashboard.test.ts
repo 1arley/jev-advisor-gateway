@@ -66,9 +66,9 @@ describe("GET /dashboard/events", () => {
       ["forced", "get_weather"],
       ["none", undefined],
       ["passthrough", "low_confidence"],
-      ["passthrough", "jev_error: connect ETIMEDOUT"],
+      ["passthrough", "jev_error"],
       ["passthrough", "no_tools"],
-      ["passthrough", "jev_error: connect ETIMEDOUT"],
+      ["passthrough", "jev_error"],
     ]);
     expect(events[1]).toMatchObject({ seq: 2, path: "/v1/chat/completions", model: "gpt-test", tools: 2, confidence: 0.95, status: 200 });
     expect(events[1]!.jev).toMatchObject({ choice: "get_weather", inputTokens: 123 });
@@ -88,6 +88,18 @@ describe("GET /dashboard/events", () => {
       tools: [{ name: "Bash", description: "Run a shell command.", input_schema: { type: "object", properties: { command: { type: "string" } } } }],
     });
     expect((await feed()).events[0]).toMatchObject({ mode: "hint", tool: "Bash", path: "/v1/messages" });
+  });
+
+  it("says which tool the reply actually called, beside the one Jev picked", async () => {
+    const reply = {
+      choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "get_weather", arguments: "{}" } }] } }],
+      usage: { prompt_tokens: 5, completion_tokens: 3 },
+    };
+    const app = createApp({ config: testConfig(), askJev: fakeJev({ ...lights, tool: { choice: "get_weather" } }).askJev, fetch: fakeUpstream(reply).fetchImpl });
+    await app.request("/v1/chat/completions", { method: "POST", body: JSON.stringify(chat("weather?")) });
+    await settled();
+    const { events } = (await (await app.request("/dashboard/events")).json()) as Feed;
+    expect(events[0]).toMatchObject({ mode: "forced", tool: "get_weather", actualTool: "get_weather" });
   });
 
   it("exposes metadata only: no prompt, no tool arguments, no credentials", async () => {

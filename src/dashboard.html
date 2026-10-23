@@ -261,9 +261,11 @@ const REASONS = {
   namespaced_tool_selected: ["Jev asked", "Jev picked a namespaced tool, which backends refuse to force."],
   jev_unknown_tool: ["Jev asked", "Jev named a tool that isn't in the roster."],
   upstream_rejected: ["Jev asked", "Upstream refused the rewritten request; the original was replayed."],
-  jev_error: ["Jev failed", "The Jev call errored or timed out. Check TYPESAFE_API_KEY and the network."],
+  jev_error: ["Jev failed", "The Jev call errored. Check the provider's key and the network."],
+  jev_timeout: ["Jev failed", "Jev did not answer within JEV_TIMEOUT_MS, so the request went to the LLM. A local laya-serve takes seconds on its very first question; the gateway warms it up at startup, but a serve started late loses that race."],
+  jev_http_error: ["Jev failed", "The Jev provider answered with an HTTP error (the code carries its status). Under OpenCode, 404 or 410 means the free model is gone: set JEV_MODEL=jev-1.13 for the paid one."],
   jev_unexpected_answer: ["Jev failed", "Jev's reply didn't contain the expected answers."],
-  router_error: ["Router failed", "The router hit a bug of its own and sent the original request on. Please report the reason shown in the log."],
+  router_error: ["Router failed", "The router hit a bug of its own and sent the original request on. The reason is a code only; check the request dump (JEV_DEBUG_DUMP_DIR) to reproduce."],
 };
 
 const params = new URLSearchParams(location.search);
@@ -294,12 +296,23 @@ function h(tag, attrs, ...children) {
   return node;
 }
 
-const reasonKey = (reason) => ["jev_error", "router_error", "upstream_rejected"].find((prefix) => reason.startsWith(prefix)) ?? reason;
+// Reasons are stable codes, some with variable tails: `jev_error: <detail>` comes from logs
+// written by routers before 0.8.1, and `jev_http_503` carries the provider's status number.
+const reasonKey = (reason) =>
+  reason.startsWith("jev_http_") ? "jev_http_error"
+  : ["jev_error", "jev_timeout", "router_error", "upstream_rejected"].find((prefix) => reason.startsWith(prefix)) ?? reason;
 const failed = (event) => event.mode === "passthrough" && (REASONS[reasonKey(event.reason ?? "")] ?? [])[0] === "Jev failed";
 const category = (event) => (failed(event) ? "failed" : event.mode);
 const routed = (event) => event.mode !== "passthrough";
 const baseline = (event) => event.reason === "routing_disabled";
 const at = (event) => Date.parse(event.time);
+// Did the reply agree with the pick? `verified` only counts a pick whose outcome exists: either
+// the reply named a tool, or a no-tool pick went through with none called. Direct answers are the
+// gateway's own calls, so they verify nothing about Jev's judgement.
+const picked = (event) => event.tool ?? event.jev?.choice;
+const saidNoTool = (event) => event.jev?.choice === "no_tool_needed";
+const verified = (event) => Boolean(picked(event) && (event.actualTool !== undefined || saidNoTool(event)));
+const routingHit = (event) => (saidNoTool(event) ? !event.actualTool : event.actualTool === picked(event));
 
 const int = (n) => Math.round(n).toLocaleString("en-US");
 const pct = (part, whole) => (whole ? Math.round((100 * part) / whole) + "%" : "–");
@@ -500,6 +513,14 @@ function renderTiles(events) {
     tile("Jev calls", int(asked.length + failures), failures ? `${int(failures)} failed` : "none failed"),
     tile("Jev latency", avgLatency === undefined ? "–" : int(avgLatency) + " ms", latencies.length ? `p95 ${int(latencies[Math.min(latencies.length - 1, Math.floor(latencies.length * 0.95))])} ms` : "no calls yet"),
     tile("Jev confidence", avgConfidence === undefined ? "–" : avgConfidence.toFixed(2), "average of its tool picks"),
+    (() => {
+      const checked = events.filter(verified);
+      const hits = checked.filter(routingHit).length;
+      return tile("Routing accuracy", checked.length ? pct(hits, checked.length) : "–",
+        checked.length
+          ? `${int(hits)} of ${int(checked.length)} verified picks: the reply called the pick${hits === checked.length ? "" : ", or called nothing after a no-tool pick"}`
+          : "replies compared with Jev's pick whenever both are on record");
+    })(),
     tile("LLM input tokens", int(sum(events, (event) => event.usage?.input)), `${pct(sum(events, (event) => event.usage?.cached), sum(events, (event) => event.usage?.input))} served from cache`),
     tile("LLM output tokens", int(sum(events, (event) => event.usage?.output)), `${int(sum(events, (event) => event.usage?.reasoning))} of them reasoning`),
     ...advisorTile,
@@ -576,7 +597,7 @@ function renderRows(events) {
       h("td", {}, event.model ?? "–"),
       h("td", { class: "num" }, String(event.tools)),
       h("td", {}, h("i", { class: `dot c-${name}` }), event.mode),
-      h("td", {}, event.tool ?? (event.jev && event.mode === "passthrough" ? `(${event.jev.choice})` : "–")),
+      h("td", { title: event.actualTool ? `the reply called ${event.actualTool}` : undefined }, event.tool ?? (event.jev && event.mode === "passthrough" ? `(${event.jev.choice})` : "–")),
       h("td", { class: "num" }, (event.confidence ?? event.jev?.confidence)?.toFixed(2) ?? "–"),
       h("td", { class: "reason-cell", title: event.reason }, event.reason ?? ""),
       h("td", { class: "num" }, event.status === undefined ? "–" : String(event.status)),

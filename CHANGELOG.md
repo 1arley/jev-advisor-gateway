@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.8.0...v0.9.0) (2026-10-22)
+
+
+### Added
+
+* add OpenCode advisor launcher and Chat Completions advisor ([#4](https://github.com/1arley/jev-advisor-gateway/issues/4)) ([f3806d3](https://github.com/1arley/jev-advisor-gateway/commit/f3806d3753afbb04ff511c1f5ca338375297924f))
+* stable failure reasons and routing accuracy on the dashboard ([dd9a8e5](https://github.com/1arley/jev-advisor-gateway/commit/dd9a8e55699c852ae4993a493eec152db706e3fa))
+
 ## [0.8.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.7.0...v0.8.0) (2026-10-22)
 
 
