@@ -30,7 +30,7 @@ const ENV_FILES = [...(FROM_SOURCE && !process.env.JEV_SKIP_PROJECT_ENV ? [join(
  * @param {Record<string, string>} [spec.gatewayEnv] extra environment for this launcher's gateway
  * @param {(origin: string, argv: string[]) => Promise<string[]>} [spec.notices]  what the user should
  *   know before this session starts, e.g. traffic that will not reach the gateway; never throws
- * @param {(origin: string) => string} spec.configHelp  how to wire the client up permanently
+ * @param {(origin: string) => string | Promise<string>} spec.configHelp  how to wire the client up permanently
  */
 /** Load the key for Jev and friends; real environment variables win over both files. */
 export function loadEnv() {
@@ -247,7 +247,7 @@ Environment (or ${ENV_FILES.at(-1)}):
     if (!response.ok) return console.error(`${spec.name}: the router refused (${response.status}). Run \`${spec.name} --stop\` and try again.`);
     return console.log(`${spec.name}: advisor ${wanted}.`);
   }
-  if (flag === "--print-config") return console.log(spec.configHelp(origin));
+  if (flag === "--print-config") return console.log(await spec.configHelp(origin));
   if (flag === "--start") {
     await ensureRouter();
     return console.log(`${spec.name}: router up on ${origin} → ${spec.upstream()} (logs: ${logFile})`);
