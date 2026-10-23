@@ -1,7 +1,24 @@
 import type { Questions, SystemOneRequest, SystemOneResult } from "@typesafe-ai/sdk";
+import { execFile } from "node:child_process";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { loadConfig, type Config } from "../src/config.js";
 import type { AskJev } from "../src/decide.js";
 import type { ToolDef } from "../src/types.js";
+
+/**
+ * A fresh PATH directory whose `opencode` runs the given shell snippet for every invocation.
+ * The launcher only ever asks OpenCode one thing — `debug config` — and the snippet overrides
+ * the answer outright, log lines and all, so tests shape the client's reply.
+ */
+export function fakeOpencodeDir(script: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "jev-fake-opencode-"));
+  writeFileSync(join(dir, "opencode"), `#!/bin/sh\n${script}\n`);
+  chmodSync(join(dir, "opencode"), 0o755);
+  return dir;
+}
 
 export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   ...loadConfig({ UPSTREAM_BASE_URL: "https://llm.test/v1" }),
