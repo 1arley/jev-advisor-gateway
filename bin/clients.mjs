@@ -218,16 +218,6 @@ function mergeConfigDocuments(documents) {
   return merged;
 }
 
-/** The string of OpenCode's major version, from the binary itself, so `--print-config` shows today's shape. */
-function opencodeVersion(env) {
-  return new Promise((resolve) => {
-    execFile("opencode", ["--version"], { env, timeout: 5000 }, (error, stdout) => {
-      const major = /v?(\d+)\./.exec(stdout ?? "")?.[1];
-      resolve(major ? Number(major) : undefined);
-    });
-  });
-}
-
 /** The value of `-m` / `--model` among the arguments meant for OpenCode, if there is one. */
 function modelFlag(argv) {
   for (const [index, arg] of argv.entries()) {
@@ -254,11 +244,18 @@ function modelFlag(argv) {
  * themselves is not reported.
  */
 export function opencodeOutsideGateway(resolved, argv = [], origin) {
-  const providers = isObject(resolved) && isObject(resolved.provider) ? resolved.provider : {};
+  // v1 spells the provider map `provider`, v2 `providers`, and both keys may appear; `providers`
+  // is the later source wherever the user wrote both.
+  const providers = {
+    ...(isObject(resolved) && isObject(resolved.provider) ? resolved.provider : {}),
+    ...(isObject(resolved) && isObject(resolved.providers) ? resolved.providers : {}),
+  };
   const covered = (model) => {
     const id = providerOf(model);
     if (id === OPENCODE_PROVIDER) return true;
-    const baseURL = id === undefined ? undefined : providers[id]?.options?.baseURL;
+    // v1 keeps the provider's endpoint in `options`, v2 in `settings`.
+    const provider = providers[id];
+    const baseURL = provider ? (provider.options?.baseURL ?? provider.settings?.baseURL) : undefined;
     return origin !== undefined && typeof baseURL === "string" && (baseURL === origin || baseURL.startsWith(`${origin}/`));
   };
   const outside = [];
@@ -353,23 +350,32 @@ export const opencode = {
     if (inherited.JEV_OPENCODE_CHECK === "off") return dropped;
     const found = await opencodeResolvedConfig({ ...inherited, ...opencode.env(origin, inherited) });
     if (!found) return dropped;
+    // On v2 the variable is never read, so saying the user's inline content was dropped would
+    // describe a knob OpenCode ignores; there the setup lines carry every word that matters.
+    const live = found.v2 ? [] : dropped;
     // On v2 the injected config is inert, so the whole v1 flow of saying what bypasses the gateway
     // would measure nothing: say the setup step instead until the block is in opencode.json.
     const setup = found.v2 && !(isObject(found.resolved) && isObject(found.resolved.providers) && isObject(found.resolved.providers[OPENCODE_PROVIDER]))
       ? opencodeSetupLines(origin)
       : [];
     const outside = opencodeOutsideGateway(found.resolved, argv, origin);
-    // The launcher prefixes only the first line with its name; what follows needs its own.
+    // The launcher prefixes the first line of the whole answer; when something already came
+    // before, the following notice carries its own name. Otherwise it stays unprefixed.
     const tail = [...setup, ...outside];
-    if (!tail.length) return dropped;
-    const lines = [...dropped, ...tail];
-    return [...lines.slice(0, dropped.length), `${opencode.name}: ${tail[0]}`, ...lines.slice(dropped.length + 1)];
+    if (!tail.length) return live;
+    if (!live.length) return tail;
+    const lines = [...live, ...tail];
+    return [...lines.slice(0, live.length), `${opencode.name}: ${tail[0]}`, ...lines.slice(live.length + 1)];
   },
   configHelp: async (origin, env = process.env) => {
     // No OPENCODE_CONFIG_CONTENT one-liner here: single-quoting raw JSON breaks when a custom
     // model ID contains an apostrophe. The opencode.json file workflow below needs no shell
     // quoting and matches what `jev-opencode --print-config` documents.
-    if ((await opencodeVersion(env)) === 2) {
+    // The version choice follows the shape `debug config` prints — v2 answers per-source
+    // documents, v1 the merged object — the same detection the notices use, so there is one
+    // way to be wrong instead of two. When OpenCode cannot be asked, print the v1 block,
+    // which both versions read; v2 users reach the v2 block from the launcher's startup notice.
+    if ((await opencodeResolvedConfig(env))?.v2 === true) {
       const config = opencodeV2Config(origin);
       const manual = JSON.stringify(config, null, 2);
       return (
