@@ -7,12 +7,17 @@ reviewing code, tests, configuration, workflows, or project documentation.
 
 ## Project map
 
-- `src/app.ts` parses routed requests, applies decisions, and chooses the upstream body.
+- `src/app.ts` registers routes, auth, the dashboard and the opaque proxy; it owns no sequencing.
+- `src/router.ts` is the deep module that owns one routed request end to end: parse, decision,
+  advisor consult, rewrite, optional Headroom pass, forward, and fail-open replay.
 - `src/adapters/` contains one wire-format adapter per API.
+- `src/advisor/` holds the advisor implementation: request/append per wire format (`advisor.ts`),
+  the session policy (`policy.ts`), and the in-memory session ledger (`session-state.ts`).
+- `src/headroom.ts` holds the optional tool-output compression behind its own seam.
 - `src/config.ts` is the only place under `src/` that reads environment variables.
 - `src/upstream.ts` forwards requests and filters hop-by-hop headers.
 - `test/` contains offline Vitest coverage; `test/helpers.ts` provides `fakeJev`, `fakeUpstream`,
-  and `testConfig`.
+  and `testConfig`; `test/router.test.ts` pins the router's ordering and fail-open invariants.
 - `README.md` documents user-visible behavior; `.env.example` lists every environment setting.
 - `decision-record.md` tracks the Headroom decision, implementation scope, and outstanding gates.
 
