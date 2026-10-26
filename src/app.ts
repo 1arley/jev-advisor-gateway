@@ -1,23 +1,17 @@
 import { timingSafeEqual } from "node:crypto";
-import { brotliDecompressSync, gunzipSync, inflateSync, zstdDecompressSync } from "node:zlib";
-import { Hono, type Context } from "hono";
-import type { Adapter } from "./adapters/adapter.js";
+import { Hono } from "hono";
 import { chatAdapter } from "./adapters/chat.js";
-import { geminiAdapter } from "./adapters/gemini.js";
 import { exaAdapter } from "./adapters/exa.js";
+import { geminiAdapter } from "./adapters/gemini.js";
 import { messagesAdapter } from "./adapters/messages.js";
 import { responsesAdapter } from "./adapters/responses.js";
-import type { ResponsesRequest } from "./adapters/responses.js";
-import { advisorFor, consultAdvisor } from "./codex/advisor.js";
-import { decideSessionAction } from "./codex/policy.js";
-import { addRecent, createSessionStore, readResponseId, type SessionState } from "./codex/session-state.js";
 import type { Config } from "./config.js";
 import { dashboardRoutes } from "./dashboard.js";
-import { redactHeaders, summarizeResponse, type Dump } from "./debug.js";
-import { decide, type AskJev, type Decision } from "./decide.js";
+import { redactHeaders, type Dump } from "./debug.js";
+import type { AskJev } from "./decide.js";
 import { createEventLog, type EventLog } from "./events.js";
+import { createDecisionHandler, createRouter } from "./router.js";
 import { forward } from "./upstream.js";
-import { readReply } from "./usage.js";
 
 export interface Deps {
   config: Config;
@@ -31,419 +25,36 @@ export interface Deps {
   dump?: Dump;
 }
 
-type AnyRequest = { model?: string; stream?: boolean; tools?: unknown[] };
-
 const safeEqual = (a: string, b: string) => {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
 };
 
-const DECODERS: Record<string, (data: Uint8Array) => Buffer> = {
-  zstd: zstdDecompressSync,
-  gzip: gunzipSync,
-  br: brotliDecompressSync,
-  deflate: inflateSync,
-};
-
-/** Parse a JSON body, undoing request compression (Codex sends zstd). Undefined if unreadable. */
-function parseBody<Req>(bytes: Uint8Array, encoding: string | undefined): Req | undefined {
-  try {
-    const decoder = encoding ? DECODERS[encoding.trim().toLowerCase()] : undefined;
-    if (encoding && !decoder) return undefined;
-    const parsed: unknown = JSON.parse(Buffer.from(decoder ? decoder(bytes) : bytes).toString("utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as Req) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-type HeadroomMetric = {
-  mode: "shadow" | "compress";
-  result: "ineligible" | "compressed" | "unchanged" | "error";
-  latencyMs?: number;
-  tokensBefore?: number;
-  tokensAfter?: number;
-};
-
-/** Compress one synthetic/live tool output without sending upstream credentials or following redirects. */
-async function compressToolOutput(
-  req: ResponsesRequest,
-  config: Config,
-  fetchImpl: typeof fetch,
-): Promise<{ output?: string; inputIndex?: number; metric: HeadroomMetric }> {
-  const metric: HeadroomMetric = { mode: config.headroomMode as "shadow" | "compress", result: "ineligible" };
-  const items = Array.isArray(req.input) ? req.input : [];
-  const outputs = items.filter((item) => item && typeof item.type === "string" && item.type.endsWith("_output"));
-  const item = outputs.length === 1 ? outputs[0] : undefined;
-  if (
-    config.client !== "codex" ||
-    !req.previous_response_id ||
-    outputs.length !== 1 ||
-    item?.type !== "function_call_output" ||
-    typeof item.call_id !== "string" ||
-    !item.call_id ||
-    typeof item.output !== "string" ||
-    !item.output ||
-    typeof req.model !== "string" ||
-    !config.headroomUrl
-  ) return { metric };
-
-  const startedAt = performance.now();
-  try {
-    const response = await fetchImpl(config.headroomUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: req.model, messages: [{ role: "tool", tool_call_id: item.call_id, content: item.output }] }),
-      redirect: "error",
-      signal: AbortSignal.timeout(config.headroomTimeoutMs),
-    });
-    if (!response.ok) throw new Error("Headroom rejected the request");
-    const data: unknown = await response.json();
-    if (!data || typeof data !== "object") throw new Error("Unexpected Headroom response");
-    const result = data as Record<string, unknown>;
-    const messages = result.messages;
-    if (!Array.isArray(messages) || messages.length !== 1 || !Array.isArray(result.ccr_hashes) || result.ccr_hashes.length !== 0) {
-      throw new Error("Unexpected Headroom response");
-    }
-    const message: unknown = messages[0];
-    if (!message || typeof message !== "object") throw new Error("Unexpected Headroom message");
-    const compressed = message as Record<string, unknown>;
-    if (
-      compressed.role !== "tool" ||
-      compressed.tool_call_id !== item.call_id ||
-      typeof compressed.content !== "string" ||
-      !compressed.content ||
-      compressed.content.length > item.output.length ||
-      Object.keys(compressed).some((key) => !["role", "tool_call_id", "content"].includes(key)) ||
-      /<<\s*ccr:|retrieve (?:more|original):\s*hash=/i.test(compressed.content)
-    ) throw new Error("Unexpected Headroom output");
-    metric.latencyMs = Math.round(performance.now() - startedAt);
-    if (typeof result.tokens_before === "number" && Number.isFinite(result.tokens_before) && result.tokens_before >= 0) {
-      metric.tokensBefore = result.tokens_before;
-    }
-    if (typeof result.tokens_after === "number" && Number.isFinite(result.tokens_after) && result.tokens_after >= 0) {
-      metric.tokensAfter = result.tokens_after;
-    }
-    if (compressed.content.length === item.output.length) {
-      metric.result = "unchanged";
-      return { metric };
-    }
-    if (compressed.content.length > item.output.length) throw new Error("Headroom output grew");
-    metric.result = "compressed";
-    return { output: compressed.content, inputIndex: items.indexOf(item), metric };
-  } catch {
-    metric.result = "error";
-    metric.latencyMs = Math.round(performance.now() - startedAt);
-    return { metric };
-  }
-}
-
-// A reason can quote whatever Jev's provider answered, such as an HTML block page. Headers.set
-// throws on line breaks and on characters beyond Latin-1, and it would throw after the request
-// had reached the upstream, so the client got a 500 instead of the reply it paid for.
-const headerSafe = (value: string) => value.replace(/[^\x20-\x7e]+/g, " ");
-
-function decisionHeaders(decision: Decision): Record<string, string> {
-  const headers: Record<string, string> = { "x-jev-gateway-mode": decision.mode };
-  if (decision.mode === "passthrough") headers["x-jev-gateway-reason"] = headerSafe(decision.reason).slice(0, 120);
-  if (decision.mode === "forced" || decision.mode === "direct" || decision.mode === "hint") {
-    headers["x-jev-gateway-tool"] = decision.tool;
-  }
-  if (decision.jev) {
-    headers["x-jev-gateway-confidence"] = decision.jev.confidence.toFixed(3);
-    headers["x-jev-gateway-latency-ms"] = String(decision.jev.latencyMs);
-  }
-  return headers;
-}
-
 export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: writeLog = () => {}, events = createEventLog(), dump }: Deps) {
   const app = new Hono();
-  const sessions = createSessionStore();
-
-  /** One routed request: a line in the log, and a row on the dashboard. */
+  const routing = { enabled: config.routing };
+  const advisorEnabled = { enabled: config.advisorEnabled };
   const log = (entry: Record<string, unknown>) => {
     writeLog(entry);
     events.record(entry);
   };
-
-  /**
-   * Log a forwarded request once its reply has ended, because that is when the provider says what
-   * it cost and which tool the model actually called. The reply is read from a clone in the
-   * background, so the client is never delayed.
-   */
-  const logWhenDone = (entry: Record<string, unknown>, response: Response, startedAt: number) => {
-    const copy = response.clone();
-    void readReply(copy).then((reply) =>
-      log({
-        ...entry,
-        status: response.status,
-        durationMs: Math.round(performance.now() - startedAt),
-        ...(reply.tool ? { actualTool: reply.tool } : {}),
-        ...(reply.usage ? { usage: reply.usage } : {}),
-      }),
-    );
-  };
-
-  // Routing can be switched off at runtime to measure a baseline: same clients, same traffic,
-  // same token accounting, but Jev is never asked and nothing is rewritten.
-  let routing = config.routing;
-  let advisorEnabled = config.advisorEnabled;
-
-  /**
-   * Error bodies are the only documentation an undocumented backend offers, and a finished
-   * stream's usage is the only way to see what a rewrite did to the prompt cache: keep both.
-   * Reads a clone in the background, so the client's stream is never delayed.
-   */
-  const dumpResponse = (kind: string, response: Response, extra: Record<string, unknown> = {}) => {
-    if (!dump) return;
-    const failed = response.status >= 400;
-    const copy = response.clone();
-    void (async () => {
-      let text = "";
-      try {
-        // Codex hangs up the moment it has `response.completed`, which aborts the upstream read
-        // mid-stream: whatever arrived until then is the response.
-        for await (const chunk of copy.body?.pipeThrough(new TextDecoderStream()) ?? []) text += chunk;
-      } catch {}
-      dump(failed ? kind : "response", {
-        status: response.status,
-        ...extra,
-        ...(failed ? { body: text.slice(0, 20_000) } : summarizeResponse(text)),
-      });
-    })();
-  };
-
-  /**
-   * The decision, plus how many tools the adapter found — they aren't always in `req.tools`.
-   * Adapters read the request as the shape its API documents, and a body can be valid JSON without
-   * being that shape (`"messages": [null]`). Whatever that makes them throw is not a reason to
-   * fail the request: upstream gets to answer it, with its own error when it deserves one.
-   */
-  const decideFor = async <Req extends AnyRequest>(adapter: Adapter<Req>, req: Req): Promise<{ decision: Decision; tools?: number }> => {
-    // Codex needs Jev on continuations for session policy; other Responses clients retain the
-    // upstream's server-side history untouched, as the original gateway did.
-    if (adapter === responsesAdapter && config.client !== "codex" && (req as ResponsesRequest).previous_response_id) {
-      return { decision: { mode: "passthrough", reason: "previous_response_id" } };
-    }
-    let input: ReturnType<Adapter<Req>["toInput"]>;
-    try {
-      input = adapter.toInput(req, config.maxMessageChars);
-    } catch {
-      return { decision: { mode: "passthrough", reason: "unreadable_request" } };
-    }
-    if ("skip" in input) return { decision: { mode: "passthrough", reason: input.skip } };
-    // Codex's internal reviewer must keep control of its own tool selection.
-    if (req.model === "codex-auto-review") {
-      return { decision: { mode: "passthrough", reason: "codex_auto_review" }, tools: input.tools.length };
-    }
-    try {
-      return { decision: await decide(input, config, askJev), tools: input.tools.length };
-    } catch {
-      // Same rule as decide(): the reason reaches headers and logs, so it stays a stable code.
-      return { decision: { mode: "passthrough", reason: "router_error" }, tools: input.tools.length };
-    }
-  };
-
-  const route = <Req extends AnyRequest>(adapter: Adapter<Req>) => async (c: Context) => {
-    const startedAt = performance.now();
-    const time = new Date().toISOString();
-    const bytes = new Uint8Array(await c.req.arrayBuffer());
-    // Unreadable bodies are not ours to judge: upstream produces its own error for them.
-    const encoding = c.req.header("content-encoding");
-    let req: Req | undefined;
-    try {
-      req = adapter.parse ? adapter.parse(bytes, encoding) : parseBody<Req>(bytes, encoding);
-    } catch {
-      req = undefined;
-    }
-    dump?.("request", {
-      method: c.req.method,
-      path: c.req.path,
-      headers: redactHeaders(c.req.raw.headers),
-      body: req ?? `[unparseable, ${bytes.length} bytes]`,
-    });
-
-    let decision: Decision;
-    let tools: number | undefined;
-    let session: SessionState | undefined;
-    let sessionAction: Awaited<ReturnType<typeof decideSessionAction>> | undefined;
-    // Undefined for wire formats the advisor cannot speak (chat, gemini, exa): no consult, no policy.
-    const advisorImpl = advisorFor(adapter);
-    if (!req) decision = { mode: "passthrough", reason: encoding ? "unsupported_encoding" : "unparseable_body" };
-    else if (c.req.header("x-jev-gateway") === "off") decision = { mode: "passthrough", reason: "disabled_by_header" };
-    else if (!routing) decision = { mode: "passthrough", reason: "routing_disabled" };
-    else {
-      // The session policy needs a conversation the router can read. Codex continues one by
-      // `previous_response_id`; Claude resends the whole conversation every turn, so its session
-      // is per-request (the advisor budget then caps calls within a turn, not across the chat).
-      if (advisorImpl && advisorEnabled && req.model !== "codex-auto-review") {
-        try {
-          const input = adapter.toInput(req, config.maxMessageChars);
-          if (!("skip" in input)) {
-            session = sessions.resume((req as ResponsesRequest).previous_response_id);
-            addRecent(session, input);
-            try {
-              sessionAction = await decideSessionAction(input, session, config, askJev);
-            } catch {
-              sessionAction = undefined;
-            }
-          }
-        } catch {
-          // The session policy is advisory; tool routing and the original request can still proceed.
-        }
-      }
-      ({ decision, tools } = await decideFor(adapter, req));
-    }
-
-    let bodyOverride: string | undefined;
-    // Why the advisor did or did not answer, recorded on every request the advisor covers. The
-    // route log carries the tool decision alone, and a consult that silently produced nothing is
-    // then indistinguishable from a gateway that never asked: this is the only place it shows up.
-    let advisor: Record<string, unknown> | undefined;
-    if (advisorImpl && advisorEnabled) {
-      advisor = { model: config.advisorModel, action: sessionAction?.action ?? "unknown", confidence: sessionAction?.confidence ?? 0, calls: session?.advisorCalls ?? 0 };
-    }
-    if (req && session && sessionAction && advisorImpl) {
-      const uncertain = decision.mode === "passthrough" && ["low_confidence", "jev_answers_disagree"].includes(decision.reason);
-      if (sessionAction.action === "stop" && (tools ?? 0) > 0) {
-        decision = { mode: "none", confidence: sessionAction.confidence, jev: decision.jev };
-      } else if (sessionAction.action === "consult_advisor" || uncertain) {
-        if (!advisorEnabled || session.advisorCalls >= config.advisorMaxCallsPerSession) {
-          advisor = { ...advisor, consulted: false, skipped: advisorEnabled ? "session_budget" : "advisor_off" };
-        } else {
-          const consult = await consultAdvisor(c.req.raw, req, config, session, fetchImpl, advisorImpl);
-          const note = "note" in consult ? consult.note : undefined;
-          advisor = {
-            ...advisor,
-            consulted: true,
-            noteAdded: note !== undefined,
-            ...("usage" in consult && consult.usage ? { usage: consult.usage } : {}),
-            ...("reason" in consult ? { skipped: consult.reason, ...("status" in consult ? { advisorStatus: consult.status } : {}), ...("detail" in consult ? { detail: consult.detail } : {}) } : {}),
-          };
-          if (note) {
-            req = advisorImpl.append(req, note);
-            bodyOverride = JSON.stringify(req);
-            session.lastAdvisorAt = Date.now();
-            session.advisorCalls++;
-          }
-        }
-      }
-    }
-
-    const url = new URL(c.req.url);
-    const fromUrl = adapter.fromUrl?.(url) ?? {};
-    const entry = { event: "route", time, path: c.req.path, model: req?.model ?? fromUrl.model, tools: tools ?? req?.tools?.length ?? 0, ...(advisor ? { advisor } : {}) };
-    // Building an answer or a rewrite is the gateway's own work. If it breaks, the original
-    // request still goes upstream: the router must never be the reason a request fails.
-    const giveUp = (error: unknown): Decision => ({
-      mode: "passthrough",
-      // A stable code, because the reason reaches headers and logs (see decide()).
-      reason: "router_error",
-      jev: decision.jev,
-    });
-
-    if (req && decision.mode === "direct") {
-      try {
-        const call = { tool: decision.tool, args: decision.args, inputTokens: decision.jev?.inputTokens ?? 0 };
-        const headers = decisionHeaders(decision);
-        const streamed = (fromUrl.stream ?? req.stream) ? adapter.directStream(req, call, url) : undefined;
-        const json = streamed === undefined ? adapter.directJson(req, call) : undefined;
-        log({ ...entry, ...decision });
-        if (streamed === undefined) return c.json(json, 200, headers);
-        if (typeof streamed !== "string") return c.body(streamed.body, 200, { ...headers, "content-type": streamed.contentType });
-        return c.body(streamed, 200, { ...headers, "content-type": "text/event-stream", "cache-control": "no-cache" });
-      } catch (error) {
-        decision = giveUp(error);
-      }
-    }
-
-    let rewritten: Req | undefined;
-    if (req && decision.mode !== "passthrough") {
-      try {
-        rewritten = adapter.apply(req, decision, config.argsModel);
-      } catch (error) {
-        decision = giveUp(error);
-      }
-    }
-
-    let rewrittenBody: string | Uint8Array | undefined;
-    if (rewritten && decision.mode !== "passthrough") {
-      try {
-        rewrittenBody = adapter.encode ? adapter.encode(rewritten) : JSON.stringify(rewritten);
-      } catch (error) {
-        decision = giveUp(error);
-      }
-    }
-
-    let preparedBody: string | Uint8Array = rewrittenBody ?? (bodyOverride ?? bytes);
-    let headroom: HeadroomMetric | undefined;
-    const responsesInput = req && adapter === responsesAdapter ? (req as ResponsesRequest).input : undefined;
-    const hasAgentMessage = Array.isArray(responsesInput) && responsesInput.some((item) => item?.type === "agent_message");
-    if (
-      req &&
-      adapter === responsesAdapter &&
-      config.headroomMode !== "off" &&
-      routing &&
-      c.req.header("x-jev-gateway") !== "off" &&
-      req.model !== "codex-auto-review" &&
-      !hasAgentMessage
-    ) {
-      const beforeHeadroom = preparedBody;
-      try {
-        const attempt = await compressToolOutput(req as ResponsesRequest, config, fetchImpl);
-        headroom = attempt.metric;
-        if (attempt.output !== undefined && attempt.inputIndex !== undefined && config.headroomMode === "compress") {
-          const preparedReq = (rewritten ?? req) as ResponsesRequest;
-          if (Array.isArray(preparedReq.input)) {
-            preparedBody = JSON.stringify({
-              ...preparedReq,
-              input: preparedReq.input.map((item, index) =>
-                index === attempt.inputIndex ? { ...item, output: attempt.output } : item,
-              ),
-            });
-          }
-        }
-      } catch {
-        preparedBody = beforeHeadroom;
-        headroom = { mode: config.headroomMode, result: "error" };
-      }
-    }
-
-    if (rewrittenBody !== undefined && rewritten && decision.mode !== "passthrough") {
-      const response = await forward(c.req.raw, config, fetchImpl, { body: preparedBody, responseHeaders: decisionHeaders(decision) });
-      const sent = { mode: decision.mode, model: rewritten.model, tool_choice: (rewritten as { tool_choice?: unknown }).tool_choice };
-      dumpResponse("rejected", response, { sent });
-      if (response.status !== 400 && response.status !== 422) {
-        // Only the Responses format continues by response id: a Claude session is per-request, so
-        // remembering it under the reply's own `msg_...` would fill the store with entries nothing reads.
-        if (session && response.ok && adapter === responsesAdapter) void readResponseId(response).then((id) => sessions.remember(id, session!));
-        logWhenDone({ ...entry, ...decision, ...(headroom ? { headroom } : {}) }, response, startedAt);
-        return response;
-      }
-      // The upstream refused the rewritten request (some backends only accept tool_choice
-      // "auto"): the router must never be the reason a request fails, so replay the original.
-      await response.body?.cancel();
-      decision = { mode: "passthrough", reason: `upstream_rejected_${decision.mode}`, jev: decision.jev };
-      preparedBody = bodyOverride ?? bytes;
-    }
-
-    const response = await forward(c.req.raw, config, fetchImpl, {
-      body: preparedBody,
-      responseHeaders: decisionHeaders(decision),
-    });
-    if (session && response.ok && adapter === responsesAdapter) void readResponseId(response).then((id) => sessions.remember(id, session!));
-    logWhenDone({ ...entry, ...decision, ...(headroom ? { headroom } : {}) }, response, startedAt);
-    dumpResponse("upstream-error", response);
-    return response;
-  };
+  const router = createRouter({
+    config,
+    askJev,
+    fetch: fetchImpl,
+    log,
+    dump,
+    routing,
+    advisorEnabled,
+  });
 
   // Answers before the key is checked, so that a launcher can find its gateway. A gateway that
   // has a key is one somebody else may reach: it says that it is up, and nothing about itself.
   app.get("/health", (c) =>
     c.json(config.routerApiKey
       ? { status: "ok" }
-      : { status: "ok", pid: process.pid, upstream: config.upstreamBaseUrl, jev: config.jevProvider, advisor: advisorEnabled }),
+      : { status: "ok", pid: process.pid, upstream: config.upstreamBaseUrl, jev: config.jevProvider, advisor: advisorEnabled.enabled }),
   );
 
   app.use("*", async (c, next) => {
@@ -456,46 +67,26 @@ export function createApp({ config, askJev, fetch: fetchImpl = fetch, log: write
     return c.json({ error: { message: "Invalid jev-advisor-gateway API key", type: "invalid_api_key" } }, 401);
   });
 
-  /**
-   * Dry run: what would the router do with this body? Calls Jev, never upstream.
-   * Accepts any routed wire format; `?format=chat|responses|messages` overrides the guess.
-   */
-  app.post("/router/decide", async (c) => {
-    const req = parseBody<Record<string, unknown>>(new Uint8Array(await c.req.arrayBuffer()), undefined);
-    if (!req) return c.json({ error: { message: "Body must be a JSON object", type: "invalid_request_error" } }, 400);
-    const adapters = { chat: chatAdapter, responses: responsesAdapter, messages: messagesAdapter, gemini: geminiAdapter };
-    // Chat Completions and Anthropic Messages both use `messages`; only Anthropic has a top-level
-    // `system` or tools described by `input_schema`. Gemini uses `contents`.
-    const tools = Array.isArray(req.tools) ? (req.tools as Record<string, unknown>[]) : [];
-    const guess = "contents" in req
-      ? "gemini"
-      : !("messages" in req)
-        ? "responses"
-        : "system" in req || tools.some((tool) => "input_schema" in tool)
-          ? "messages"
-          : "chat";
-    const format = (c.req.query("format") ?? guess) as keyof typeof adapters;
-    const adapter = (adapters[format] ?? adapters[guess]) as Adapter<AnyRequest>;
-    return c.json((await decideFor(adapter, req)).decision);
-  });
+  /** Dry run: what would the router do with this body? Calls Jev, never upstream. */
+  app.post("/router/decide", createDecisionHandler(config, askJev));
 
   app.route(
     "/dashboard",
     dashboardRoutes(
       config,
       events,
-      { get: () => routing, set: (enabled) => void (routing = enabled) },
+      { get: () => routing.enabled, set: (enabled) => void (routing.enabled = enabled) },
       config.client === "codex" || config.client === "claude"
-        ? { get: () => advisorEnabled, set: (enabled) => void (advisorEnabled = enabled) }
+        ? { get: () => advisorEnabled.enabled, set: (enabled) => void (advisorEnabled.enabled = enabled) }
         : undefined,
     ),
   );
 
-  app.post("/v1/chat/completions", route(chatAdapter));
-  app.post("/v1/responses", route(responsesAdapter));
-  app.post("/v1/messages", route(messagesAdapter));
-  app.post("/v1beta/models/*", route(geminiAdapter));
-  app.post("/exa.api_server_pb.ApiServerService/GetChatMessage", route(exaAdapter));
+  app.post("/v1/chat/completions", router.route(chatAdapter));
+  app.post("/v1/responses", router.route(responsesAdapter));
+  app.post("/v1/messages", router.route(messagesAdapter));
+  app.post("/v1beta/models/*", router.route(geminiAdapter));
+  app.post("/exa.api_server_pb.ApiServerService/GetChatMessage", router.route(exaAdapter));
 
   // Everything else (models, embeddings, …) is proxied untouched.
   app.all("/v1/*", async (c) => {

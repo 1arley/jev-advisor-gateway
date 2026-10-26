@@ -142,6 +142,7 @@ async function readConnectUsage(response: Response): Promise<Usage | undefined> 
 export interface Reply {
   usage?: Usage;
   tool?: string;
+  responseId?: string;
 }
 
 /**
@@ -159,6 +160,12 @@ export async function readReply(response: Response): Promise<Reply> {
   }
   const found: Partial<Usage> = {};
   let tool: string | undefined;
+  let responseId: string | undefined;
+  const readId = (payload: unknown) => {
+    const root = obj(payload);
+    const id = obj(root.response).id ?? root.id;
+    if (typeof id === "string" && id) responseId ??= id;
+  };
   // Told apart by content, not by header: the ChatGPT Codex backend streams events without
   // sending any content-type at all.
   let streaming: boolean | undefined;
@@ -168,10 +175,11 @@ export async function readReply(response: Response): Promise<Reply> {
     // parsing. (`"usage` with no closing quote also matches Gemini's `usageMetadata`.)
     if (!line.startsWith("data:")) return;
     const data = line.slice(5);
-    if (!(data.includes('"usage') || data.includes('"tool') || data.includes('"function_c') || data.includes('"functionCall'))) return;
+    if (!(data.includes('"usage') || data.includes('"tool') || data.includes('"function_c') || data.includes('"functionCall') || data.includes('"response"') || data.includes('"id"'))) return;
     try {
       const payload: unknown = JSON.parse(data);
       collect(payload, found);
+      readId(payload);
       const name = firstToolName(payload);
       if (name !== undefined && tool === undefined) tool = name;
     } catch {
@@ -195,6 +203,7 @@ export async function readReply(response: Response): Promise<Reply> {
     try {
       const payload: unknown = JSON.parse(pending);
       collect(payload, found);
+      readId(payload);
       const name = firstToolName(payload);
       if (name !== undefined && tool === undefined) tool = name;
     } catch {
@@ -205,7 +214,7 @@ export async function readReply(response: Response): Promise<Reply> {
     found.input === undefined && found.output === undefined
       ? undefined
       : { input: 0, output: 0, cached: 0, cacheWrite: 0, cacheWrite1h: 0, reasoning: 0, ...found };
-  return { ...(usage ? { usage } : {}), ...(tool !== undefined ? { tool } : {}) };
+  return { ...(usage ? { usage } : {}), ...(tool !== undefined ? { tool } : {}), ...(responseId ? { responseId } : {}) };
 }
 
 /** The cost of one reply, alone; tool observation rides along in the same read. */
