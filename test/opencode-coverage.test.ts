@@ -1,7 +1,7 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fakeOpencodeDir } from "./helpers.js";
 
@@ -9,6 +9,9 @@ import { fakeOpencodeDir } from "./helpers.js";
 const { opencode, opencodeConfigContent, opencodeOutsideGateway } = await import("../bin/clients.mjs");
 
 const origin = "http://127.0.0.1:8791";
+// These cases assert the default config; the workstation's model override must not change it.
+beforeEach(() => vi.stubEnv("JEV_OPENCODE_MODEL", "gpt-5"));
+afterEach(() => vi.unstubAllEnvs());
 // Plain shell one-liners: each overridable fake answers whatever the launcher asks it.
 const says = (json: string) => `printf '%s\\n' '${json}'`;
 

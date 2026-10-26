@@ -1,4 +1,5 @@
 import type { RouterInput, Turn } from "../types.js";
+import { readReply } from "../usage.js";
 
 export interface SessionState {
   recent: string[];
@@ -67,52 +68,10 @@ export function createSessionStore(now: () => number = Date.now) {
   };
 }
 
-/** Read just the response ID from JSON or SSE, keeping the body clone bounded and off the client path. */
+/** Read the response ID from the shared reply scan. */
 export async function readResponseId(response: Response): Promise<string | undefined> {
   try {
-    let pending = "";
-    const reader = response.clone().body?.pipeThrough(new TextDecoderStream()).getReader();
-    if (!reader) return undefined;
-    let format: "json" | "sse" | undefined;
-    const responseId = (value: string): string | undefined => {
-      try {
-        const data = JSON.parse(value) as { type?: string; id?: unknown; response?: { id?: unknown } };
-        const id = data.response?.id ?? data.id;
-        return typeof id === "string" ? id : undefined;
-      } catch {
-        return undefined;
-      }
-    };
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) return undefined;
-      pending += value;
-      if (!format) {
-        const first = pending.trimStart()[0];
-        if (!first) continue;
-        format = first === "{" ? "json" : "sse";
-      }
-      if (format === "json") {
-        const id = responseId(pending);
-        if (id) {
-          await reader.cancel();
-          return id;
-        }
-        if (pending.length > 64_000) return undefined;
-        continue;
-      }
-      if (pending.length > 64_000) pending = pending.slice(-16_000);
-      const lines = pending.split("\n");
-      pending = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const id = responseId(line.slice(5));
-        if (id) {
-          await reader.cancel();
-          return id;
-        }
-      }
-    }
+    return (await readReply(response.clone())).responseId;
   } catch {
     return undefined;
   }

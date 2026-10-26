@@ -97,3 +97,40 @@ Do mesmo ciclo, sem nova configuração: quando `JEV_PROVIDER=laya`, o gateway d
 ## Proveniência e limites
 
 O usuário confirmou as três recomendações em 2026-10-20. Essas respostas são decisões humanas, não respostas do JEV; nenhuma resposta validada do JEV foi recebida nesta rodada. O levantamento local identificou mensagens de exceção incluídas em motivos e a documentação registra impacto variável por modelo e tarefa, com amostras pequenas. Em 2026-10-22 o usuário pediu explicitamente prosseguir com os itens da rodada (motivos de erro, feedback de roteamento, medição de checkpoints e aquecimento), e o que aparece como implementado acima resultou desse pedido.
+
+## Revisão de arquitetura: aprofundar o roteador como um módulo (deepening)
+
+Data: 2026-10-26
+Status: implementado e validado em 2026-10-26; 303 testes passaram
+
+Decisões tomadas com o grill-with-jev (proveniência detalhada em `.grill/architecture-review-2026-10-26.jsonl`, sessão `architecture-review-2026-10-26`; JEV via TypeSafe/jev-latest, decisões humanas para as perguntas escaladas):
+
+| Tema | Decisão |
+|---|---|
+| Escopo (Q1) | Extrair a transação roteada inteira de `src/app.ts` para `src/router.ts` (módulo profundo). Advisor, policy, session-state e Headroom movem para trás dele, num único lote. |
+| Leitor de reply (Q2) | Fundir apenas os dois scanners de clone (`readReply` em `src/usage.ts` + `readResponseId` em `src/codex/session-state.ts`); os extratores sobre strings (`summarizeResponse`, `.text` do advisor) ficam como estão. |
+| Dono do forward (Q3) | O módulo router profundo é dono da transação inteira: parse → decide → advisor → rewrite → headroom → forward → log → remember. `app.ts` vira registro + flush fino. Seam de volta ao chamador: `prepare(req) -> Response`. |
+| Layout (Q4) | `src/router.ts` + mover `advisor.ts`, `policy.ts`, `session-state.ts` de `src/codex/` para `src/advisor/`. Renomear `codex` → `advisor` uma vez, junto com a extração; sem dois passos de churn. |
+| Walker fundido (Q5) | Um walker em `src/usage.ts`: `readReply(reply) -> { usage, tool, responseId }`, uma passada sobre um clone. `readResponseId` vira wrapper fino em `session-state.ts` chamando `readReply`. |
+| Testes (Q6) | Manter os testes e2e `app.request()` como backstop comportamental; adicionar `test/router.test.ts` dirigindo a interface do router diretamente (invariantes de ordem: decisão antes do advisor, ordem de prepare, headroom por último, fail-open em `router_error`); `usage.test.ts` e os testes de `readResponseId` ficam como estão. |
+| Uma leitura do reply (Q7) | Uma única passada de `readReply` alimenta o log roteado (status, duration, usage, actualTool) e, quando `session && responsesAdapter`, `sessions.remember(responseId)` do mesmo resultado. O reply é lido uma vez por request. |
+| Headroom (Q8) | Extração é pure move, preservando exatamente o gate do decision-record: off por padrão, URL loopback explícita, escopo Codex continuation, sem knob novo, métricas no mesmo allowlist do dashboard. O gate não é reaberto. |
+| Superfície do router (Q9) | `createRouter(deps)` retorna `{ route }`, com `route(adapter)` a mesma assinatura de hoje; as cinco registrações de rota em `app.ts` mal mudam. `decideFor` e `advisorFor` ficam dentro do módulo router como detalhe de implementação. |
+| Mapa de advisor (Q10) | Manter `advisorFor` comparando adapters por identidade de módulo (já importa `chatAdapter`, `responsesAdapter`, `messagesAdapter`); sem tag no `Adapter`, sem alargar interface. Move para `src/advisor/` inalterado. |
+| Commit/move (Q11) | Um commit mecânico único `refactor`: mover advisor/policy/session-state para `src/advisor/` e adicionar `src/router.ts`; rodar `pnpm typecheck && pnpm test && pnpm build`; exports de `src/index.ts` inalterados (router e advisor são internos ao app). |
+
+Proveniência: Q1/Q2/Q3/Q7/Q8 confirmados explicitamente pelo usuário (Q3/Q7/Q8 escalados por confiança < 0.6 ou risco de segurança; usuário aceitou a recomendação). Q4, Q5, Q6, Q9, Q10, Q11 aceitos pelo JEV com confiança 0.66–0.79, sem escalação.
+
+Premissas e limites conhecidos:
+- O merge do walker não muda o comportamento observável do reply: `readReply` expõe `{ usage, tool, responseId }` e `readResponseId` mantém a assinatura, então `usage.test.ts` e os testes de sessão seguem válidos.
+- Antes da fusão, `readResponseId` fazia `reader.cancel()` assim que achava o id; o walker fundido lê o reply até o fim para extrair usage/tool, então a leitura consome o corpo inteiro — comportamento esperado e aceito em Q7 (ler uma vez por request).
+- A robustez de fail-open (`router_error`, passthrough preservando o corpo pré-prepare) é mantida: o router nunca faz uma request falhar.
+- O Headroom continua off por padrão; a extração é mecânica e não reabre os gates de segurança registrados acima.
+
+## Implementação
+
+- `src/router.ts` agora possui a transação completa das cinco rotas. `createRouter(deps)` retorna somente `{ route }`; o handler separado do preview também usa o decider privado do módulo. `src/app.ts` mantém auth, dashboard, rotas e forward opaco.
+- `advisor.ts` e `policy.ts` foram movidos de `src/codex/` para `src/advisor/` sem mudanças de comportamento. `session-state.ts` também foi movido; seu `readResponseId` agora usa o walker compartilhado e lê o reply até o fim.
+- `readReply` extrai `responseId` na mesma leitura que usage e ferramenta. O log e `sessions.remember` consomem o mesmo resultado da resposta clonada; o wrapper `readResponseId` permanece compatível e também usa um clone.
+- Testes diretos do router cobrem a ordem de decisão, advisor, prepare/encode e forward; Headroom roda depois do prepare, e falhas de advisor, preparação ou Headroom seguem fail-open com o corpo aplicável preservado.
+- `pnpm typecheck`, `pnpm build` e a suíte completa passaram em 2026-10-26 (303/303 testes). `test/opencode-coverage.test.ts` fixa `JEV_OPENCODE_MODEL=gpt-5` durante os casos que verificam o padrão e restaura o ambiente após cada teste. Os testes focados de router e usage passaram (46/46). A validação Headroom continua sintética; nenhum serviço real foi chamado nesta mudança.

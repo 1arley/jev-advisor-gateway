@@ -11,8 +11,17 @@ const sse = (events: object[]) =>
   });
 
 describe("readReply", () => {
+  it("skips an empty response ID and keeps the next usable one", async () => {
+    const reply = await readReply(sse([
+      { type: "response.created", response: { id: "" } },
+      { type: "response.created", response: { id: "resp_valid" } },
+    ]));
+    expect(reply.responseId).toBe("resp_valid");
+  });
+
   it("names the tool a Responses stream called", async () => {
     const reply = await readReply(sse([
+      { type: "response.created", response: { id: "resp_stream" } },
       { type: "response.output_item.added", item: { type: "function_call", name: "get_weather", arguments: "", status: "in_progress" } },
       {
         type: "response.completed",
@@ -24,15 +33,18 @@ describe("readReply", () => {
       },
     ]));
     expect(reply.tool).toBe("get_weather");
+    expect(reply.responseId).toBe("resp_stream");
     expect(reply.usage).toMatchObject({ input: 10, output: 2 });
   });
 
   it("names the tool a Chat Completions reply called", async () => {
     const reply = await readReply(Response.json({
+      id: "resp_json",
       choices: [{ message: { role: "assistant", tool_calls: [{ id: "c1", type: "function", function: { name: "get_weather", arguments: "{}" } }] } }],
       usage: { prompt_tokens: 5, completion_tokens: 3 },
     }));
     expect(reply.tool).toBe("get_weather");
+    expect(reply.responseId).toBe("resp_json");
     expect(reply.usage).toMatchObject({ input: 5, output: 3 });
   });
 

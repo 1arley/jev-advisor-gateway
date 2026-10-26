@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { advisorFor, appendAdvisorNote, buildAdvisorRequest, consultAdvisor, extractAdvisorText } from "../src/codex/advisor.js";
+import { advisorFor, appendAdvisorNote, buildAdvisorRequest, consultAdvisor, extractAdvisorText } from "../src/advisor/advisor.js";
 import { responsesAdapter } from "../src/adapters/responses.js";
 import { chatAdapter } from "../src/adapters/chat.js";
 import { createApp } from "../src/app.js";
 import { createEventLog } from "../src/events.js";
 import { NO_TOOL } from "../src/questions.js";
-import { addRecent, createSessionStore, readResponseId, type SessionState } from "../src/codex/session-state.js";
+import { addRecent, createSessionStore, readResponseId, type SessionState } from "../src/advisor/session-state.js";
 import { fakeJev, fakeUpstream, settled, testConfig } from "./helpers.js";
 
 describe("OpenAI Chat Completions advisor", () => {

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { Hono } from "hono";
 import { createApp } from "../src/app.js";
 import { chatAdapter } from "../src/adapters/chat.js";
+import { responsesAdapter } from "../src/adapters/responses.js";
+import { createRouter } from "../src/router.js";
 import { NO_TOOL, planTool } from "../src/questions.js";
 import { buildState } from "../src/state.js";
 import type { RouterInput, RouterTool } from "../src/types.js";
-import { chat, fakeJev, fakeUpstream, testConfig } from "./helpers.js";
+import { chat, fakeJev, fakeUpstream, settled, testConfig } from "./helpers.js";
 
 const lightsAnswers = {
   tool: { choice: "set_lights" },
@@ -27,6 +30,242 @@ function setup(canned: Parameters<typeof fakeJev>[0], config = testConfig()) {
     });
   return { app, post, jev, upstream };
 }
+
+describe("router module", () => {
+  it("decides before forwarding when its route is mounted directly", async () => {
+    const order: string[] = [];
+    const upstream = fakeUpstream();
+    const jev = fakeJev(lightsAnswers);
+    const instrumentedAdapter = {
+      ...chatAdapter,
+      apply: (req: Parameters<typeof chatAdapter.apply>[0], decision: Parameters<typeof chatAdapter.apply>[1], model?: string) => {
+        order.push("prepare");
+        return chatAdapter.apply(req, decision, model);
+      },
+      encode: (req: Parameters<typeof chatAdapter.apply>[0]) => {
+        order.push("encode");
+        return JSON.stringify(req);
+      },
+    };
+    const router = createRouter({
+      config: testConfig({ directCalls: false }),
+      askJev: async (request) => {
+        order.push("decision");
+        return jev.askJev(request);
+      },
+      fetch: async (...args) => {
+        order.push("forward");
+        return upstream.fetchImpl(...args);
+      },
+      log: () => {},
+      routing: { enabled: true },
+      advisorEnabled: { enabled: false },
+    });
+    const app = new Hono();
+    app.post("/chat", router.route(instrumentedAdapter));
+
+    const response = await app.request("/chat", { method: "POST", body: JSON.stringify(chat("kitchen lights on")) });
+
+    expect(response.status).toBe(200);
+    expect(order.indexOf("decision")).toBeLessThan(order.indexOf("prepare"));
+    expect(order.indexOf("prepare")).toBeLessThan(order.indexOf("encode"));
+    expect(order.indexOf("encode")).toBeLessThan(order.indexOf("forward"));
+  });
+
+  it("decides before advisor, prepares after advisor, and forwards last", async () => {
+    const order: string[] = [];
+    const config = testConfig({ client: "claude", advisorEnabled: true, directCalls: false });
+    const jev = fakeJev({ session_action: { choice: "consult_advisor" }, ...lightsAnswers });
+    const router = createRouter({
+      config,
+      askJev: async (request) => {
+        order.push(Object.keys(request.questions).includes("session_action") ? "session-policy" : "decision");
+        return jev.askJev(request);
+      },
+      fetch: async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        if (body.model === config.advisorModel) {
+          order.push("advisor");
+          return Response.json({ choices: [{ message: { content: "Check the next step." } }] });
+        }
+        order.push("forward");
+        return Response.json({ choices: [] });
+      },
+      log: () => {},
+      routing: { enabled: true },
+      advisorEnabled: { enabled: true },
+    });
+    const app = new Hono();
+    app.post("/chat", router.route(chatAdapter));
+    const originalApply = chatAdapter.apply;
+    const originalEncode = chatAdapter.encode;
+    chatAdapter.apply = (req, decision, model) => {
+      order.push("prepare");
+      return originalApply(req, decision, model);
+    };
+    chatAdapter.encode = (req) => {
+      order.push("encode");
+      return JSON.stringify(req);
+    };
+
+    let response: Response;
+    try {
+      response = await app.request("/chat", { method: "POST", body: JSON.stringify(chat("kitchen lights on")) });
+    } finally {
+      chatAdapter.apply = originalApply;
+      if (originalEncode) chatAdapter.encode = originalEncode;
+      else delete chatAdapter.encode;
+    }
+
+    expect(response.status).toBe(200);
+    expect(order).toEqual(expect.arrayContaining(["decision", "advisor", "prepare", "encode", "forward"]));
+    expect(order.lastIndexOf("decision")).toBeLessThan(order.indexOf("advisor"));
+    expect(order.indexOf("advisor")).toBeLessThan(order.indexOf("prepare"));
+    expect(order.indexOf("prepare")).toBeLessThan(order.indexOf("encode"));
+    expect(order.indexOf("encode")).toBeLessThan(order.indexOf("forward"));
+  });
+
+  it("calls Headroom after request preparation and preserves the body when it fails", async () => {
+    const order: string[] = [];
+    const url = "http://127.0.0.1:8788/v1/compress";
+    const body = {
+      model: "gpt-synthetic",
+      previous_response_id: "resp_previous",
+      input: [
+        { type: "message", role: "user", content: "Inspect the synthetic output." },
+        { type: "function_call_output", call_id: "call_synthetic", output: "synthetic output" },
+      ],
+      tools: [{ type: "function", name: "inspect", description: "Inspect output", parameters: { type: "object", properties: {} } }],
+    };
+    const jev = fakeJev({ tool: { choice: "inspect" }, needs_tool: { noul: 0.99 } });
+    const router = createRouter({
+      config: testConfig({ client: "codex", directCalls: false, headroomMode: "compress", headroomUrl: url }),
+      askJev: async (request) => {
+        order.push("decision");
+        return jev.askJev(request);
+      },
+      fetch: async (input, init) => {
+        if (String(input) === url) {
+          order.push("headroom");
+          throw new Error("synthetic Headroom failure");
+        }
+        order.push("forward");
+        const raw = init?.body instanceof Uint8Array ? Buffer.from(init.body).toString("utf8") : String(init?.body);
+        expect(JSON.parse(raw)).toMatchObject({
+          ...body,
+          tool_choice: { type: "function", name: "inspect" },
+        });
+        return Response.json({ id: "resp_next" });
+      },
+      log: () => {},
+      routing: { enabled: true },
+      advisorEnabled: { enabled: false },
+    });
+    const app = new Hono();
+    app.post("/responses", router.route(responsesAdapter));
+    const originalApply = responsesAdapter.apply;
+    const originalEncode = responsesAdapter.encode;
+    responsesAdapter.apply = (req, decision, model) => {
+      order.push("prepare");
+      return originalApply(req, decision, model);
+    };
+    responsesAdapter.encode = (req) => {
+      order.push("encode");
+      return JSON.stringify(req);
+    };
+
+    let response: Response;
+    try {
+      response = await app.request("/responses", { method: "POST", body: JSON.stringify(body) });
+    } finally {
+      responsesAdapter.apply = originalApply;
+      if (originalEncode) responsesAdapter.encode = originalEncode;
+      else delete responsesAdapter.encode;
+    }
+
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect(order).toEqual(["decision", "prepare", "encode", "headroom", "forward"]);
+  });
+
+  it("remembers a Responses session even when the injected logger throws", async () => {
+    const jev = fakeJev({
+      session_action: { choice: "pass" },
+      tool: { choice: NO_TOOL },
+      needs_tool: { noul: 0.1 },
+    });
+    const router = createRouter({
+      config: testConfig({ client: "codex", advisorEnabled: true }),
+      askJev: jev.askJev,
+      fetch: (async () => Response.json({ id: "resp_first", output: [] })) as typeof fetch,
+      log: () => { throw new Error("synthetic logger failure"); },
+      routing: { enabled: true },
+      advisorEnabled: { enabled: true },
+    });
+    const app = new Hono();
+    app.post("/responses", router.route(responsesAdapter));
+    const request = (text: string, previous_response_id?: string) => app.request("/responses", {
+      method: "POST",
+      body: JSON.stringify({
+        model: "gpt-synthetic",
+        ...(previous_response_id ? { previous_response_id } : {}),
+        input: [{ type: "message", role: "user", content: [{ type: "input_text", text }] }],
+        tools: [{ type: "function", name: "inspect", parameters: { type: "object", properties: {} } }],
+      }),
+    });
+
+    expect((await request("first synthetic turn")).status).toBe(200);
+    await settled();
+    expect((await request("second synthetic turn", "resp_first")).status).toBe(200);
+    const actions = jev.requests.filter((entry) => "session_action" in entry.questions);
+
+    expect(actions).toHaveLength(2);
+    const state = actions[1]!.state as Record<string, unknown> | null;
+    expect(state?.recent_session_events).toContain("user: first synthetic turn");
+  });
+
+  it("fails open and preserves the request when Jev throws", async () => {
+    const upstream = fakeUpstream();
+    const router = createRouter({
+      config: testConfig(),
+      askJev: async () => { throw new Error("synthetic Jev failure"); },
+      fetch: upstream.fetchImpl,
+      log: () => {},
+      routing: { enabled: true },
+      advisorEnabled: { enabled: false },
+    });
+    const app = new Hono();
+    app.post("/chat", router.route(chatAdapter));
+    const body = chat("synthetic request");
+
+    const response = await app.request("/chat", { method: "POST", body: JSON.stringify(body) });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-jev-gateway-reason")).toBe("jev_error");
+    expect(upstream.calls[0]!.body).toEqual(body);
+  });
+
+  it("fails open with router_error when request preparation throws", async () => {
+    const upstream = fakeUpstream();
+    const router = createRouter({
+      config: testConfig({ directCalls: false }),
+      askJev: fakeJev(lightsAnswers).askJev,
+      fetch: upstream.fetchImpl,
+      log: () => {},
+      routing: { enabled: true },
+      advisorEnabled: { enabled: false },
+    });
+    const brokenAdapter = { ...chatAdapter, apply: () => { throw new Error("synthetic prepare failure"); } };
+    const app = new Hono();
+    app.post("/chat", router.route(brokenAdapter));
+    const body = chat("kitchen lights on");
+
+    const response = await app.request("/chat", { method: "POST", body: JSON.stringify(body) });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-jev-gateway-reason")).toBe("router_error");
+    expect(upstream.calls[0]!.body).toEqual(body);
+  });
+});
 
 describe("planTool", () => {
   it("marks a tool closed-set only when every parameter is an enum, boolean or const", () => {
