@@ -41,13 +41,13 @@ client (Codex profile / Claude Code)
 
 ## Advisors
 
-`src/codex/advisor.ts` defines a small `Advisor<Req>` interface (`request`, `append`, `text`) with one
+`src/advisor/advisor.ts` defines a small `Advisor<Req>` interface (`request`, `append`, `text`) with one
 implementation per wire format, and `advisorFor(adapter)` picks the right one from the adapter the
-gateway already routed to. `app.ts` therefore branches on adapter capability, not on the client name.
+gateway already routed to. The router therefore branches on adapter capability, not on the client name.
 
 - **Responses (Codex):** the advisor request continues from the session's response id and the note is
   appended to the trailing user turn. Continuity comes from the in-memory session ledger
-  (`src/codex/session-state.ts`), which has a TTL and a byte ceiling and is never written to disk.
+  (`src/advisor/session-state.ts`), which has a TTL and a byte ceiling and is never written to disk.
 - **Messages (Claude):** Anthropic rejects two consecutive `user` turns, so the note is merged into
   the trailing user turn. Each request stands alone, so the advisor budget caps calls within a turn,
   not across the chat.
@@ -64,16 +64,20 @@ gateway already routed to. `app.ts` therefore branches on adapter capability, no
 
 ## Modules
 
-- `src/app.ts` — orchestrates decisions, the optional consult and fail-open forwarding.
+- `src/router.ts` — owns the whole routed transaction: parse, decision, optional advisor consult,
+  rewrite, optional Headroom pass, upstream forward and fail-open replay. `src/app.ts` registers
+  routes, auth and the dashboard; the router holds the sequencing.
+- `src/headroom.ts` — the optional tool-output compression, behind its own seam: eligibility,
+  transport and metrics in one module (see decision-record.md).
 - `src/adapters/*` — decode each wire format and inject the delimited note without changing the shape
   of the response.
 - `src/decide.ts`, `src/questions.ts` — typed tool selection, combined with the session policy when
   tools are present.
-- `src/codex/policy.ts` — classifies step, recurring error, need for advice and
+- `src/advisor/policy.ts` — classifies step, recurring error, need for advice and
   `continue | stop | consult_advisor | pass`, including calls without tools.
-- `src/codex/session-state.ts` — in-memory ledger indexed by response id: TTL, memory ceiling, id
+- `src/advisor/session-state.ts` — in-memory ledger indexed by response id: TTL, memory ceiling, id
   cleanup, fail-open when history is lost.
-- `src/codex/advisor.ts` — builds the tool-less advisor request, applies timeout and output limits,
+- `src/advisor/advisor.ts` — builds the tool-less advisor request, applies timeout and output limits,
   parses and appends the note.
 - `src/upstream.ts` — forwards with the client's authorized headers; credentials never reach logs.
 - `src/dashboard.ts`, `src/dashboard.html` — monitoring and cost view.
