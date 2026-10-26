@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.10.0...v0.10.1) (2026-10-26)
+
+
+### chore
+
+* release 0.10.1 ([366bf54](https://github.com/1arley/jev-advisor-gateway/commit/366bf543ef174837aeef0671a7eecd12af003b18))
+
 ## [0.10.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.9.0...v0.10.0) (2026-10-23)
 
 
