@@ -3,6 +3,40 @@
 Use the launcher for your client. Launchers pass settings to that process and do not edit client
 configuration files. They forward client arguments unchanged.
 
+## External advisor providers
+
+By default, the advisor uses the same upstream as the client. To send advisor context to a separate
+service, set `JEV_ADVISOR_PROVIDER` to `openai-compatible` or `anthropic`, set
+`JEV_ADVISOR_MODEL` to a model served there, and provide `JEV_ADVISOR_URL`. This explicit provider
+selection opts into sending context to that endpoint. `JEV_ADVISOR_API_KEY` is separate from the
+main upstream key; when unset, the gateway sends no advisor authorization header.
+
+`JEV_ADVISOR_URL` is a base URL. The gateway appends `/chat/completions` for OpenAI-compatible
+providers and `/messages` for Anthropic. Remote endpoints must use HTTPS. Plain HTTP is accepted
+only on loopback, credentials and query strings in the URL are rejected, and redirects are not
+followed.
+
+The advisor receives at most the six latest text messages from the user and assistant, with at most
+4,000 characters per message. System, developer, reasoning, tool-result and media blocks are not
+sent. If the gateway cannot extract plain text safely, it skips the advisor and forwards the
+original request. Advisor failures remain fail-open. Provider error bodies are not written to
+request logs.
+
+Set `JEV_ADVISOR_EFFORT=low`, `medium` or `high` only when the selected model documents native
+support. The gateway maps the value to the API's effort field; when unset, it omits that field. A
+provider rejection fails open without retry. There is no advisor spending ceiling; provider charges
+depend on the selected model and usage. The existing per-session call limit still applies.
+
+Example for a local environment file:
+
+```bash
+JEV_ADVISOR_PROVIDER=openai-compatible
+JEV_ADVISOR_URL=https://api.groq.com/openai/v1
+JEV_ADVISOR_API_KEY=your-advisor-key
+JEV_ADVISOR_MODEL=your-groq-model-id
+JEV_ADVISOR_EFFORT=low
+```
+
 ## Codex
 
 `jev-codex` uses the Responses API and your existing Codex login. The advisor variant pins a

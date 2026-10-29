@@ -9,21 +9,21 @@ Integrar o proxy Headroom por uma chamada direta e injetável a `POST /v1/compre
 
 ## Decisões aprovadas
 
-| Tema | Decisão |
-|---|---|
-| Integração | Chamada local a `/v1/compress`, após fixar e auditar a versão/endpoint. |
-| Validação inicial | Começar com fixtures sintéticas em shadow mode; medir fidelidade, redução e latência antes de considerar dados reais. |
-| Escopo | Codex Responses; somente `function_call_output` textual elegível. |
-| Continuação | Comprimir apenas a saída nova junto a `previous_response_id`; histórico permanece intacto; validar duas continuações sintéticas. |
-| Resposta aceita | Exigir exatamente um item `tool`, `tool_call_id` correspondente ao `call_id` do Responses, conteúdo textual não vazio e menor; rejeitar campos fora do contrato e marcadores CCR. A validação estrutural não prova fidelidade semântica. |
-| Ativação | Desligada por padrão; URL loopback explícita; gateway não inicia o proxy. Não fixar porta padrão. |
-| Prova sintética | Fixar versão Headroom; provar redução e fidelidade de item/ID, sem marcador CCR e sem remover proteções padrão. |
-| Dados reais | Bloqueados até auditar persistência, telemetria, chamadas remotas, uso de CCR e ausência de credenciais upstream. |
-| Latência | Uma chamada, sem retry, deadline curto configurável; em falha, usar corpo pré-compressão. |
-| Fallback | Timeout, erro ou resposta inesperada descartam somente a compressão e encaminham o corpo original preparado pelo roteador/advisor. |
-| Contrato | `/v1/compress` simples com um `tool_result` textual; sem extensão gateway/redrive. |
-| Métricas | Somente tokens, latência e modo/resultado; nunca conteúdo, headers ou credenciais. |
-| Paralelismo | Se houver zero, mais de um resultado elegível ou resultado não textual, passthrough nesta versão. |
+| Tema              | Decisão                                                                                                                                                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integração        | Chamada local a `/v1/compress`, após fixar e auditar a versão/endpoint.                                                                                                                                                                  |
+| Validação inicial | Começar com fixtures sintéticas em shadow mode; medir fidelidade, redução e latência antes de considerar dados reais.                                                                                                                    |
+| Escopo            | Codex Responses; somente `function_call_output` textual elegível.                                                                                                                                                                        |
+| Continuação       | Comprimir apenas a saída nova junto a `previous_response_id`; histórico permanece intacto; validar duas continuações sintéticas.                                                                                                         |
+| Resposta aceita   | Exigir exatamente um item `tool`, `tool_call_id` correspondente ao `call_id` do Responses, conteúdo textual não vazio e menor; rejeitar campos fora do contrato e marcadores CCR. A validação estrutural não prova fidelidade semântica. |
+| Ativação          | Desligada por padrão; URL loopback explícita; gateway não inicia o proxy. Não fixar porta padrão.                                                                                                                                        |
+| Prova sintética   | Fixar versão Headroom; provar redução e fidelidade de item/ID, sem marcador CCR e sem remover proteções padrão.                                                                                                                          |
+| Dados reais       | Bloqueados até auditar persistência, telemetria, chamadas remotas, uso de CCR e ausência de credenciais upstream.                                                                                                                        |
+| Latência          | Uma chamada, sem retry, deadline curto configurável; em falha, usar corpo pré-compressão.                                                                                                                                                |
+| Fallback          | Timeout, erro ou resposta inesperada descartam somente a compressão e encaminham o corpo original preparado pelo roteador/advisor.                                                                                                       |
+| Contrato          | `/v1/compress` simples com um `tool_result` textual; sem extensão gateway/redrive.                                                                                                                                                       |
+| Métricas          | Somente tokens, latência e modo/resultado; nunca conteúdo, headers ou credenciais.                                                                                                                                                       |
+| Paralelismo       | Se houver zero, mais de um resultado elegível ou resultado não textual, passthrough nesta versão.                                                                                                                                        |
 
 ## Proveniência
 
@@ -67,11 +67,11 @@ Concluídos em 2026-10-22, contra `headroom-ai==0.41.0` num venv local isolado (
 Data: 2026-10-20
 Status: roteamento exige evidência antes de trocar estratégia; motivos de erro implementados em 2026-10-22; medição de checkpoints do Laya registrada em 2026-10-22
 
-| Tema | Decisão |
-|---|---|
-| Motivos de erro | Substituir mensagens brutas de exceção por códigos estáveis nos caminhos de decisão, preservando o fail-open. Reproduzir a exposição atual com erros sintéticos, mapear seus destinos e, após a correção, verificar que o texto não chega a headers, logs, eventos do dashboard ou respostas de decisão e que a requisição segue sendo encaminhada. |
-| Rust | Considerar Rust somente se profiling mostrar que parsing ou serialização local contribuem de forma relevante para a latência total. |
-| Mudanças de roteamento | Exigir evidência de qualidade, latência e tokens antes de alterar a estratégia de roteamento. |
+| Tema                   | Decisão                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Motivos de erro        | Substituir mensagens brutas de exceção por códigos estáveis nos caminhos de decisão, preservando o fail-open. Reproduzir a exposição atual com erros sintéticos, mapear seus destinos e, após a correção, verificar que o texto não chega a headers, logs, eventos do dashboard ou respostas de decisão e que a requisição segue sendo encaminhada. |
+| Rust                   | Considerar Rust somente se profiling mostrar que parsing ou serialização local contribuem de forma relevante para a latência total.                                                                                                                                                                                                                 |
+| Mudanças de roteamento | Exigir evidência de qualidade, latência e tokens antes de alterar a estratégia de roteamento.                                                                                                                                                                                                                                                       |
 
 ### Motivos de erro: implementado (2026-10-22)
 
@@ -83,10 +83,10 @@ Status: roteamento exige evidência antes de trocar estratégia; motivos de erro
 
 `scripts/laya-checkpoints.mjs` mediu `multilingual` contra `typed-decisions` duas vezes, contra o `laya-serve` real em loopback, com as mesmas 6 perguntas sintéticas de roteamento de ferramentas:
 
-| Checkpoint | Acertos /6 | Latência média | Confiança |
-|---|---|---|---|
-| `multilingual` (padrão) | 2 | ~553 ms | calibração normal do Jev |
-| `typed-decisions` | 3 | ~1323 ms (2.4x mais lento) | 0.05–0.28 (degenerada) |
+| Checkpoint              | Acertos /6 | Latência média             | Confiança                |
+| ----------------------- | ---------- | -------------------------- | ------------------------ |
+| `multilingual` (padrão) | 2          | ~553 ms                    | calibração normal do Jev |
+| `typed-decisions`       | 3          | ~1323 ms (2.4x mais lento) | 0.05–0.28 (degenerada)   |
 
 Limites declarados: cenários sintéticos e rotulados por este projeto, amostra pequena, ambos os checkpoints pende para `no_tool_needed` em casos ambíguos, e o `laya-serve` avisa que o checkpoint `typed-decisions` vem com temperatura não calibrada ("treat confidence as uncalibrated"). Os 0.766 do benchmark próprio do Laya para `typed-decisions` não se reproduziram nos fixtures.
 
@@ -105,23 +105,24 @@ Status: implementado e validado em 2026-10-26; 303 testes passaram
 
 Decisões tomadas com o grill-with-jev (proveniência detalhada em `.grill/architecture-review-2026-10-26.jsonl`, sessão `architecture-review-2026-10-26`; JEV via TypeSafe/jev-latest, decisões humanas para as perguntas escaladas):
 
-| Tema | Decisão |
-|---|---|
-| Escopo (Q1) | Extrair a transação roteada inteira de `src/app.ts` para `src/router.ts` (módulo profundo). Advisor, policy, session-state e Headroom movem para trás dele, num único lote. |
-| Leitor de reply (Q2) | Fundir apenas os dois scanners de clone (`readReply` em `src/usage.ts` + `readResponseId` em `src/codex/session-state.ts`); os extratores sobre strings (`summarizeResponse`, `.text` do advisor) ficam como estão. |
-| Dono do forward (Q3) | O módulo router profundo é dono da transação inteira: parse → decide → advisor → rewrite → headroom → forward → log → remember. `app.ts` vira registro + flush fino. Seam de volta ao chamador: `prepare(req) -> Response`. |
-| Layout (Q4) | `src/router.ts` + mover `advisor.ts`, `policy.ts`, `session-state.ts` de `src/codex/` para `src/advisor/`. Renomear `codex` → `advisor` uma vez, junto com a extração; sem dois passos de churn. |
-| Walker fundido (Q5) | Um walker em `src/usage.ts`: `readReply(reply) -> { usage, tool, responseId }`, uma passada sobre um clone. `readResponseId` vira wrapper fino em `session-state.ts` chamando `readReply`. |
-| Testes (Q6) | Manter os testes e2e `app.request()` como backstop comportamental; adicionar `test/router.test.ts` dirigindo a interface do router diretamente (invariantes de ordem: decisão antes do advisor, ordem de prepare, headroom por último, fail-open em `router_error`); `usage.test.ts` e os testes de `readResponseId` ficam como estão. |
-| Uma leitura do reply (Q7) | Uma única passada de `readReply` alimenta o log roteado (status, duration, usage, actualTool) e, quando `session && responsesAdapter`, `sessions.remember(responseId)` do mesmo resultado. O reply é lido uma vez por request. |
-| Headroom (Q8) | Extração é pure move, preservando exatamente o gate do decision-record: off por padrão, URL loopback explícita, escopo Codex continuation, sem knob novo, métricas no mesmo allowlist do dashboard. O gate não é reaberto. |
-| Superfície do router (Q9) | `createRouter(deps)` retorna `{ route }`, com `route(adapter)` a mesma assinatura de hoje; as cinco registrações de rota em `app.ts` mal mudam. `decideFor` e `advisorFor` ficam dentro do módulo router como detalhe de implementação. |
-| Mapa de advisor (Q10) | Manter `advisorFor` comparando adapters por identidade de módulo (já importa `chatAdapter`, `responsesAdapter`, `messagesAdapter`); sem tag no `Adapter`, sem alargar interface. Move para `src/advisor/` inalterado. |
-| Commit/move (Q11) | Um commit mecânico único `refactor`: mover advisor/policy/session-state para `src/advisor/` e adicionar `src/router.ts`; rodar `pnpm typecheck && pnpm test && pnpm build`; exports de `src/index.ts` inalterados (router e advisor são internos ao app). |
+| Tema                      | Decisão                                                                                                                                                                                                                                                                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Escopo (Q1)               | Extrair a transação roteada inteira de `src/app.ts` para `src/router.ts` (módulo profundo). Advisor, policy, session-state e Headroom movem para trás dele, num único lote.                                                                                                                                                            |
+| Leitor de reply (Q2)      | Fundir apenas os dois scanners de clone (`readReply` em `src/usage.ts` + `readResponseId` em `src/codex/session-state.ts`); os extratores sobre strings (`summarizeResponse`, `.text` do advisor) ficam como estão.                                                                                                                    |
+| Dono do forward (Q3)      | O módulo router profundo é dono da transação inteira: parse → decide → advisor → rewrite → headroom → forward → log → remember. `app.ts` vira registro + flush fino. Seam de volta ao chamador: `prepare(req) -> Response`.                                                                                                            |
+| Layout (Q4)               | `src/router.ts` + mover `advisor.ts`, `policy.ts`, `session-state.ts` de `src/codex/` para `src/advisor/`. Renomear `codex` → `advisor` uma vez, junto com a extração; sem dois passos de churn.                                                                                                                                       |
+| Walker fundido (Q5)       | Um walker em `src/usage.ts`: `readReply(reply) -> { usage, tool, responseId }`, uma passada sobre um clone. `readResponseId` vira wrapper fino em `session-state.ts` chamando `readReply`.                                                                                                                                             |
+| Testes (Q6)               | Manter os testes e2e `app.request()` como backstop comportamental; adicionar `test/router.test.ts` dirigindo a interface do router diretamente (invariantes de ordem: decisão antes do advisor, ordem de prepare, headroom por último, fail-open em `router_error`); `usage.test.ts` e os testes de `readResponseId` ficam como estão. |
+| Uma leitura do reply (Q7) | Uma única passada de `readReply` alimenta o log roteado (status, duration, usage, actualTool) e, quando `session && responsesAdapter`, `sessions.remember(responseId)` do mesmo resultado. O reply é lido uma vez por request.                                                                                                         |
+| Headroom (Q8)             | Extração é pure move, preservando exatamente o gate do decision-record: off por padrão, URL loopback explícita, escopo Codex continuation, sem knob novo, métricas no mesmo allowlist do dashboard. O gate não é reaberto.                                                                                                             |
+| Superfície do router (Q9) | `createRouter(deps)` retorna `{ route }`, com `route(adapter)` a mesma assinatura de hoje; as cinco registrações de rota em `app.ts` mal mudam. `decideFor` e `advisorFor` ficam dentro do módulo router como detalhe de implementação.                                                                                                |
+| Mapa de advisor (Q10)     | Manter `advisorFor` comparando adapters por identidade de módulo (já importa `chatAdapter`, `responsesAdapter`, `messagesAdapter`); sem tag no `Adapter`, sem alargar interface. Move para `src/advisor/` inalterado.                                                                                                                  |
+| Commit/move (Q11)         | Um commit mecânico único `refactor`: mover advisor/policy/session-state para `src/advisor/` e adicionar `src/router.ts`; rodar `pnpm typecheck && pnpm test && pnpm build`; exports de `src/index.ts` inalterados (router e advisor são internos ao app).                                                                              |
 
 Proveniência: Q1/Q2/Q3/Q7/Q8 confirmados explicitamente pelo usuário (Q3/Q7/Q8 escalados por confiança < 0.6 ou risco de segurança; usuário aceitou a recomendação). Q4, Q5, Q6, Q9, Q10, Q11 aceitos pelo JEV com confiança 0.66–0.79, sem escalação.
 
 Premissas e limites conhecidos:
+
 - O merge do walker não muda o comportamento observável do reply: `readReply` expõe `{ usage, tool, responseId }` e `readResponseId` mantém a assinatura, então `usage.test.ts` e os testes de sessão seguem válidos.
 - Antes da fusão, `readResponseId` fazia `reader.cancel()` assim que achava o id; o walker fundido lê o reply até o fim para extrair usage/tool, então a leitura consome o corpo inteiro — comportamento esperado e aceito em Q7 (ler uma vez por request).
 - A robustez de fail-open (`router_error`, passthrough preservando o corpo pré-prepare) é mantida: o router nunca faz uma request falhar.
@@ -134,3 +135,32 @@ Premissas e limites conhecidos:
 - `readReply` extrai `responseId` na mesma leitura que usage e ferramenta. O log e `sessions.remember` consomem o mesmo resultado da resposta clonada; o wrapper `readResponseId` permanece compatível e também usa um clone.
 - Testes diretos do router cobrem a ordem de decisão, advisor, prepare/encode e forward; Headroom roda depois do prepare, e falhas de advisor, preparação ou Headroom seguem fail-open com o corpo aplicável preservado.
 - `pnpm typecheck`, `pnpm build` e a suíte completa passaram em 2026-10-26 (303/303 testes). `test/opencode-coverage.test.ts` fixa `JEV_OPENCODE_MODEL=gpt-5` durante os casos que verificam o padrão e restaura o ambiente após cada teste. Os testes focados de router e usage passaram (46/46). A validação Headroom continua sintética; nenhum serviço real foi chamado nesta mudança.
+
+## Advisor com provider independente
+
+Data: 2026-10-29  
+Status: confirmado pelo usuário em 2026-10-29; implementação em andamento.
+
+| Tema                            | Decisão                                                                                                                                                                                                                                                                                   |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider do advisor             | Separar provider, endpoint, modelo e credencial dos usados pelo modelo principal. Exigir opt-in explícito antes de enviar contexto ao destino configurado. Nunca reutilizar a chave do upstream principal.                                                                                |
+| Providers e protocolos iniciais | Incluir providers com API OpenAI Chat Completions compatível e Claude/Anthropic via adapter Messages próprio.                                                                                                                                                                             |
+| Endpoint                        | Permitir endpoint base explicitamente configurado para esses protocolos. Exigir HTTPS fora de loopback, aceitar HTTP apenas em loopback, validar a URL e recusar redirects.                                                                                                               |
+| Custo                           | Sem teto de gastos, conforme decisão explícita do usuário. Manter o limite existente de chamadas do advisor por sessão; ele controla frequência, não gasto.                                                                                                                               |
+| Esforço                         | Expor `low`, `medium` e `high`; mapear para o campo nativo do adapter quando o suporte for conhecido. Omitir o campo quando o suporte do modelo for desconhecido ou incompatível. Se o provider rejeitar a chamada, registrar a falha e seguir fail-open, sem retry automático.           |
+| Contexto                        | Enviar no máximo as seis mensagens textuais recentes de usuário/assistant, limitadas a 4.000 caracteres cada. Excluir system, developer, reasoning, resultados de ferramentas e mídia. Se o adapter não separar o texto com segurança, pular o advisor e preservar a requisição original. |
+| Quando consultar                | Manter os gatilhos decididos pelo Jev e o limite atual por sessão.                                                                                                                                                                                                                        |
+
+### Proveniência
+
+- JEV aceitou o esforço configurável (Q1, confiança 0.89), os gatilhos e limite por sessão (Q3, 0.98) e o fail-open para modelos sem suporte conhecido (Q9, 0.89).
+- O usuário decidiu provider independente, opt-in para o destino e sem teto de gastos (Q2); escolheu incluir Claude/Anthropic desde a primeira etapa (Q4); confirmou endpoint explícito com validação, HTTPS remoto e sem redirects (Q5); limitou o contexto a mensagens recentes (Q6/Q8); confirmou o mapeamento de esforço (Q7) e a extração somente de texto identificável, pulando conteúdo ambíguo (Q10).
+- JEV escalou Q2, Q5, Q6, Q7 e Q10 por segurança, terceiros, gasto ou baixa confiança. Q4 teve baixa confiança e não foi resolvida por JEV; a escolha final foi do usuário.
+- O grill usou `opencode-zen` com `oc/jev-1.13-free` via endpoint local confirmado na configuração. As rodadas bem-sucedidas reportaram 0 tokens e US$ 0. Uma chamada inicial falhou antes de uma rodada válida por precedência de variáveis de ambiente; a rodada foi repetida usando o provider e a credencial da configuração salva.
+
+### Premissas e riscos em aberto
+
+- “Qualquer provider” significa qualquer serviço configurado que implemente OpenAI Chat Completions ou Anthropic Messages; APIs com outros protocolos ficam fora do escopo decidido.
+- Não haverá teto de custo. O total de gasto depende dos preços e do uso dos providers configurados e pode ser imprevisível.
+- O contexto limitado ainda pode conter texto privado da conversa. A configuração precisa deixar claro qual endpoint o recebe e nunca persistir esse texto em logs, métricas ou arquivos.
+- A implementação precisa validar destinos e credenciais, excluir conteúdo não textual, preservar a requisição original em caso de falha e cobrir os adapters com testes offline antes de uso real.

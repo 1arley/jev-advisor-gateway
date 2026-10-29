@@ -68,6 +68,12 @@ The advisor is optional. On selected turns it receives a read-only request witho
 a bounded note to the main agent's context. The main agent decides whether to use the note; the
 advisor cannot call tools or change the response chain.
 
+By default, the advisor uses the configured upstream. Setting `JEV_ADVISOR_PROVIDER` opts into a
+separate OpenAI-compatible or Anthropic endpoint with its own model and key. The external advisor
+receives at most six recent text messages, up to 4,000 characters each; tool results and media are
+excluded. This can incur provider charges. See [client compatibility](docs/client-compatibility.md)
+for setup and privacy details.
+
 The gateway listens on `127.0.0.1` by default. Its default failure policy is fail-open: Jev,
 advisor, parsing and optional compression failures leave the client request on its normal path.
 Devin's Connect stream reports some upstream errors after HTTP 200, so a rejected hint cannot be
@@ -226,6 +232,10 @@ The launchers read settings from the shell or `~/.jev-gateway/.env`; a checkout 
 | `JEV_TIMEOUT_MS`         | `4000`                   | Jev request deadline                                                              |
 | `JEV_ADVISOR`            | on for advisor launchers | Enable read-only advisor consultations                                            |
 | `JEV_ADVISOR_MODEL`      | launcher-specific        | Model used for advisor replies                                                    |
+| `JEV_ADVISOR_PROVIDER`   | unset                    | Opt into `openai-compatible` or `anthropic`; requires an explicit URL and model   |
+| `JEV_ADVISOR_URL`        | unset                    | Separate advisor API base URL; HTTPS remotely, loopback only for HTTP             |
+| `JEV_ADVISOR_API_KEY`    | unset                    | Separate advisor key; never reuses the main upstream credential                   |
+| `JEV_ADVISOR_EFFORT`     | unset                    | `low`, `medium` or `high` for models documenting native effort support            |
 | `JEV_ADVISOR_TIMEOUT_MS` | `30000`                  | Advisor request deadline                                                          |
 | `ARGS_MODEL`             | unset                    | Optional model for open-ended tool arguments; not used for Codex                  |
 | `JEV_ON_NONE`            | `force_none`             | Send `tool_choice: none` or pass the request through when Jev selects no tool     |

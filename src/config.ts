@@ -1,5 +1,8 @@
 import { isIP } from "node:net";
 import { PROVIDERS, resolveModel, resolveProvider, resolveUrl, type ProviderId } from "./jev.js";
+export type AdvisorProvider = "openai-compatible" | "anthropic";
+export type AdvisorEffort = "low" | "medium" | "high";
+
 export interface Config {
   /** Interface to listen on. Loopback by default: the gateway forwards credentials and must not be reachable from the LAN. */
   host: string;
@@ -14,6 +17,10 @@ export interface Config {
   argsModel?: string;
   /** Model Jev may consult for a read-only second opinion. */
   advisorModel: string;
+  advisorProvider?: AdvisorProvider;
+  advisorUrl?: string;
+  advisorApiKey?: string;
+  advisorEffort?: AdvisorEffort;
   advisorEnabled: boolean;
   advisorTimeoutMs: number;
   advisorMaxOutputTokens: number;
@@ -73,6 +80,51 @@ export function loadConfig(env: Env = process.env): Config {
   const client = str(env, "JEV_CLIENT") ?? "standalone";
   const jevProvider = resolveProvider(env);
   const jevModel = resolveModel(jevProvider, str(env, "JEV_MODEL"));
+  const advisorProviderValue = str(env, "JEV_ADVISOR_PROVIDER")?.toLowerCase();
+  let advisorProvider: AdvisorProvider | undefined;
+  if (advisorProviderValue) {
+    if (advisorProviderValue !== "openai-compatible" && advisorProviderValue !== "anthropic") {
+      throw new Error(`JEV_ADVISOR_PROVIDER must be "openai-compatible" or "anthropic", got "${advisorProviderValue}"`);
+    }
+    advisorProvider = advisorProviderValue;
+  }
+  const advisorUrl = str(env, "JEV_ADVISOR_URL");
+  const advisorApiKey = str(env, "JEV_ADVISOR_API_KEY");
+  const advisorEffortValue = str(env, "JEV_ADVISOR_EFFORT")?.toLowerCase();
+  let advisorEffort: AdvisorEffort | undefined;
+  if (advisorEffortValue) {
+    if (advisorEffortValue !== "low" && advisorEffortValue !== "medium" && advisorEffortValue !== "high") {
+      throw new Error(`JEV_ADVISOR_EFFORT must be "low", "medium" or "high", got "${advisorEffortValue}"`);
+    }
+    advisorEffort = advisorEffortValue;
+  }
+  if (advisorProvider && !advisorUrl) throw new Error("JEV_ADVISOR_URL is required when JEV_ADVISOR_PROVIDER is set");
+  if (!advisorProvider && (advisorUrl || advisorApiKey)) {
+    throw new Error("JEV_ADVISOR_PROVIDER is required to use JEV_ADVISOR_URL or JEV_ADVISOR_API_KEY");
+  }
+  if (advisorProvider && !str(env, "JEV_ADVISOR_MODEL")) {
+    throw new Error("JEV_ADVISOR_MODEL is required when JEV_ADVISOR_PROVIDER is set");
+  }
+  if (advisorUrl) {
+    let parsed: URL;
+    try {
+      parsed = new URL(advisorUrl);
+    } catch {
+      throw new Error("JEV_ADVISOR_URL must be an explicit HTTPS URL or loopback HTTP URL");
+    }
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+    const ipv4 = hostname.split(".").map(Number);
+    const isLoopback = hostname === "localhost" || hostname === "::1" || (isIP(hostname) === 4 && ipv4[0] === 127);
+    if (
+      (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      throw new Error("JEV_ADVISOR_URL must use HTTPS (or loopback HTTP) and have no credentials, query or fragment");
+    }
+  }
   const onNone = str(env, "JEV_ON_NONE") ?? "force_none";
   if (onNone !== "force_none" && onNone !== "passthrough") {
     throw new Error(`JEV_ON_NONE must be "force_none" or "passthrough", got "${onNone}"`);
@@ -115,8 +167,12 @@ export function loadConfig(env: Env = process.env): Config {
     routerApiKey: str(env, "ROUTER_API_KEY"),
     // Codex sessions must stay on Luna; these generic gateway options would silently switch it.
     argsModel: client === "codex" ? undefined : str(env, "ARGS_MODEL"),
-    // The advisor answers on the client's own upstream, so the default fits the wire format.
+    // The default advisor uses the client's upstream; an explicit advisor provider selects its own API.
     advisorModel: str(env, "JEV_ADVISOR_MODEL") ?? (client === "claude" ? "claude-opus-5-5" : "gpt-6-astra"),
+    advisorProvider,
+    advisorUrl,
+    advisorApiKey,
+    advisorEffort,
     advisorEnabled: bool(env, "JEV_ADVISOR", client === "codex"),
     advisorTimeoutMs: num(env, "JEV_ADVISOR_TIMEOUT_MS", 30_000),
     advisorMaxOutputTokens: num(env, "JEV_ADVISOR_MAX_OUTPUT_TOKENS", 700),
