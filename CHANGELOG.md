@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.10.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.10.1...v0.10.1) (2026-10-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* package renamed, binary names changed, config env vars updated
+
+### chore
+
+* release 0.10.1 ([8c092b1](https://github.com/1arley/jev-advisor-gateway/commit/8c092b10c2f48ff9321cefed5de68d6d5ba8fa1b))
+
+
+### Added
+
+* add Google Gemini adapter and jev-gemini launcher ([bb549ee](https://github.com/1arley/jev-advisor-gateway/commit/bb549ee49ce3f184abc0d9aff818526d9776e14c))
+* add Google Gemini adapter and jev-gemini launcher ([84f1db0](https://github.com/1arley/jev-advisor-gateway/commit/84f1db00b3945b75e7fadfd4034313f8e67220bf))
+* add headroom compression feature and project rename ([978fa17](https://github.com/1arley/jev-advisor-gateway/commit/978fa17db4350a58f5457d3e7f8e294420dafd23))
+* add OpenCode advisor launcher and Chat Completions advisor ([e26c1fc](https://github.com/1arley/jev-advisor-gateway/commit/e26c1fcf52e2fd0bb8a59831ddd018a1ecce47fc))
+* add OpenCode advisor launcher and Chat Completions advisor ([#4](https://github.com/1arley/jev-advisor-gateway/issues/4)) ([059d767](https://github.com/1arley/jev-advisor-gateway/commit/059d767a39f6e546dae7ddc10cbe59feeeefd1c5))
+* **advisor:** support external advisor provider (openai/anthropic) ([7973df7](https://github.com/1arley/jev-advisor-gateway/commit/7973df7104e30bc118b9b2d6a48eb06970555ae5))
+* Ask for the Jev key on first run; reach Jev through OpenRouter or Vercel too ([855757b](https://github.com/1arley/jev-advisor-gateway/commit/855757b0d69e90feee380431a01d09ef1efbb496))
+* **brew:** add Homebrew installation support for macOS and Linux ([c3f88f7](https://github.com/1arley/jev-advisor-gateway/commit/c3f88f7af15ab6e6ff85f5b20137566abe4b04c4))
+* **brew:** auto-bump tap formula on published releases ([2449317](https://github.com/1arley/jev-advisor-gateway/commit/24493176dafc739eb201261f257d7614c66df3c7))
+* **dashboard:** meter advisor consults separately per model ([37e0c91](https://github.com/1arley/jev-advisor-gateway/commit/37e0c91227042cc1e6307e1afad34afa3924828e))
+* give Claude Code an advisor and price Claude models ([0fb37bc](https://github.com/1arley/jev-advisor-gateway/commit/0fb37bc2b95aab9810987ee3796463e02f590f14))
+* **headroom:** add opt-in Codex continuation compression ([5e9a209](https://github.com/1arley/jev-advisor-gateway/commit/5e9a2091d9cd30353ec113b5f80073d69bbb5e51))
+* jev-devin routes Devin CLI tool calls through Jev ([#44](https://github.com/1arley/jev-advisor-gateway/issues/44)) ([678c394](https://github.com/1arley/jev-advisor-gateway/commit/678c394a410b0cf9f16fdfe37dbe43a563135eac))
+* **kilo:** add jev-kilo, a launcher for Kilo CLI ([#48](https://github.com/1arley/jev-advisor-gateway/issues/48)) ([0c4ea75](https://github.com/1arley/jev-advisor-gateway/commit/0c4ea7590ea7bcd1741f07ca1ce28c8ca497f65a))
+* **laya:** answer tool decisions from a local laya-serve instead of remote Jev ([172e23e](https://github.com/1arley/jev-advisor-gateway/commit/172e23e499c6fd38c32b719c7f3776aa1ee56655))
+* OpenCode v2 support and advisor chat note ([8a55da6](https://github.com/1arley/jev-advisor-gateway/commit/8a55da699e11c3f47727c4246cfbbc2f38ad4eec))
+* **opencode:** add first-class stable support ([3a177a3](https://github.com/1arley/jev-advisor-gateway/commit/3a177a35ce2a0dc6c7390aaa3b151511e2eb77f6))
+* **opencode:** add stable launcher ([4192e66](https://github.com/1arley/jev-advisor-gateway/commit/4192e6673e5e7028351f0c922f3e1cbea9060b42))
+* **opencode:** support OpenCode v2 through opencode.json ([504e36e](https://github.com/1arley/jev-advisor-gateway/commit/504e36e46b2f9ad85504dce5afb4af1199299988))
+* reach Jev with an OpenCode Zen key ([#27](https://github.com/1arley/jev-advisor-gateway/issues/27)) ([097fdd3](https://github.com/1arley/jev-advisor-gateway/commit/097fdd3cdd4615b9489848f5d21a8c87c9f66ad5))
+* rebrand to codex-jev-advisor with GPT-6 Astra advisor for Luna sessions ([87e07d6](https://github.com/1arley/jev-advisor-gateway/commit/87e07d6a163e4a367a62a4740a3dfea7f3ba493f))
+* route Jev to a local OpenJev endpoint with no remote key ([5dece06](https://github.com/1arley/jev-advisor-gateway/commit/5dece06dd0f41f268034d759c5e9e3452f0fdb87))
+* stable failure reasons and routing accuracy on the dashboard ([3e7cc93](https://github.com/1arley/jev-advisor-gateway/commit/3e7cc93c71add2382462496c4d315f8afd0229bc))
+
+
+### Fixed
+
+* append the chat advisor note as a user turn ([5f778d6](https://github.com/1arley/jev-advisor-gateway/commit/5f778d6d8e4f9a4a92b7988f424425f0e515df25))
+* **brew:** detect untracked formula on first bump (R3-001) ([34de493](https://github.com/1arley/jev-advisor-gateway/commit/34de493ff403bca4a4583bafc17a182f5182eef0))
+* **claude:** never answer a thinking conversation by itself ([#39](https://github.com/1arley/jev-advisor-gateway/issues/39)) ([27729fd](https://github.com/1arley/jev-advisor-gateway/commit/27729fd46b5000e6f0c5865157a6b5d1bc9d68c9))
+* **codex:** let Codex's automatic reviewer choose its own tools ([#56](https://github.com/1arley/jev-advisor-gateway/issues/56)) ([540fa6b](https://github.com/1arley/jev-advisor-gateway/commit/540fa6bccf6d10f2847fc00ef31ac7e4f1a7061f))
+* **dashboard:** bill 1h cache writes and Haiku's long-context tier ([72d1758](https://github.com/1arley/jev-advisor-gateway/commit/72d1758ddd0fe5769158d415fb474865eae50c85))
+* **dashboard:** probe unused peer ports less often, and allow ?peers=none ([2548283](https://github.com/1arley/jev-advisor-gateway/commit/2548283e4a8d3612efcfabcc54836bd5cbd0d8ec))
+* **dashboard:** scan the jev-codex and jev-opencode-advisor default ports ([c908947](https://github.com/1arley/jev-advisor-gateway/commit/c908947333fcf940aa1a175bfc6376511543009f))
+* honour JEV_DIRECT_CALLS=false for tools with no open arguments ([6b9aec4](https://github.com/1arley/jev-advisor-gateway/commit/6b9aec483eae371891c8d4ba346ea23a5ac0b31b))
+* keep /health to "ok" once the gateway has a key ([ccc3938](https://github.com/1arley/jev-advisor-gateway/commit/ccc39384bac02b062d742b384d86107543ed4dc6)), closes [#8](https://github.com/1arley/jev-advisor-gateway/issues/8)
+* keep hostile tool names out of hints, and pass malformed requests through instead of failing ([d35310a](https://github.com/1arley/jev-advisor-gateway/commit/d35310a6cf0b73b27d08c9ca14065271e51a5de0))
+* keep tool names that are not a single inert token away from Jev and the LLM ([baec87c](https://github.com/1arley/jev-advisor-gateway/commit/baec87c54c561e2b2a788ac40ac2e3befa36103d)), closes [#8](https://github.com/1arley/jev-advisor-gateway/issues/8)
+* **opencode:** read v2 provider maps and notice shapes the install really sends ([2c90d9c](https://github.com/1arley/jev-advisor-gateway/commit/2c90d9cee73b7b35d8c1c6d82247436e55dc03b9))
+* **opencode:** say which agents bypass the gateway, and keep an inherited inline config ([d2eeac2](https://github.com/1arley/jev-advisor-gateway/commit/d2eeac29724b7121c406212497fde8eff3654e41))
+* **opencode:** speak the launcher's own name and leave the v1 quirk where it belongs ([d712bcc](https://github.com/1arley/jev-advisor-gateway/commit/d712bcc1863709516d18ae2a2845b33bde8b6b9d))
+* pass Codex subagent requests through instead of taking their tools away ([aaa09a0](https://github.com/1arley/jev-advisor-gateway/commit/aaa09a086fe829f9daf44eba8d2b7cce2d96de96))
+* pass malformed requests through instead of answering 500 ([681958d](https://github.com/1arley/jev-advisor-gateway/commit/681958d52db7a385bdfc0eefe06479e35c4c5b05)), closes [#8](https://github.com/1arley/jev-advisor-gateway/issues/8)
+* pass requests through when a Jev error page cannot fit in a header ([aa8096f](https://github.com/1arley/jev-advisor-gateway/commit/aa8096f0a00e4dd05ad55435c06b65be2df8237c))
+* route Chat Completions requests that also carry built-in tools ([33cc2ca](https://github.com/1arley/jev-advisor-gateway/commit/33cc2ca3443c652bba4748b714a5b2915327d7cf)), closes [#8](https://github.com/1arley/jev-advisor-gateway/issues/8)
+* treat malformed Jev answers as passthrough instead of deciding on them ([522b962](https://github.com/1arley/jev-advisor-gateway/commit/522b962215f098d677991519a5c1f0998abeb3ec))
+
 ## [0.10.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.10.0...v0.10.1) (2026-10-29)
 
 
