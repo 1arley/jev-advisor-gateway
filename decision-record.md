@@ -164,3 +164,39 @@ Status: confirmado pelo usuário em 2026-10-29; implementação em andamento.
 - Não haverá teto de custo. O total de gasto depende dos preços e do uso dos providers configurados e pode ser imprevisível.
 - O contexto limitado ainda pode conter texto privado da conversa. A configuração precisa deixar claro qual endpoint o recebe e nunca persistir esse texto em logs, métricas ou arquivos.
 - A implementação precisa validar destinos e credenciais, excluir conteúdo não textual, preservar a requisição original em caso de falha e cobrir os adapters com testes offline antes de uso real.
+
+## Release sem falha de versão ou publicação
+
+Data: 2026-10-29
+Status: implementação local concluída e validação em andamento; proteção da branch ainda precisa
+ser aplicada no GitHub.
+
+### Evidência
+
+- A PR #11 repetiu a versão `0.10.1`: a tag, a release do GitHub e a versão npm já existem; a PR só alterava `CHANGELOG.md`.
+- A tag publicada `v0.10.1` não é ancestral do `main`. O commit de release `964570800ae1dacca9a1530a72fa711f0e1a1381` está no `main` e corresponde ao baseline correto para recuperar a próxima seção.
+- GitHub não dispara o evento `pull_request` para PRs criados com `GITHUB_TOKEN`; sem caminho alternativo, os release PRs não recebem os checks antes do merge.
+- O workflow manual usa `dry_run: false` por padrão. `release-homebrew.yml` trata qualquer `push_mode` diferente de `pr` como `direct-push`.
+- O workflow Homebrew baixa o mesmo tarball uma vez para descartá-lo e outra para calcular o hash.
+- A branch `main` não tem branch protection nem rulesets. A API de Actions não listou secrets ou variables do repositório.
+
+### Decisões
+
+| Tema                     | Decisão                                                                                                                                                                                                                     | Proveniência                                                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Identidade de publicação | Manter release-please e npm publish em `.github/workflows/release.yml`; não mover a publicação, pois o trusted publisher está associado ao nome desse workflow.                                                             | `AGENTS.md` fornecido pelo usuário; JEV aceitou com baixa confiança.                                                     |
+| CI dos release PRs       | Usar `GITHUB_TOKEN` para `repository_dispatch`; workflow confiável no `main` valida a PR, testa o código já validado e publica os checks exigidos no SHA da PR. Não é necessário criar um App.                              | O usuário informou que não tem App; `repository_dispatch` é exceção documentada para eventos criados por `GITHUB_TOKEN`. |
+| Releases por commit      | Cada PR mergeada em `main` gera uma release PR. Tipos convencionais sem feature recebem patch, inclusive `docs` e `chore`; CI rejeita títulos sem tipo reconhecido.                                                         | Usuário pediu que qualquer commit em `main` fosse publicação e aceitou release PR como fluxo.                            |
+| Release candidate        | Antes do merge, validar a igualdade entre versão do pacote e manifest, inexistência da tag/versão npm e presença da seção correspondente no changelog.                                                                      | JEV recomendou; usuário delegou a decisão ao advisor.                                                                    |
+| Baseline divergente      | Configurar `last-release-sha` temporariamente com `964570800ae1dacca9a1530a72fa711f0e1a1381`, gerar o próximo release a partir desse ponto e remover o override após o próximo release válido. Nunca mover a tag publicada. | JEV recomendou; usuário delegou a decisão ao advisor.                                                                    |
+| Release manual           | Trocar o booleano `dry_run` por uma escolha explícita, com `dry-run` como padrão e `publish` como escolha deliberada.                                                                                                       | JEV recomendou; usuário delegou a decisão ao advisor.                                                                    |
+| Homebrew                 | Aceitar somente `direct-push` ou `pr`, falhar em valores desconhecidos e manter o default atual. Reter o primeiro tarball baixado com sucesso e calcular o hash desses bytes.                                               | JEV recomendou; usuário delegou a decisão ao advisor.                                                                    |
+| Release identity         | Criar um módulo Node pequeno e testado para validar tag/versão e consistência de pacote/manifest; manter workflows como adapters de orquestração e entrega.                                                                 | JEV recomendou; usuário delegou a decisão ao advisor.                                                                    |
+| Gastos                   | Sem teto de gastos para as melhorias. O Jev foi consultado com OpenCode Zen `oc/jev-1.13-free`; rodadas aceitas reportaram US$ 0.                                                                                           | Usuário e telemetria da ferramenta.                                                                                      |
+
+### Pré-requisitos externos e limites
+
+- Exigir PR e os checks do `ci.yml` em `main`. Ainda não há branch protection nem ruleset configurados.
+- `last-release-sha` é temporário; remover o campo da release PR de recuperação antes de mesclá-la para release-please retomar pelo novo tag.
+- A auditoria não altera a tag publicada nem conclui publicação externa.
+- O JEV usou o endpoint OpenCode Zen salvo. Uma chamada inicial falhou por precedência de credenciais do ambiente; a chamada válida usou a credencial salva e reportou custo zero. As recomendações escaladas foram aceitas pelo usuário.

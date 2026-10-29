@@ -1,5 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "last-release-sha": "964570800ae1dacca9a1530a72fa711f0e1a1381",
   "packages": {
     ".": {
       "release-type": "node",
@@ -10,7 +11,14 @@
         { "type": "feat", "section": "Added" },
         { "type": "fix", "section": "Fixed" },
         { "type": "perf", "section": "Changed" },
-        { "type": "revert", "section": "Changed" }
+        { "type": "revert", "section": "Changed" },
+        { "type": "docs", "section": "Maintenance" },
+        { "type": "test", "section": "Maintenance" },
+        { "type": "refactor", "section": "Maintenance" },
+        { "type": "build", "section": "Maintenance" },
+        { "type": "ci", "section": "Maintenance" },
+        { "type": "chore", "section": "Maintenance" },
+        { "type": "style", "section": "Maintenance" }
       ]
     }
   }

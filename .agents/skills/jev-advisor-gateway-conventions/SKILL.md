@@ -49,7 +49,8 @@ and each conventional one gets a changelog line too, so they need the same care 
 - `feat` = users can do something new or must do something differently: minor bump, "Added".
 - `fix` = something wrong is now right: patch bump, "Fixed".
 - `perf` = same behaviour, cheaper: patch bump, "Changed".
-- `docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style` = no release, not in the changelog.
+- `docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style` = patch release, listed under
+  `Maintenance`.
 - `!` (`feat!:`) when users must change something to keep working. While `0.x` that is a minor bump.
 - Scope is optional and names the part: `brew`, `opencode`, `kilo`, `gemini`, `dashboard`, `readme`.
 

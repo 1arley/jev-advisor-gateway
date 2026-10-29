@@ -1,0 +1,166 @@
+# GITHUB_TOKEN cannot trigger pull_request workflows. This trusted workflow validates the
+# release-please PR, tests main (whose code the PR does not change), and reports checks on its SHA.
+name: release-pr-ci
+
+on:
+  repository_dispatch:
+    types: [release-pr-ci]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.15", "24"]
+    env:
+      PR_NUMBER: ${{ github.event.client_payload.release_pr_number }}
+      PR_HEAD_SHA: ${{ github.event.client_payload.head_sha }}
+      PR_BASE_SHA: ${{ github.event.client_payload.base_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.client_payload.base_sha }}
+      - name: Validate release PR and its metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ runner.temp }}/release-candidate
+        run: |
+          PR="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+          if [ "$(jq -r '.state' <<< "$PR")" != "open" ] \
+            || [ "$(jq -r '.base.ref' <<< "$PR")" != "main" ] \
+            || [ "$(jq -r '.head.sha' <<< "$PR")" != "$PR_HEAD_SHA" ] \
+            || [ "$(jq -r '.base.sha' <<< "$PR")" != "$PR_BASE_SHA" ] \
+            || [[ "$(jq -r '.head.ref' <<< "$PR")" != release-please--branches--main* ]] \
+            || [[ "$(jq -r '.title' <<< "$PR")" != "chore(main): release "* ]]; then
+            echo "::error::The dispatched release PR is stale or does not match release-please."
+            exit 1
+          fi
+
+          CHANGED_FILES="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" --jq '.[].filename')"
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "::error::Release PR has no changed files."
+            exit 1
+          fi
+          for required in package.json .release-please-manifest.json CHANGELOG.md; do
+            if ! grep -Fxq "$required" <<< "$CHANGED_FILES"; then
+              echo "::error::Release PR is missing expected file '$required'."
+              exit 1
+            fi
+          done
+          while IFS= read -r file; do
+            case "$file" in
+              package.json|.release-please-manifest.json|CHANGELOG.md|release-please-config.json) ;;
+              *) echo "::error::Release PR changed unexpected file '$file'."; exit 1 ;;
+            esac
+          done <<< "$CHANGED_FILES"
+
+          mkdir -p "$CANDIDATE"
+          mkdir -p "$CANDIDATE/base" "$CANDIDATE/head"
+          for file in package.json .release-please-manifest.json CHANGELOG.md release-please-config.json; do
+            gh api "repos/$GITHUB_REPOSITORY/contents/$file?ref=$PR_HEAD_SHA" --jq '.content' \
+              | base64 --decode > "$CANDIDATE/head/$file"
+            gh api "repos/$GITHUB_REPOSITORY/contents/$file?ref=$PR_BASE_SHA" --jq '.content' \
+              | base64 --decode > "$CANDIDATE/base/$file"
+          done
+
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { validateReleaseCandidate } from "./scripts/release-identity.mjs";
+          const json = (path) => JSON.parse(readFileSync(path, "utf8"));
+          const base = (name) => json(`${process.env.CANDIDATE}/base/${name}`);
+          const next = (name) => json(`${process.env.CANDIDATE}/head/${name}`);
+          validateReleaseCandidate({
+            basePackage: base("package.json"),
+            nextPackage: next("package.json"),
+            baseManifest: base(".release-please-manifest.json"),
+            nextManifest: next(".release-please-manifest.json"),
+            baseConfig: base("release-please-config.json"),
+            nextConfig: next("release-please-config.json"),
+          });
+          NODE
+
+          VERSION="$(jq -r '.version' "$CANDIDATE/head/package.json")"
+          node scripts/release-identity.mjs "v$VERSION" "$CANDIDATE/head"
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>/tmp/tag-error
+          TAG_STATUS=$?
+          set -e
+          if [ "$TAG_STATUS" -eq 0 ]; then
+            echo "::error::Release tag v$VERSION already exists."
+            exit 1
+          elif [ "$TAG_STATUS" -ne 2 ]; then
+            cat /tmp/tag-error >&2
+            echo "::error::Could not verify whether tag v$VERSION exists."
+            exit 1
+          fi
+          if npm view "jev-advisor-gateway@$VERSION" version >/tmp/npm-version 2>/tmp/npm-error; then
+            echo "::error::Release version $VERSION already exists on npm."
+            exit 1
+          elif ! grep -q 'E404' /tmp/npm-error; then
+            cat /tmp/npm-error >&2
+            echo "::error::Could not verify whether $VERSION exists on npm."
+            exit 1
+          fi
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  report:
+    if: always()
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.client_payload.release_pr_number }}
+      PR_HEAD_SHA: ${{ github.event.client_payload.head_sha }}
+      PR_BASE_SHA: ${{ github.event.client_payload.base_sha }}
+      CHECK_RESULT: ${{ needs.check.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Report required checks on the release PR commit
+        run: |
+          PR="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+          CONCLUSION=failure
+          SUMMARY="Release PR validation or CI failed. See the workflow run."
+          if [ "$(jq -r '.state' <<< "$PR")" != "open" ] \
+            || [ "$(jq -r '.head.sha' <<< "$PR")" != "$PR_HEAD_SHA" ] \
+            || [ "$(jq -r '.base.sha' <<< "$PR")" != "$PR_BASE_SHA" ]; then
+            CONCLUSION=cancelled
+            SUMMARY="The release PR changed while CI was running; a new run is required."
+          elif [ "$CHECK_RESULT" = "success" ]; then
+            CONCLUSION=success
+            SUMMARY="Release metadata, typecheck, tests, and build passed."
+          fi
+
+          for node in 22.15 24; do
+            name="check ($node)"
+            check_id="$(gh api "repos/$GITHUB_REPOSITORY/commits/$PR_HEAD_SHA/check-runs?check_name=$(jq -rn --arg x "$name" '$x|@uri')" \
+              --jq '.check_runs[] | select(.app.slug == "github-actions") | .id' | head -n1)"
+            if [ -n "$check_id" ]; then
+              gh api --method PATCH "repos/$GITHUB_REPOSITORY/check-runs/$check_id" \
+                -f status=completed -f conclusion="$CONCLUSION" -f details_url="$RUN_URL" \
+                -f "output[title]=Release PR CI" -f "output[summary]=$SUMMARY" >/dev/null
+            else
+              gh api --method POST "repos/$GITHUB_REPOSITORY/check-runs" \
+                -f name="$name" -f head_sha="$PR_HEAD_SHA" -f status=completed \
+                -f conclusion="$CONCLUSION" -f details_url="$RUN_URL" \
+                -f "output[title]=Release PR CI" -f "output[summary]=$SUMMARY" >/dev/null
+            fi
+          done

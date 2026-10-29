@@ -13,10 +13,14 @@ derived from commit messages, which is why those follow
 
 1. Merge work into `main` as usual. After each merge, release-please opens a pull request named
    `chore(main): release X.Y.Z`, or updates the one that is already open. It holds the version
-   bump in `package.json` and the new section of `CHANGELOG.md`.
+   bump in `package.json` and the new section of `CHANGELOG.md`. Every Conventional Commit type,
+   including `docs:` and `chore:`, opens a release PR; CI rejects titles without a recognized type.
 2. When you want to release, read that pull request. Check the version and the changelog, and
-   edit the changelog if it needs it (see [The changelog](#the-changelog)).
-3. Make sure `main` is green in CI, and merge the release pull request.
+   edit the changelog if it needs it (see [The changelog](#the-changelog)). For the recovery PR
+   only, remove `last-release-sha` from `release-please-config.json` as the final edit; new commits
+   on `main` cause release-please to rebuild the branch.
+3. The release pull request must pass both CI matrix checks and the release metadata validation.
+   Merge only after they pass.
 
 That merge is the release. Within a minute or two the version is tagged, on GitHub's release page,
 and on npm. To watch it, and then check the result (see [Checking a release](#checking-a-release)):
@@ -32,26 +36,27 @@ To run everything short of publishing against an existing tag, or to finish a re
 stopped half way:
 
 ```bash
-gh workflow run release.yml -f tag=v0.3.1 -f dry_run=true
-gh workflow run release.yml -f tag=v0.3.1
+gh workflow run release.yml -f tag=v0.3.1 -f mode=dry-run
+gh workflow run release.yml -f tag=v0.3.1 -f mode=publish
 ```
 
-A dry run does the checks, the build and `npm publish --dry-run`, which prints the list of files
-that would ship. It creates no GitHub release and does not call the Homebrew workflow.
+Manual runs default to `dry-run`. That mode does the checks, the build and `npm publish --dry-run`,
+which prints the list of files that would ship. It creates no GitHub release and does not call the
+Homebrew workflow. Choose `publish` explicitly to publish an existing tag.
 
 ## What the workflow does
 
 `release.yml` runs on every push to `main`, and by hand with a `tag` input. Most pushes only
 reach the first stage.
 
-| Stage | What happens | Stops here when |
-| --- | --- | --- |
-| release-please | Reads the commits since the last release and opens or updates the release pull request. If the push *was* the merge of that pull request, creates the tag `vX.Y.Z` and the GitHub release instead, with the changelog section as its notes | The push was anything other than the release pull request being merged: there is nothing to publish |
-| Check the tag | Compares the tag with `package.json` and with `main` | The tag is not `vX.Y.Z`, differs from the version in `package.json`, or its commit is not on `main` |
-| Check the code | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm build`, on Node 24 | Any of them fails |
-| Publish to npm | `npm publish --access public --ignore-scripts`, with provenance | npm refuses the publish. A version that is already on npm is skipped, not an error |
-| GitHub release | Only for a tag made by hand: creates the release from the changelog section | The release already exists, which is the normal case |
-| Homebrew | Calls `release-homebrew.yml`, which rewrites the formula in the tap | Does nothing, and stays green, until a tap is set up. See [homebrew-tap.md](homebrew-tap.md) |
+| Stage          | What happens                                                                                                                                                                                                                               | Stops here when                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| release-please | Reads the commits since the last release and opens or updates the release pull request. If the push _was_ the merge of that pull request, creates the tag `vX.Y.Z` and the GitHub release instead, with the changelog section as its notes | The push was anything other than the release pull request being merged: there is nothing to publish |
+| Check the tag  | Compares the tag with `package.json` and with `main`                                                                                                                                                                                       | The tag is not `vX.Y.Z`, differs from the version in `package.json`, or its commit is not on `main` |
+| Check the code | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm build`, on Node 24                                                                                                                                                  | Any of them fails                                                                                   |
+| Publish to npm | `npm publish --access public --ignore-scripts`, with provenance                                                                                                                                                                            | npm refuses the publish. A version that is already on npm is skipped, not an error                  |
+| GitHub release | Only for a tag made by hand: creates the release from the changelog section                                                                                                                                                                | The release already exists, which is the normal case                                                |
+| Homebrew       | Calls `release-homebrew.yml`, which rewrites the formula in the tap                                                                                                                                                                        | Does nothing, and stays green, until a tap is set up. See [homebrew-tap.md](homebrew-tap.md)        |
 
 Homebrew goes last because the formula needs the SHA256 of the tarball npm serves.
 
@@ -66,15 +71,15 @@ release-please reads the commits on `main` since the last tag. The package follo
 [semantic versioning](https://semver.org), and it is still `0.x`, where the minor number does the
 work of a major one:
 
-| Commits since the last release | Bump | Example |
-| --- | --- | --- |
-| Only `fix:` and `perf:` | patch | 0.2.0 to 0.2.1: token metering fixed for Codex on a ChatGPT subscription |
-| At least one `feat:` | minor | 0.2.2 to 0.3.0: OpenCode and Gemini support |
-| A breaking change (`feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer) | minor while `0.x`, major after 1.0 | 0.1.0 to 0.2.0: listening on loopback only, renamed flags |
-| Only `docs:`, `test:`, `ci:`, `chore:`, `refactor:`, `build:`, `style:` | none: no release pull request is opened | |
+| Commits since the last release                                                         | Bump                               | Example                                                   |
+| -------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------- |
+| `fix:`, `perf:`, `docs:`, `test:`, `refactor:`, `build:`, `ci:`, `chore:`, or `style:` | patch                              | 0.2.0 to 0.2.1: any non-feature change                    |
+| At least one `feat:`                                                                   | minor                              | 0.2.2 to 0.3.0: OpenCode and Gemini support               |
+| A breaking change (`feat!:`, `fix!:`, or a `BREAKING CHANGE:` footer)                  | minor while `0.x`, major after 1.0 | 0.1.0 to 0.2.0: listening on loopback only, renamed flags |
 
-Commits without a conventional prefix are invisible to release-please. They neither trigger a
-release nor appear in the changelog.
+Every pull request title must use a Conventional Commit type. All supported types appear in the
+changelog, and non-feature types receive a patch bump, so each merge to `main` creates a release
+pull request.
 
 A pull request's title counts however it is merged. A squash makes the title the commit. A merge
 commit gets the title in its body, where GitHub puts it, and release-please reads conventional
@@ -113,7 +118,7 @@ better, both optional:
   for users, group them, and credit outside contributors (`Thanks to @someone (#12).`). Do this
   last: release-please rebuilds the branch, and discards such edits, whenever something new lands
   on `main`.
-- **Fix the source instead.** Edit the description of the *merged* pull request the entry came
+- **Fix the source instead.** Edit the description of the _merged_ pull request the entry came
   from and add an override block. release-please uses it in place of the original commit message
   the next time it runs. This works for squash-merged pull requests only, which is one reason to
   prefer squashing:
@@ -141,24 +146,25 @@ workflow run that built it.
 
 ## When something goes wrong
 
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| No release pull request appears after a merge | Nothing releasable landed: the commits are `docs:`, `chore:` and the like, or neither the pull request's title nor any of its commits has a conventional prefix | Nothing is wrong if there is nothing to release. Otherwise add an override block to the merged pull request (see [The changelog](#the-changelog)) and re-run the workflow |
-| The release-please job fails with `GitHub Actions is not permitted to create or approve pull requests` | The repository setting is off | Turn it on: see [One-time setup on GitHub](#one-time-setup-on-github) |
-| CI does not run on the release pull request | A pull request opened with `GITHUB_TOKEN` starts no workflows | Expected. It only changes `package.json` and `CHANGELOG.md`, and the publish job runs the full checks before anything reaches npm. To run CI anyway, close and reopen the pull request |
-| Released changes sit under a `## Unreleased` heading in `CHANGELOG.md` | Someone wrote changelog entries by hand in a pull request. release-please does not read them: it adds its own section below and leaves that heading where it was (this happened with 0.4.0) | Move the text into the version's section, in a `docs:` commit, and delete the heading. Changelog entries come from commit messages; to word one better, see [The changelog](#the-changelog) |
-| The release pull request has merge conflicts | `package.json` or `CHANGELOG.md` changed on `main` by hand | Push anything to `main`, or re-run the workflow: release-please rebuilds the branch from `main` |
-| The version in the release pull request is not what you expected | A commit has the wrong type, or a `!` that should not be there | Correct it with an override block, or force the version with `Release-As:` |
-| `Tag vX.Y.Z does not match package.json version` | Only with a tag made by hand, pushed without the version bump | Nothing was published. Delete the tag (`git push origin :vX.Y.Z`, `git tag -d vX.Y.Z`) and release through the pull request |
-| Type check, tests or build fail in the publish job | `main` was not green when the release pull request was merged | npm has nothing, but the tag and the GitHub release exist. Fix on `main` with a `fix:` commit and merge the next release pull request. Delete the orphaned GitHub release, or mark it as superseded |
-| The registry shows a `0.0.0-stage` version and `npm view jev-advisor-gateway version` returns it | The publish was staged instead of published. Staged publishing parks the version for a 2FA approval and, for a name that does not exist yet, publishes that placeholder so the name is reserved | `npm stage list jev-advisor-gateway`, inspect it with `npm stage view <id>`, then `npm stage approve <id>` — or `npm stage reject <id>` and let the workflow publish the same version with provenance |
-| `npm error 403 ... Granular access tokens that bypass two-factor authentication may not perform this action` | The credential in `~/.npmrc` is a 2FA-bypass token, and npm now demands an interactive 2FA challenge for account, package and trusted-publisher changes | `npm logout`, `npm login` again, and repeat the command |
-| `npm error 404 Not Found - PUT https://registry.npmjs.org/<name>` | The name does not exist on npm, so there is no trusted publisher to authorise the publish. npm answers 404, not 403, when a credential carries no permission for the name | Publish that version by hand once, then set up the publisher for the releases after it: see [One-time setup on npmjs.com](#one-time-setup-on-npmjscom) |
-| `npm error 403 ... OIDC permission denied for this action` | npm's trusted publisher setting does not match this repository and workflow file | Compare the setting with [the table below](#one-time-setup-on-npmjscom), save it, and run the workflow by hand for the same tag |
-| Publish fails asking for a login or a token (`ENEEDAUTH`) | The job's npm is too old for trusted publishing, which needs 11.5.1 or later | Keep `node-version` in `release.yml` on a Node that ships such an npm (Node 24 does) |
-| The GitHub release exists but npm does not have the version | The run stopped after release-please | Run the workflow by hand for the same tag |
-| The Homebrew stage fails | See the troubleshooting table in [homebrew-tap.md](homebrew-tap.md) | npm and the GitHub release are already done. Re-run only that part with `gh workflow run release-homebrew.yml -f tag=vX.Y.Z` |
-| A broken version reached npm | | Release a fixed patch version. To warn people off the broken one: `npm deprecate jev-advisor-gateway@X.Y.Z "reason"` (this one needs an owner's npm login, not the workflow) |
+| Symptom                                                                                                      | Cause                                                                                                                                                                                           | Fix                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No release pull request appears after a merge                                                                | The pull request was not merged with a supported Conventional Commit title                                                                                                                      | Rename the merged PR with a supported prefix and re-run the workflow                                                                                                                                  |
+| The release-please job fails with `GitHub Actions is not permitted to create or approve pull requests`       | The repository setting is off                                                                                                                                                                   | Turn it on: see [One-time setup on GitHub](#one-time-setup-on-github)                                                                                                                                 |
+| CI does not run on the release pull request                                                                  | The `release-pr-ci` dispatch failed or the release PR was stale when it ran                                                                                                                     | Send another `repository_dispatch` for the current head SHA using the command below                                                                                                                   |
+| Release metadata validation fails                                                                            | The package version, release manifest, changelog section, GitHub tag or npm version disagree                                                                                                    | Correct the release PR before merging. Never move a published tag or reuse an npm version                                                                                                             |
+| Released changes sit under a `## Unreleased` heading in `CHANGELOG.md`                                       | Someone wrote changelog entries by hand in a pull request. release-please does not read them: it adds its own section below and leaves that heading where it was (this happened with 0.4.0)     | Move the text into the version's section, in a `docs:` commit, and delete the heading. Changelog entries come from commit messages; to word one better, see [The changelog](#the-changelog)           |
+| The release pull request has merge conflicts                                                                 | `package.json` or `CHANGELOG.md` changed on `main` by hand                                                                                                                                      | Push anything to `main`, or re-run the workflow: release-please rebuilds the branch from `main`                                                                                                       |
+| The version in the release pull request is not what you expected                                             | A commit has the wrong type, or a `!` that should not be there                                                                                                                                  | Correct it with an override block, or force the version with `Release-As:`                                                                                                                            |
+| `Tag vX.Y.Z does not match package.json version`                                                             | Only with a tag made by hand, pushed without the version bump                                                                                                                                   | Nothing was published. Delete the tag (`git push origin :vX.Y.Z`, `git tag -d vX.Y.Z`) and release through the pull request                                                                           |
+| Type check, tests or build fail in the publish job                                                           | `main` was not green when the release pull request was merged                                                                                                                                   | npm has nothing, but the tag and the GitHub release exist. Fix on `main` with a `fix:` commit and merge the next release pull request. Delete the orphaned GitHub release, or mark it as superseded   |
+| The registry shows a `0.0.0-stage` version and `npm view jev-advisor-gateway version` returns it             | The publish was staged instead of published. Staged publishing parks the version for a 2FA approval and, for a name that does not exist yet, publishes that placeholder so the name is reserved | `npm stage list jev-advisor-gateway`, inspect it with `npm stage view <id>`, then `npm stage approve <id>` — or `npm stage reject <id>` and let the workflow publish the same version with provenance |
+| `npm error 403 ... Granular access tokens that bypass two-factor authentication may not perform this action` | The credential in `~/.npmrc` is a 2FA-bypass token, and npm now demands an interactive 2FA challenge for account, package and trusted-publisher changes                                         | `npm logout`, `npm login` again, and repeat the command                                                                                                                                               |
+| `npm error 404 Not Found - PUT https://registry.npmjs.org/<name>`                                            | The name does not exist on npm, so there is no trusted publisher to authorise the publish. npm answers 404, not 403, when a credential carries no permission for the name                       | Publish that version by hand once, then set up the publisher for the releases after it: see [One-time setup on npmjs.com](#one-time-setup-on-npmjscom)                                                |
+| `npm error 403 ... OIDC permission denied for this action`                                                   | npm's trusted publisher setting does not match this repository and workflow file                                                                                                                | Compare the setting with [the table below](#one-time-setup-on-npmjscom), save it, and run the workflow by hand for the same tag                                                                       |
+| Publish fails asking for a login or a token (`ENEEDAUTH`)                                                    | The job's npm is too old for trusted publishing, which needs 11.5.1 or later                                                                                                                    | Keep `node-version` in `release.yml` on a Node that ships such an npm (Node 24 does)                                                                                                                  |
+| The GitHub release exists but npm does not have the version                                                  | The run stopped after release-please                                                                                                                                                            | Run the workflow by hand for the same tag                                                                                                                                                             |
+| The Homebrew stage fails                                                                                     | See the troubleshooting table in [homebrew-tap.md](homebrew-tap.md)                                                                                                                             | npm and the GitHub release are already done. Re-run only that part with `gh workflow run release-homebrew.yml -f tag=vX.Y.Z`                                                                          |
+| A broken version reached npm                                                                                 |                                                                                                                                                                                                 | Release a fixed patch version. To warn people off the broken one: `npm deprecate jev-advisor-gateway@X.Y.Z "reason"` (this one needs an owner's npm login, not the workflow)                          |
 
 release-please tracks its own state in two places: `.release-please-manifest.json` holds the last
 released version, and the merged release pull request carries an `autorelease: pending` label
@@ -168,17 +174,53 @@ the right place.
 
 ## One-time setup on GitHub
 
-release-please opens pull requests with the workflow's own `GITHUB_TOKEN`, which GitHub does not
-allow by default. In the repository, open **Settings → Actions → General → Workflow
-permissions** and tick **Allow GitHub Actions to create and approve pull requests**. Or:
+release-please uses the repository's `GITHUB_TOKEN`. GitHub does not start a `pull_request`
+workflow from a PR created by that token, so `release.yml` sends a `repository_dispatch` event to
+the trusted `release-pr-ci.yml` workflow on `main`. That workflow validates the release PR files
+and metadata, runs checks against the unchanged `main` code, then reports the `ci` matrix checks
+on the exact PR head SHA. Test jobs have read-only permissions; only the separate reporter job can
+write check runs. No GitHub App or long-lived token is needed.
+
+To retry the dispatched checks for an open release PR:
 
 ```bash
-gh api -X PUT repos/1arley/jev-advisor-gateway/actions/permissions/workflow \
-  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
+PR=11
+gh api --method POST repos/1arley/jev-advisor-gateway/dispatches \
+  -f event_type=release-pr-ci \
+  -F "client_payload[release_pr_number]=$PR" \
+  -f "client_payload[head_sha]=$(gh pr view "$PR" --json headRefOid --jq .headRefOid)" \
+  -f "client_payload[base_sha]=$(gh pr view "$PR" --json baseRefOid --jq .baseRefOid)"
 ```
 
-The default token permission stays read-only. `release.yml` asks for the write permissions it
-needs job by job.
+Allow Actions to create pull requests in **Settings → Actions → General → Workflow permissions**.
+The default token permission stays read-only; jobs request their own permissions.
+
+Require pull requests and the `ci` matrix checks `check (22.15)` and `check (24)` on `main`.
+Release metadata validation runs before those checks. For example, branch protection can be set
+with:
+
+```bash
+gh api --method PUT repos/1arley/jev-advisor-gateway/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": {
+    "strict": true,
+    "contexts": ["check (22.15)", "check (24)"]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 0
+  },
+  "restrictions": null
+}
+JSON
+```
+
+Keep both required contexts in sync if the CI matrix changes.
+
+For the one-time recovery from the duplicate `0.10.1` release, the top-level
+`last-release-sha` in `release-please-config.json` is temporarily set to
+`964570800ae1dacca9a1530a72fa711f0e1a1381`. Remove that field from the recovery release PR before
+merging it. The release then uses the correct commit range and future runs resume from the new tag.
 
 ## One-time setup on npmjs.com
 
@@ -198,12 +240,12 @@ up. In the browser:
 1. Open https://www.npmjs.com/package/jev-advisor-gateway/access and find **Trusted Publisher**.
 2. Choose **GitHub Actions** and fill in:
 
-   | Field | Value |
-   | --- | --- |
-   | Organization or user | `1arley` |
-   | Repository | `jev-advisor-gateway` |
-   | Workflow filename | `release.yml` |
-   | Environment name | leave empty |
+   | Field                | Value                 |
+   | -------------------- | --------------------- |
+   | Organization or user | `1arley`              |
+   | Repository           | `jev-advisor-gateway` |
+   | Workflow filename    | `release.yml`         |
+   | Environment name     | leave empty           |
 
 3. Save. Then, on the same page under **Publishing access**, pick **Require two-factor
    authentication and disallow tokens**. After that the workflow is the only thing that can

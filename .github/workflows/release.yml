@@ -22,10 +22,11 @@ on:
       tag:
         description: "Existing tag to release again, e.g. v0.3.0"
         required: true
-      dry_run:
-        description: "Run every check and `npm publish --dry-run`, publish nothing"
-        type: boolean
-        default: false
+      mode:
+        description: "Choose whether to publish this existing tag"
+        type: choice
+        options: [dry-run, publish]
+        default: dry-run
 
 permissions:
   contents: read
@@ -50,11 +51,39 @@ jobs:
       # Configured by release-please-config.json and .release-please-manifest.json.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
+      - name: Dispatch CI for the release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          RELEASE_PRS="$(gh pr list --state open --base main --json number,title,headRefName \
+            --jq '[.[] | select(.title | startswith("chore(main): release "))]')"
+          RELEASE_PR_COUNT="$(jq 'length' <<< "$RELEASE_PRS")"
+          if [ "$RELEASE_PR_COUNT" -eq 0 ]; then
+            echo "No open release PR to check."
+            exit 0
+          fi
+          if [ "$RELEASE_PR_COUNT" -ne 1 ]; then
+            echo "::error::Expected one open release PR, found $RELEASE_PR_COUNT."
+            exit 1
+          fi
+          RELEASE_PR="$(jq '.[0]' <<< "$RELEASE_PRS")"
+          PR_NUMBER="$(jq -r '.number' <<< "$RELEASE_PR")"
+          PR_BRANCH="$(jq -r '.headRefName' <<< "$RELEASE_PR")"
+          if [[ "$PR_BRANCH" != release-please--branches--main* ]]; then
+            echo "::error::Unexpected release PR branch '$PR_BRANCH'."
+            exit 1
+          fi
+          PR="$(gh api "repos/$GH_REPO/pulls/$PR_NUMBER")"
+          gh api --method POST "repos/$GH_REPO/dispatches" \
+            -f event_type=release-pr-ci \
+            -F "client_payload[release_pr_number]=$PR_NUMBER" \
+            -f "client_payload[head_sha]=$(jq -r '.head.sha' <<< "$PR")" \
+            -f "client_payload[base_sha]=$(jq -r '.base.sha' <<< "$PR")"
 
   publish:
     needs: release-please
-    # On a push, only when release-please has just cut a release. By hand, always: release-please
-    # is skipped then, and a skipped dependency would otherwise skip this job too.
+    # Manual runs always check; publication still requires choosing publish explicitly.
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.release_created == 'true') }}
     runs-on: ubuntu-latest
     permissions:
@@ -67,29 +96,23 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
     env:
       TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
-      DRY_RUN: ${{ inputs.dry_run || false }}
+      RELEASE_MODE: ${{ inputs.mode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || needs.release-please.outputs.tag }}
           fetch-depth: 0
 
-      - name: Check the tag against package.json and main
+      - name: Check release identity and main
         id: version
         run: |
-          VERSION="${TAG#v}"
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
-            echo "::error::Tag '$TAG' is not vX.Y.Z."; exit 1
-          fi
-          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "::error::Tag $TAG does not match package.json version $PACKAGE_VERSION."; exit 1
-          fi
           # A tag on some other branch must never reach npm.
           git fetch --quiet origin main
           if ! git merge-base --is-ancestor HEAD origin/main; then
             echo "::error::Tag $TAG is not on main."; exit 1
           fi
+          git show origin/main:scripts/release-identity.mjs > /tmp/release-identity.mjs
+          VERSION="$(node /tmp/release-identity.mjs "$TAG" | sed -n 's/^Release identity is consistent: v//p')"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -115,14 +138,14 @@ jobs:
           fi
           # Checks and build ran above, so package scripts stay out of the step that holds the
           # publishing identity.
-          if [ "$DRY_RUN" = "true" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$RELEASE_MODE" != "publish" ]; then
             npm publish --access public --ignore-scripts --dry-run
           else
             npm publish --access public --ignore-scripts
           fi
 
       - name: Create the GitHub release
-        if: env.DRY_RUN != 'true'
+        if: github.event_name == 'push' || inputs.mode == 'publish'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -144,7 +167,7 @@ jobs:
   homebrew:
     needs: publish
     # Spelled out because release-please, further up the chain, is skipped on a run by hand.
-    if: ${{ !cancelled() && needs.publish.result == 'success' && !inputs.dry_run }}
+    if: ${{ !cancelled() && needs.publish.result == 'success' && (github.event_name == 'push' || inputs.mode == 'publish') }}
     uses: ./.github/workflows/release-homebrew.yml
     with:
       tag: ${{ needs.publish.outputs.tag }}

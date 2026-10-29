@@ -63,6 +63,10 @@ jobs:
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
+          if [ "$PUSH_MODE" != "direct-push" ] && [ "$PUSH_MODE" != "pr" ]; then
+            echo "::error::push_mode must be 'direct-push' or 'pr', got '$PUSH_MODE'."
+            exit 1
+          fi
           if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
             echo "::notice::No HOMEBREW_TAP_TOKEN secret, so the Homebrew formula was not updated. See docs/homebrew-tap.md to enable it."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -90,7 +94,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved $TAG -> $VERSION"
 
-      - name: Wait for the npm tarball
+      - name: Wait for and retain the npm tarball
         if: steps.gate.outputs.enabled == 'true'
         id: tarball
         env:
@@ -103,7 +107,7 @@ jobs:
           ATTEMPTS=30
           SLEEP_SECONDS=60
           for i in $(seq 1 "$ATTEMPTS"); do
-            if curl -fsSL -o /dev/null "$TARBALL_URL"; then
+            if curl -fsSL -o /tmp/jev-advisor-gateway.tgz "$TARBALL_URL"; then
               echo "npm tarball available: $TARBALL_URL (attempt $i/$ATTEMPTS)"
               exit 0
             fi
@@ -119,7 +123,6 @@ jobs:
         env:
           TARBALL_URL: ${{ steps.tarball.outputs.tarball_url }}
         run: |
-          curl -fsSL -o /tmp/jev-advisor-gateway.tgz "$TARBALL_URL"
           SHA256=$(sha256sum /tmp/jev-advisor-gateway.tgz | cut -d' ' -f1)
           if [ -z "$SHA256" ]; then
             echo "::error::Failed to compute SHA256 for $TARBALL_URL."

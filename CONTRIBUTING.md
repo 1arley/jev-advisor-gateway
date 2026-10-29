@@ -126,7 +126,7 @@ otherwise.
 Tests need no keys and make no network calls. `test/helpers.ts` has what makes that possible:
 
 - `fakeJev(canned)` answers Jev's questions from a table and records what it was asked. It throws
-  when asked a question it has no answer for, so a test also pins down *which* questions are sent.
+  when asked a question it has no answer for, so a test also pins down _which_ questions are sent.
 - `fakeUpstream(reply)` stands in for the provider and records what was forwarded to it.
 - `testConfig(overrides)` is the default configuration with a test upstream.
 
@@ -182,12 +182,12 @@ the version number and the changelog are derived from them:
 <type>[(scope)][!]: <what changes, imperative, no full stop>
 ```
 
-| Type | Use it for | Effect on the next release |
-| --- | --- | --- |
-| `feat` | Something users can now do, or must now do differently | Minor bump, listed under **Added** |
-| `fix` | Something that was wrong and is now right | Patch bump, listed under **Fixed** |
-| `perf` | Same behaviour, faster or cheaper | Patch bump, listed under **Changed** |
-| `docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style` | Everything users do not notice | None, and not in the changelog |
+| Type                                                        | Use it for                                             | Effect on the next release               |
+| ----------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
+| `feat`                                                      | Something users can now do, or must now do differently | Minor bump, listed under **Added**       |
+| `fix`                                                       | Something that was wrong and is now right              | Patch bump, listed under **Fixed**       |
+| `perf`                                                      | Same behaviour, faster or cheaper                      | Patch bump, listed under **Changed**     |
+| `docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style` | Maintenance work                                       | Patch bump, listed under **Maintenance** |
 
 Add `!` after the type (`feat!:`) when users have to change something to keep working: a removed
 or renamed flag, a new default, a higher Node floor. The scope is optional and names the part
