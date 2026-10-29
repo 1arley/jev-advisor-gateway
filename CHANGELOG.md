@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.10.1...v0.11.0) (2026-10-29)
+
+
+### Added
+
+* **advisor:** support external advisor provider (openai/anthropic) ([7973df7](https://github.com/1arley/jev-advisor-gateway/commit/7973df7104e30bc118b9b2d6a48eb06970555ae5))
+
+
+### Maintenance
+
+* add husky pre-commit hooks with lint-staged and prettier ([488205d](https://github.com/1arley/jev-advisor-gateway/commit/488205d3784611e772f3cc3be914f953a0945af3))
+* **main:** release 0.10.1 ([9d8b097](https://github.com/1arley/jev-advisor-gateway/commit/9d8b097790edfea77b5057172709bfd510f1cd9e))
+* **release:** add release identity validation and release PR CI ([f910f67](https://github.com/1arley/jev-advisor-gateway/commit/f910f67023a3c810a5e48386d7425cf6a85469c2))
+* trigger release-please ([eb400b3](https://github.com/1arley/jev-advisor-gateway/commit/eb400b316cd76c430a7663263a515a9ffceb0142))
+* update README overview to animated GIF and add pre-commit skill ([9637700](https://github.com/1arley/jev-advisor-gateway/commit/9637700bc2c6612ac4985a8ccf8ee51525d687cf))
+
 ## [0.10.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.10.0...v0.10.1) (2026-10-29)
 
 
