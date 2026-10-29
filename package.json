@@ -71,7 +71,8 @@
     "kilo": "node bin/jev-kilo.mjs",
     "gemini": "node bin/jev-gemini.mjs",
     "devin": "node bin/jev-devin.mjs",
-    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
+    "prepare": "husky"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
@@ -80,6 +81,9 @@
   "devDependencies": {
     "@types/node": "^22.20.3",
     "@typesafe-ai/sdk": "^0.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.10",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"

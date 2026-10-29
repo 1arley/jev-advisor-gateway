@@ -1,0 +1,8 @@
+dist/
+coverage/
+node_modules/
+graphify-out/
+media/
+.agents/
+pnpm-lock.yaml
+CHANGELOG.md
