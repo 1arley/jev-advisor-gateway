@@ -19,6 +19,8 @@ reviewing code, tests, configuration, workflows, or project documentation.
 - `test/` contains offline Vitest coverage; `test/helpers.ts` provides `fakeJev`, `fakeUpstream`,
   and `testConfig`; `test/router.test.ts` pins the router's ordering and fail-open invariants.
 - `README.md` documents user-visible behavior; `.env.example` lists every environment setting.
+- `docs/client-compatibility.md` holds client-specific setup details; `media/Composition.tsx` is
+  the editable Remotion source for the README overview video.
 - `decision-record.md` tracks the Headroom decision, implementation scope, and outstanding gates.
 
 ## Invariants
@@ -36,6 +38,28 @@ reviewing code, tests, configuration, workflows, or project documentation.
   transports, and no API keys or network.
 - List every new setting in both `src/config.ts`, `.env.example`, and the README configuration
   table.
+
+## README and overview video maintenance
+
+- Keep the README as the short user guide: quick start, request behavior, privacy, benchmark
+  evidence, and links to detail. Put client-specific instructions and caveats in
+  `docs/client-compatibility.md` instead of rebuilding a long client-by-client narrative there.
+- When behavior, a client limitation, a setting or a supported version changes, check the relevant
+  launcher/configuration and tests first, then update the README and compatibility doc together.
+  Keep `.env.example` and the README settings table in sync with every new setting.
+- Publish benchmark numbers only from a reproducible public source or an explicitly requested,
+  privacy-reviewed dataset. State the task, sample size, method, date and whether the result is
+  synthetic or live. Do not infer active usage time from request durations or expose local session
+  logs, prompts, tool names tied to personal activity, or credentials.
+- Check `decision-record.md` before describing or changing Headroom. Keep the disabled-by-default,
+  loopback-only and synthetic-validation caveats visible; do not imply semantic fidelity from
+  structural tests.
+- Edit the overview in `media/Composition.tsx`, then regenerate both
+  `media/jev-advisor-gateway-overview.mp4` and `media/overview-poster.png` using the steps in
+  `media/README.md`. Create any `npx create-video@latest` scaffold in a unique directory under
+  `/tmp`, never in the repository root or the user's existing `my-video/`. Check the rendered
+  video and poster, and keep `package.json`'s `files` list including `docs`, `media`, and
+  `decision-record.md` so the npm README links work after publishing.
 
 ## Headroom gate
 

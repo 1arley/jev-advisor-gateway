@@ -1,823 +1,283 @@
 # Jev Advisor Gateway
 
-A local gateway that keeps your session model on the session, asks [Jev](https://docs.typesafe.ai/introduction)
-to route tool decisions, and can consult a read-only advisor when Jev sees uncertainty, a planning
-checkpoint, or repeated failure. The advisor is not tied to Codex or to GPT: `jev-codex-advisor`
-pairs GPT-6 Luna with a GPT advisor, `jev-claude-advisor` pairs Haiku with Opus, and
-`jev-opencode-advisor` pairs any OpenAI-compatible upstream with a Chat Completions advisor. The client's own login and upstream remain in use.
+[![npm version](https://img.shields.io/npm/v/jev-advisor-gateway)](https://www.npmjs.com/package/jev-advisor-gateway)
+[![CI](https://github.com/1arley/jev-advisor-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/1arley/jev-advisor-gateway/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-The launchers cover Codex, Claude Code, OpenCode, Kilo, Gemini and Devin. The project began as a fork
-of [jev-gateway](https://github.com/vinilana/jev-gateway) by Vinicius Lana (MIT); the advisor and the
-dashboard's cost view are what it adds on top of Jev routing.
+A local gateway that lets Jev choose a coding agent's next tool. The session model handles
+open-ended arguments and writes the final answer. When Jev is uncertain or a session reaches a
+planning checkpoint, an optional read-only advisor can add a note for the agent to consider.
 
-> Independent project, not affiliated with or endorsed by TypeSafe. "Jev" is TypeSafe's model and
-> this gateway is a client of its public API.
+[![Watch the 14-second overview](media/overview-poster.png)](media/jev-advisor-gateway-overview.mp4)
+
+The gateway supports Codex, Claude Code, OpenCode, Kilo, Gemini CLI and Devin. It is an independent
+project, not affiliated with or endorsed by TypeSafe. “Jev” is TypeSafe's model; this gateway calls
+its public API or a compatible provider.
 
 ## Quick start
 
-You need Node.js 22.15 or newer, a key for Jev (from TypeSafe, OpenRouter, Vercel AI Gateway or
-OpenCode, see [Where Jev runs](#where-jev-runs)), and Codex, Claude Code, OpenCode, Kilo and/or
-Devin already installed and logged in.
-
-**1. Install**
+Requirements: Node.js 22.15 or newer, a configured Jev provider and a supported coding agent.
+Hosted Jev providers require an API key; local endpoints do not require a hosted Jev key. Laya can
+require a local bearer key if its server is configured to use one.
 
 ```bash
 npm install -g jev-advisor-gateway
+jev-codex-advisor --yolo
 ```
 
-From a checkout instead:
+Use the matching launcher for your client:
 
-```bash
-git clone https://github.com/1arley/jev-advisor-gateway
-cd jev-advisor-gateway
-npm install
-npm link
-```
+| Launcher | Client | Default behavior |
+| --- | --- | --- |
+| `jev-codex-advisor` | Codex | GPT-6 Luna session with Jev and a GPT advisor |
+| `jev-codex` | Codex | Your Codex default model with Jev; no advisor |
+| `jev-claude-advisor` | Claude Code | Haiku session with Jev and an Opus advisor |
+| `jev-claude` | Claude Code | Your existing Claude model with Jev; no advisor |
+| `jev-opencode-advisor` | OpenCode | OpenAI-compatible model with Jev and an advisor |
+| `jev-opencode` | OpenCode | Your configured OpenCode model with Jev; no advisor |
+| `jev-kilo` | Kilo CLI | Kilo Gateway model with Jev |
+| `jev-gemini` | Gemini CLI | Gemini API-key traffic with Jev |
+| `jev-devin` | Devin CLI | Devin traffic with Jev |
 
-An installed package runs the built `dist/`; a checkout runs the TypeScript sources directly through
-`tsx`, so nothing needs building in either case. Installing straight from the git URL
-(`npm install -g github:1arley/jev-advisor-gateway`) does **not** work: the package has no `prepare`
-script, so `dist/` is never built, and `files` does not ship `src/`.
+`jev-codex-advisor` also has the alias `codex-jev-advisor`. Launchers pass their settings to that
+process only: they do not edit your Codex, Claude, OpenCode or other client configuration. Use the
+launcher like the client command; its arguments are forwarded.
 
-This package is self-contained and delivers every launcher above, `jev-codex-advisor` and
-`jev-codex` included. The upstream `jev-gateway` npm package is not needed: it ships neither advisor
-launcher, and installing it would only duplicate the shared ones
-(`jev-claude`, `jev-opencode`, ...) on your `PATH`.
+On first run, choose where Jev runs. For a hosted provider, enter its key; the launcher checks it
+with one real request and saves it in `~/.jev-gateway/.env`, readable only by your account. Local
+providers need their own service setup, and OpenJev's model backend may have separate credentials.
+Codex and Claude reuse their saved logins. OpenCode uses its configured upstream credential, and
+Gemini requires a Gemini API key. Kilo's gateway provider uses Kilo Gateway credentials. See
+[client compatibility](docs/client-compatibility.md).
 
-**2. Run your agent through the gateway**
-
-```bash
-jev-codex-advisor --yolo # GPT-6 Luna + Jev + a GPT advisor
-jev-codex --yolo         # your Codex default model + Jev tool routing, no advisor
-codex-jev-advisor        # alias for jev-codex-advisor
-jev-claude-advisor       # Claude Code: Haiku coding + Opus advisor
-jev-claude     # use it exactly like `claude`
-jev-opencode   # use it exactly like `opencode` (v1 and v2)
-jev-opencode-advisor # OpenCode with the read-only advisor enabled
-jev-kilo       # Kilo CLI, on free models unless KILO_API_KEY is set
-jev-gemini     # Gemini CLI, with a Gemini API key
-jev-devin      # use it exactly like `devin`
-```
-
-**3. Answer two questions, once**
-
-The first time, the launcher asks where you want to reach Jev and for the key. It checks the key
-with one real call, saves it to `~/.jev-gateway/.env` (readable only by you), and carries on into
-your agent. Every `jev-` command shares that file, so you are asked once for all of them.
+## What happens to a request
 
 ```text
-Where do you want to reach Jev?
-  1) TypeSafe: the official API, direct from the makers of Jev
-  2) OpenRouter: Jev through your OpenRouter account and credits
-  3) Vercel AI Gateway: Jev through your Vercel AI Gateway key and billing
-  4) OpenCode: Jev through your OpenCode Zen key: free by default, paid only if selected
-Choose 1-4 [1]:
-Paste your TypeSafe API key (input is hidden):
-The key works (Jev answered in 712 ms).
+coding agent → loopback gateway → Jev selects a tool or passes
+             ← session model answers, calls tools and owns the result
 ```
 
-**4. Watch it work**
+Jev handles supported requests that include tools. It selects one tool and can fill closed-set
+arguments such as enums and booleans. The session model fills open-ended arguments and writes the
+answer. If confidence is low, Jev fails, or the request is unsupported, the gateway normally
+forwards it unchanged. A selected tool can be enforced, suggested as a hint, or answered directly
+when its arguments are fully determined. Direct answers are disabled for Codex to preserve its
+Responses history.
+
+The advisor is optional. On selected turns it receives a read-only request without tools and adds
+a bounded note to the main agent's context. The main agent decides whether to use the note; the
+advisor cannot call tools or change the response chain.
+
+The gateway listens on `127.0.0.1` by default. Its default failure policy is fail-open: Jev,
+advisor, parsing and optional compression failures leave the client request on its normal path.
+Devin's Connect stream reports some upstream errors after HTTP 200, so a rejected hint cannot be
+replayed; see [client compatibility](docs/client-compatibility.md).
+
+## Dashboard and measuring your own work
 
 ```bash
 jev-codex-advisor --dashboard
 ```
 
-That's it. Your existing login keeps working, nothing in `~/.codex`, `~/.claude`,
-`~/.config/opencode`, or `~/.config/kilo` is changed, and plain `codex`, `claude`, `opencode`,
-and `kilo` still behave as before. Only sessions started with the `jev-` commands go through the
-gateway.
+The dashboard at `http://localhost:8790/dashboard` shows request counts, routing decisions,
+confidence, latency, reported token use, estimated cost, advisor calls and recent requests. It
+shows request metadata only: no prompts, tool arguments, credentials or conversation text.
 
-## What to expect
-
-- The first `jev-codex`, `jev-claude`, `jev-opencode`, or `jev-kilo` starts a small gateway in the
-  background and then opens your agent. Every argument is passed through, so `jev-codex exec "fix the
-  failing test"` works like `codex exec "fix the failing test"`.
-- The gateway keeps running after you close the agent, so the next session starts instantly. Stop it
-  with `--stop`.
-- Each turn, the gateway asks Jev which tool fits. When Jev is confident, the gateway steers the LLM
-  to that tool. When it is not, the request goes through unchanged.
-- If Jev is down, slow, or your key is wrong, every request simply goes straight to the LLM. The
-  gateway never makes a request fail.
-- It listens on `127.0.0.1` only.
-
-## Commands
-
-All of these work with `jev-codex`, `jev-claude`, `jev-opencode`, `jev-opencode-advisor`,
-`jev-kilo`, `jev-gemini` and `jev-devin`.
-
-| Command | What it does |
-| --- | --- |
-| `jev-codex [args]` | Start the gateway if needed, then run Codex through it |
-| `jev-codex --dashboard` | Open the monitoring dashboard in your browser |
-| `jev-codex --routing off` | Baseline mode: stop asking Jev, keep counting tokens |
-| `jev-codex --routing on` | Let Jev decide again |
-| `jev-codex --advisor on` / `--advisor off` | Consult, or not, the read-only advisor on uncertain turns |
-| `jev-opencode-advisor` | OpenCode with the read-only advisor enabled |
-| `jev-codex --status` | Is the gateway running, and where does it forward to? |
-| `jev-codex --logs` | Follow routing decisions live (use a second terminal) |
-| `jev-codex --start` | Start the gateway without opening the agent |
-| `jev-codex --stop` | Stop the background gateway (close your sessions first) |
-| `jev-codex --setup` | Choose where to reach Jev again, or change the key |
-| `jev-codex --print-config` | Print settings to point plain `codex` at the gateway permanently |
-| `jev-codex --gateway-help` | List all of the above |
-
-Default ports: `jev-codex-advisor` 8790, plain `jev-codex` 8794, `jev-claude` 8789,
-`jev-claude-advisor` 8788, `jev-opencode-advisor` 8795, OpenCode 8791, Gemini 8788, Devin 8792 and
-Kilo 8793. Change them with `JEV_CODEX_PORT`, `JEV_CODEX_BASIC_PORT`, `JEV_CLAUDE_PORT`, `JEV_CLAUDE_ADVISOR_PORT`,
-`JEV_OPENCODE_PORT`, `JEV_OPENCODE_ADVISOR_PORT`, `JEV_GEMINI_PORT`, `JEV_DEVIN_PORT` and `JEV_KILO_PORT`. `jev-claude-advisor`
-and `jev-gemini` share the default 8788: set one of the two variables if you run both at once.
-
-## Dashboard
+To compare routing with a baseline, do similar work in both modes:
 
 ```bash
-jev-codex --dashboard     # or: jev-claude --dashboard, jev-opencode --dashboard, jev-kilo --dashboard
+jev-codex --routing off   # forward and meter without asking Jev
+jev-codex --routing on    # route tool choices through Jev
 ```
 
-This opens `http://localhost:8790/dashboard`. If no browser window appears, paste that address into
-your browser. One page shows each gateway (Codex, Claude, OpenCode, Kilo, Gemini and
-Devin) and refreshes every 2 seconds.
+The dashboard compares tokens, cache share, reasoning tokens and request time. It does not
+attribute a difference to routing by itself; task, model, cache state and provider load also affect
+the result. Accuracy counts whether the model's reply called the tool Jev selected.
 
-To find the other gateways, the page tries their default ports. A port that never answered is
-tried again after 10 seconds, then less often, down to once a minute; each try that finds nothing
-shows as a refused connection in the browser console. Add `?peers=none` to the address to watch
-only the gateway that serves the page.
+## Benchmarks
 
-You will see:
+The public [jev-gateway-bench](https://github.com/vinilana/jev-gateway-bench) runs real agents on the
+same coding task with routing on and off, meters token usage and checks the result with a hidden
+verifier. These are controlled benchmark runs, not a promise of savings on other tasks.
 
-- **A status per gateway:** Routing, Passthrough only, Jev is failing, Idle, Baseline, or Offline,
-  with a one-line explanation.
-- **Why requests were not routed,** with each reason explained in plain English.
-- **Jev's numbers:** calls, latency, confidence, and what it cost.
-- **LLM tokens:** input (and how much came from the prompt cache), output (and how much was hidden
-  reasoning), and seconds per request.
-- **Token use by model:** every metered LLM call grouped by the model that answered it, with a
-  cost column, so the advisor consult (the `JEV_ADVISOR_MODEL`) and any subagent on a model of its
-  own keep their spend apart from the session's. The advisor also gets its own tile. Costs come from
-  a table of published rates per million tokens — input, output, cache read, and cache write split by
-  its 5m and 1h rates, with a model's long-context tier applied to a call that passes its threshold —
-  covering the current GPT and Claude models; a model not in the table shows tokens only. Set
-  `JEV_ADVISOR_MODEL` to any model the upstream serves.
-- **A routing accuracy tile:** of the requests where Jev picked a tool, the share whose reply
-  actually called that tool (hover over a row's Tool cell to see which one it was). Requests where
-  Jev said no tool was needed count as hits when the reply called nothing. This is your per-session
-  evidence for tuning: baseline before changing a threshold and check whether the number moves.
-- **A live table** of recent requests. A request appears when its reply finishes, because that is
-  when the provider reports its tokens.
+The series ran on 2026-09-18 and 19 with six models and two chess-engine tasks, for 120 session
+attempts. One GPT-5.6 Luna bug-fix run was excluded after it accessed another run's workspace, so
+that comparison uses four routed runs. The other cells use five runs per mode. Values below are
+the change in median with routing, compared with the same model without routing;
+negative values mean fewer tokens or less time.
 
-The dashboard only shows request metadata. Prompts, tool arguments, and credentials never reach it.
+| Model | Bug fix: output / input / time | Feature: output / input / time |
+| --- | ---: | ---: |
+| GPT-6 Astra (Codex) | −57% / −7% / −39% | 0% / +2% / +8% |
+| GPT-5.6 Sol (Codex) | −57% / −40% / −36% | −9% / −39% / −16% |
+| GPT-5.6 Luna (Codex) | −12% / −10% / +10% | −14% / −51% / −14% |
+| Fable 5.1 (Claude Code) | −13% / −19% / +6% | −24% / −27% / −26% |
+| Opus 5 (Claude Code) | −7% / −22% / +2% | +22% / +61% / +83% |
+| Sonnet 5 (Claude Code) | −41% / −48% / −25% | +9% / +16% / +37% |
 
-### Is it worth it? Compare with a baseline
+Routing reduced median output tokens on the bug-fix task for all six models. Feature results varied:
+it increased time for Astra, Opus 5 and Sonnet 5; Luna solved 3/5 routed runs versus 5/5 baseline
+runs. Five runs per cell is a small sample. The benchmark repository has the raw runs, charts,
+method and limitations.
 
-Switch routing off to measure the same work without Jev. The gateway keeps forwarding and counting
-tokens, but never asks Jev and rewrites nothing.
+A separate 20-run OpenCode series from 2026-09-23 reports 62% less output and 79% less time on the bug fix, and
+29% less output and 31% less time on the feature. All runs passed the hidden checks. Its CLI Proxy
+and Chat Completions setup differs from Claude Code's Anthropic Messages setup, so the two series
+do not isolate the gateway as the cause.
 
-```bash
-jev-codex --routing off    # do a task
-jev-codex --routing on     # do a similar task
-```
+### Laya checkpoint comparison
 
-The same switch is a button on each gateway card. The "Token use" card then shows both states side
-by side: tokens in and out per request, cache share, reasoning tokens, and seconds. The comparison
-is only meaningful if you do similar work in both states.
+The local Laya checkpoint comparison on 2026-10-22 is smaller and synthetic: on six labeled
+tool-routing questions, `typed-decisions` scored 3/6 and `multilingual` 2/6. `typed-decisions` took about 1,323 ms
+versus 553 ms (2.4× slower), and its confidence stayed below the default routing threshold. The
+default remains `multilingual`; the sample is too small to claim general accuracy. The reproducible
+script is [`scripts/laya-checkpoints.mjs`](scripts/laya-checkpoints.mjs).
 
-## Where Jev runs
+## Jev providers
 
-Jev is served by TypeSafe and by three gateways that resell it. All four take the same questions
-and return the same answers, so the choice is about whose account and billing you want to use.
+Choose the provider that should receive Jev requests. This is separate from the LLM provider used
+by your coding session.
 
-| Provider | Key variable | Default model | Get a key |
+| Provider | `JEV_PROVIDER` | Key | Default model |
 | --- | --- | --- | --- |
-| TypeSafe (official) | `TYPESAFE_API_KEY` | `jev-latest` | [typesafe.ai](https://typesafe.ai) |
-| OpenRouter | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
-| Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `typesafe-ai/jev` | [Vercel dashboard](https://vercel.com/dashboard/ai-gateway/api-keys) |
-| OpenCode | `OPENCODE_API_KEY` | `jev-1.13-free` | [OpenCode Zen](https://opencode.ai/auth) |
-| OpenJev (local) | `OPENJEV_KEY` (placeholder) | `llama-3.1-8b-instant` | none — runs at `http://localhost:6767` |
-| Laya (local) | `LAYA_API_KEY`, optional | `multilingual` | no key; see [Laya (local, offline)](#laya-local-offline) |
+| TypeSafe | `typesafe` | `TYPESAFE_API_KEY` | `jev-latest` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
+| Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` | `typesafe-ai/jev` |
+| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` | `jev-1.13-free` |
+| OpenJev, local | `openjev` | none; placeholder accepted | configured by local server |
+| Laya, local | `laya` | optional `LAYA_API_KEY` | `multilingual` |
 
-OpenJev is a local System One endpoint ([OpenJev playground](https://github.com/1arley/OpenJev)): it serves
-`POST /v1/systemone`, so no remote key is needed — its own backend (an OpenAI-compatible key such as
-Groq's, or a local Mapika/decider GPU server) does the billing. Setup asks which model id the backend
-serves and saves it as `JEV_MODEL`; the upstream ignores Authorization, so `OPENJEV_KEY` is only a
-placeholder that marks the provider as configured.
+Without an explicit `JEV_PROVIDER`, the launcher uses the first configured Jev key. OpenJev and
+Laya can run the Jev endpoint locally. OpenJev may still send requests to its configured model
+backend, so check that backend's privacy and billing terms. See [`.env.example`](.env.example) and
+the [local Jev notes](docs/client-compatibility.md#local-jev-options).
 
-OpenCode serves two ids at the same endpoint: `jev-1.13-free` (free,
-[for a limited time](https://opencode.ai/docs/zen/#jev)) and the paid `jev-1.13`. The gateway
-defaults to the free one. If OpenCode says the free model is gone (404 or 410), the request goes
-to the LLM unchanged. The reason is the stable code `jev_http_404` or `jev_http_410`, which the
-dashboard explains; that code is the cue to set `JEV_MODEL=jev-1.13` and opt into the paid model.
-The setup wizard offers to save that setting if only the paid model answers its key check.
+## Client compatibility
 
-`jev-codex --setup` (or any other launcher) switches between them and restarts the gateway with the
-new key. To configure it by hand instead, put `JEV_PROVIDER` and the matching key in
-`~/.jev-gateway/.env` or in your environment. Without `JEV_PROVIDER`, the gateway uses whichever key
-it finds, TypeSafe's first. `JEV_MODEL` picks another model; an id written for one provider is
-ignored under another, because the providers name their models differently. `--status` and the
-dashboard show which provider is in use.
-
-With no terminal to ask in (CI, scripts), a launcher does not wait for input: it exits and names
-the variables it looked for.
-
-## Laya (local, offline)
-
-[Laya](https://github.com/NandhaKishorM/laya) is a non-autoregressive decision model that answers
-the same typed questions (`choice`, `score`, `noul`) as Jev, and its server — `laya-serve` —
-implements Jev's `/v1/systemone` wire protocol, so it can be a local stand-in for the remote API:
-tool routing keeps working with nothing sent off the machine and no key at all.
-
-Run the server (Python 3.10+), then point the gateway at it:
-
-```bash
-pip install "laya[serve]"
-LAYA_HOST=127.0.0.1 laya-serve          # answers on http://127.0.0.1:8000
-```
-
-```bash
-JEV_PROVIDER=laya jev-codex             # or put it in ~/.jev-gateway/.env ...
-# JEV_PROVIDER=laya in the file, no key line, is enough
-```
-
-`--setup` offers Laya as a fifth choice and saves `JEV_PROVIDER=laya` with no key. A different
-port needs `JEV_URL=http://127.0.0.1:<port>/v1/systemone`; a serve restricted with a bearer key
-takes `LAYA_API_KEY`. Three checkpoints answer, selected as `JEV_MODEL` (default `multilingual`):
-
-| Checkpoint | For |
+| Client | Status and caveat |
 | --- | --- |
-| `english` | English, 512-token context |
-| `multilingual` | 100+ languages, 1024 tokens, 2x faster |
-| `typed-decisions` | tool-style typed decisions, 1024 tokens |
+| Codex | Uses your existing login and Responses API. Direct tool answers are disabled to preserve upstream response history. |
+| Claude Code | Uses your existing login. Cached prefixes and extended thinking mean Jev adds a hint; the model still reasons about the tool. |
+| OpenCode | v1 gets a per-process provider. v2 requires a one-time config snippet because it does not accept provider configuration from the environment. Only the selected gateway model is routed. |
+| Kilo | Adds a gateway provider for Kilo Gateway; Kilo's own sign-in is not reused by that provider. |
+| Gemini CLI | The Gemini API-key path is supported. Google-account sign-in uses another service and bypasses this gateway. |
+| Devin | Uses the Connect RPC path and hint mode. Stream errors returned inside HTTP 200 cannot be replayed by the gateway. |
 
-What to know before trusting it against the remote Jev:
+See [client setup and compatibility](docs/client-compatibility.md) for exact versions tested,
+OpenCode v2 setup, routing boundaries, and provider details. A supported protocol does not mean
+every CLI version or account mode has been tested against its live service.
 
-- **Accuracy is zero-shot.** On Laya's own typed-decisions benchmark the base checkpoint scores
-  0.362 where its fine-tuned one scores 0.766; Jev's API is tuned for tool routing. Measure on your
-  own sessions (baseline mode) before switching.
-- **Short window.** Jev reads 32k tokens; Laya's checkpoints read 512–1024. Long conversations are
-  truncation-heavy, so `direct`, `forced` and `none` decisions ride on less context.
-- **Limits of the serve process.** It refuses a state above 50,000 characters (the gateway's
-  `JEV_MAX_STATE_CHARS` default drops to 50,000 under Laya), more than 64 questions, and a choice
-  over 100 options — so rosters between 100 and 120 tools, which single-pass Jev handles, need the
-  serve started with `LAYA_TOURNAMENT_GROUP=3`. The gateway fails open: an over-limit request goes
-  through untouched with a stable reason code (`jev_http_<status>`), which the dashboard explains
-  instead of printing the serve's raw error text.
-- **Warm-up.** The serve loads a checkpoint on its first question, which takes seconds. When the
-  gateway starts with `JEV_PROVIDER=laya`, it fires one warm-up ping at startup so the load happens
-  before your first real turn.
-- **Confidence scale.** Laya's own confidence is normalized entropy; the gateway reads
-  `x_jev_confidence` — Laya's report of Jev's formula — so `JEV_MIN_CONFIDENCE=0.7` and
-  `JEV_ARG_MIN_CERTAINTY=0.8` keep the same meaning they had against Jev. With
-  `LAYA_JEV_STRICT=1` on the serve, that report is absent and Laya's scale applies instead.
-- **Which checkpoint.** The default stays `multilingual`: a 6-question synthetic measurement
-  (`scripts/laya-checkpoints.mjs`, against a real serve) scored `typed-decisions` 3 to 2, but its
-  confidence came out degenerate (0.05–0.28 — nothing clears `JEV_MIN_CONFIDENCE=0.7`) and it was
-  2.4x slower. Synthetic fixtures are a small, self-authored sample; if you want to compare the
-  checkpoints on your own sessions, run the script and then watch the "Routing accuracy" tile on
-  the dashboard. Switching `JEV_MODEL` remains your call; the default would change only on
-  real-session evidence.
-- The TypeSafe and OpenCode paths are run against the real APIs; Laya is wired the same way
-  (provider table, transport, wizard) and unit-tested, but routing quality on a real session has
-  not been measured.
-
-The TypeSafe and OpenCode paths are run against the real APIs. On 2026-09-24, the setup key
-check succeeded with a real OpenCode Zen key for both `jev-1.13-free` and paid `jev-1.13`. This
-confirms that the paid model answered the check; the account's billing history was not inspected.
-The unavailable-free-model behavior and setup consent flow remain test-only because the free model
-still answers. The OpenRouter and Vercel paths follow those providers' published endpoints and are
-covered by tests, but have not been run with real keys yet. The first-run key check will tell you
-at once if one of them disagrees.
-
-## Using it with Codex
-
-`jev-codex` reuses your existing Codex login. With a ChatGPT subscription the gateway forwards to
-`https://chatgpt.com/backend-api/codex`. With an API key it forwards to `https://api.openai.com/v1`.
-Override either with `JEV_CODEX_UPSTREAM_BASE_URL`.
-
-Codex speaks the Responses API, so the gateway handles `POST /v1/responses`, including Codex's
-free-form tools such as `apply_patch`, tools declared inside the conversation, and compressed
-request bodies. `direct` answers are off on this path: a synthetic tool call would put a response
-id Codex's upstream history does not know into the conversation, so Codex always gets `forced`
-(the LLM fills the arguments) or one of the other modes. If the backend rejects a rewritten
-request, the gateway resends the original, so Codex never sees an error caused by the gateway.
-
-## Using it with Claude Code
-
-`jev-claude` runs `claude` with only `ANTHROPIC_BASE_URL` set. Claude Code keeps using its saved
-login, so a claude.ai subscription keeps working and its usual limits apply.
-
-Jev can do less here than with Codex, because of how the Anthropic API works. Claude Code runs with
-extended thinking, and the API rejects a forced tool while thinking is on. It also rereads a cached
-conversation on every turn, and changing `tool_choice` would invalidate that cache. So for Claude
-Code the gateway adds a short suggestion to the request instead (`hint` mode), which the model is
-free to ignore. Expect better tool picks on large tool lists, not lower cost or latency.
-
-## Using it with OpenCode
-
-Tested end to end with stable OpenCode v1.18.31 and with OpenCode v2.1.2. The two versions wire
-the gateway in differently, and the launcher picks the one the installed `opencode` understands.
-
-**Quick path**
+## Install from a checkout
 
 ```bash
-jev-opencode   # use it exactly like `opencode`
+git clone https://github.com/1arley/jev-advisor-gateway
+cd jev-advisor-gateway
+pnpm install
+pnpm build
+npm link
 ```
 
-That starts the gateway on `http://127.0.0.1:8791` if needed, then runs `opencode` through it
-with a `jev-gateway` custom provider injected via `OPENCODE_CONFIG_CONTENT`. Your
-`~/.config/opencode` files are never written, and every `opencode` flag (including `-m`) forwards
-untouched. The launcher uses stable `@ai-sdk/openai-compatible`, so OpenCode speaks
-`POST /v1/chat/completions` off `http://127.0.0.1:8791/v1` by default, an endpoint the gateway
-already routes.
+Installing directly from the Git URL with `npm install -g github:1arley/jev-advisor-gateway` does
+not build `dist/` and is not supported. The published npm package includes the built gateway and
+all launchers; installing the upstream `jev-gateway` package alongside it is unnecessary.
 
-**OpenCode v2 (2.x).** v2 reads no configuration from environment variables, so the launcher
-cannot inject the provider for one process. The launcher says so instead and prints a
-v2-shaped block (`providers`, `package`, `settings`), which `jev-opencode --print-config` also
-prints:
+## Run it as a server
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "jev-gateway/gpt-5",
-  "small_model": "jev-gateway/gpt-5",
-  "providers": {
-    "jev-gateway": {
-      "package": "@opencode/ai/providers/openai-compatible",
-      "name": "Jev Gateway",
-      "settings": { "baseURL": "http://127.0.0.1:8791/v1", "apiKey": "{env:OPENAI_API_KEY}" },
-      "models": { "gpt-5": { "name": "Jev Gateway (gpt-5)" } }
-    }
-  }
-}
-```
-
-Add it once to `~/.config/opencode/opencode.json` (a project `opencode.json` wins over it). With
-it in place, plain `opencode` routes through the gateway too — the block points at the gateway of
-the launcher that printed it, so keep that gateway running (`jev-opencode --start`); if you run
-both `jev-opencode` and `jev-opencode-advisor`, pick one port and use that launcher's block. An
-agent or `-m` naming another provider keeps bypassing the gateway, as in the v1 flow. The two
-experimental flags are not set on v2; v2 has no `OPENCODE_EXPERIMENTAL_*` knobs to steer.
-
-### What goes through the gateway, and what does not
-
-Codex and Claude Code have one endpoint, so pointing them at the gateway covers everything they
-send. OpenCode chooses a provider per model, and the launcher only makes a gateway model the
-*default*. So:
-
-| Request | Through the gateway? |
-| --- | --- |
-| Agents and subagents with no `model` of their own (`build`, `plan`, `general` out of the box) | Yes: they use the default |
-| Session titles and other small-model work | Yes (`small_model` is set too), so some traffic on the dashboard does not mean your agents are covered |
-| An agent with its own `model`, in `opencode.json` (`agent.<name>.model`, v2 `agents.<name>.model`) or in its markdown file (`model:`) | **No.** It goes straight to that model's provider, and Jev never sees it |
-| A session started with `-m` / `--model` naming another provider | **No**, by your choice |
-
-The launcher does not rewrite the models you chose. It tells you instead: before OpenCode starts,
-and whenever you run `jev-opencode --status`, it lists what will bypass the gateway.
-
-```text
-jev-opencode: these go straight to their provider, not through the gateway, because they name a model of their own:
-  - agent "build" (anthropic/claude-sonnet-4-5)
-  - agent "reviewer" (openai/gpt-5)
-Jev only sees requests to jev-gateway/* models. Agents without a model of their own use the default and are covered.
-```
-
-To bring an agent under the gateway, give it a `jev-gateway/<model>` model or remove its `model`
-line. The gateway forwards to one upstream (`JEV_OPENCODE_UPSTREAM_BASE_URL`), so agents on
-different providers cannot all be routed at once.
-
-The list comes from OpenCode itself (`opencode debug config`, its own merge of every config
-source), which costs about a second at start-up. `JEV_OPENCODE_CHECK=off` skips it. If OpenCode
-cannot be asked, the launcher says nothing and starts as usual.
-
-An `OPENCODE_CONFIG_CONTENT` you already set is kept, comments and trailing commas included: the
-launcher lays its default models and the `jev-gateway` provider over it, and leaves the rest
-(agents, permissions, other providers) alone. Content that is not a JSON object cannot be merged,
-so the session gets only the launcher's settings, and the launcher says so before OpenCode starts.
-This variable is v1 only: v2 skips it entirely, whatever it holds, and relies on `opencode.json`.
-
-On the dashboard, a gateway that shows **Idle** received nothing, which is what a bypassing agent
-looks like. One that shows **Passthrough only** received requests and did not route them, with
-the reason for each.
-
-Manage it like the other launchers:
-
-```bash
-jev-opencode --gateway-help   # list launcher commands (`--help` stays opencode's own help)
-jev-opencode --print-config   # opencode.json snippet to point plain `opencode` at the gateway
-jev-opencode --start          # start the gateway without opening opencode
-jev-opencode --stop           # stop the background gateway
-jev-opencode --status         # is the gateway running, where does it forward to, and what bypasses it?
-jev-opencode --dashboard      # open the monitoring dashboard in your browser
-```
-
-### Credentials and upstream
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TYPESAFE_API_KEY` | required | Authorizes the Jev tool-selection call only. Never sent as the LLM upstream credential |
-| `OPENAI_API_KEY` | your key | Your LLM credential. OpenCode resolves `{env:OPENAI_API_KEY}` and the gateway forwards it untouched to the LLM upstream |
-| `JEV_OPENCODE_UPSTREAM_BASE_URL` | `https://api.openai.com/v1` | Where the gateway forwards OpenCode traffic: your LLM provider, not the TypeSafe endpoint |
-| `JEV_OPENCODE_MODEL` | `gpt-5` | Model selected as `jev-gateway/<model>` |
-| `JEV_OPENCODE_PORT` | `8791` | Router port for OpenCode |
-| `JEV_OPENCODE_ADVISOR_PORT` | `8795` | Router port for OpenCode with advisor |
-| `JEV_OPENCODE_CHECK` | on | `off` skips asking OpenCode which agents bypass the gateway, which saves about a second at start-up |
-
-The gateway forwards the client's `Authorization` header to the LLM upstream. A launcher-spawned
-gateway strips `UPSTREAM_API_KEY`/`ROUTER_API_KEY` by design, so the client's own key always
-flows through and no gateway key swap applies on this path. (Standalone server mode can hold the
-provider key with `UPSTREAM_API_KEY`; see "Running it as a server" below.)
-
-### Manual setup
-
-Keep the gateway running, then point plain `opencode` at it with a file, so no shell quoting is needed:
-
-```bash
-jev-opencode --start
-jev-opencode --print-config   # copy the opencode.json snippet it prints
-```
-
-Chat Completions (the launcher default, stable `@ai-sdk/openai-compatible`):
-
-```json
-{
-  "model": "jev-gateway/gpt-5",
-  "small_model": "jev-gateway/gpt-5",
-  "provider": {
-    "jev-gateway": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Jev Gateway",
-      "options": {
-        "baseURL": "http://127.0.0.1:8791/v1",
-        "apiKey": "{env:OPENAI_API_KEY}"
-      },
-      "models": {
-        "gpt-5": {
-          "name": "Jev Gateway (gpt-5)"
-        }
-      }
-    }
-  }
-}
-```
-
-Responses (stable `@ai-sdk/openai` instead):
-
-```json
-{
-  "model": "jev-gateway/gpt-5",
-  "small_model": "jev-gateway/gpt-5",
-  "provider": {
-    "jev-gateway": {
-      "npm": "@ai-sdk/openai",
-      "name": "Jev Gateway",
-      "options": {
-        "baseURL": "http://127.0.0.1:8791/v1",
-        "apiKey": "{env:OPENAI_API_KEY}"
-      },
-      "models": {
-        "gpt-5": {
-          "name": "Jev Gateway (gpt-5)"
-        }
-      }
-    }
-  }
-}
-```
-
-Save either block as `opencode.json` in the project root or `~/.config/opencode/opencode.json`,
-then select it with `opencode --model jev-gateway/gpt-5`.
-
-`baseURL` includes `/v1`; OpenCode and the AI SDK append the rest (`/chat/completions` for
-`@ai-sdk/openai-compatible`, `/responses` for `@ai-sdk/openai`). Both endpoints are routed by the
-gateway above.
-
-### Tools and routing
-
-Native OpenCode tools and MCP tools converge on the wire to `type: "function"` function tools. MCP
-naming was not captured live; the equivalence verified is the wire shape: an MCP tool arrives as
-the same function-tool definition a native tool does, so the gateway offers both to Jev the same
-way.
-
-Expected modes (reported in `x-jev-gateway-mode`):
-
-| Mode | When |
-| --- | --- |
-| `forced` | Jev picked a tool but some arguments are open-ended, so the LLM fills them in |
-| `none` | Jev is confident no tool is needed (`tool_choice: "none"`) |
-| `passthrough` | Low confidence, Jev failed, no tools, or the caller already decided. Forwarded untouched |
-| `direct` | Jev picked a tool and every argument is an enum, boolean, or constant. Answered with no LLM call |
-
-Most OpenCode tools take open text (`bash` takes a command, `read` takes a path), so `forced`
-is the usual outcome: Jev picks the tool and the LLM fills in the free-form arguments. `direct`
-needs a fully closed schema (only enums, booleans, or constants), which fits small MCP-style tools
-with fixed choices rather than everyday file and shell tools.
-
-The launcher sets `OPENCODE_EXPERIMENTAL_NATIVE_LLM=false` and
-`OPENCODE_EXPERIMENTAL_CODE_MODE=false` for the launched process only. Those experimental modes
-are outside the supported path; the stable AI SDK provider above is the supported one.
-
-## Using it with Kilo
-
-Tested with Kilo CLI 7.0.29.
-
-```bash
-jev-kilo   # runs `kilo` with its own provider: see below for the model and key it uses
-```
-
-Kilo CLI is built on OpenCode, so `jev-kilo` works the way `jev-opencode` does: it starts the
-gateway on `http://127.0.0.1:8793` if needed, then runs `kilo` with a `jev-gateway` custom provider
-injected through `KILO_CONFIG_CONTENT`. Nothing in `~/.config/kilo` is written, and every `kilo`
-flag (including `-m`) forwards untouched. Kilo speaks `POST /v1/chat/completions` to the gateway,
-with the same function tools OpenCode sends.
-
-The gateway forwards to the Kilo Gateway (`https://api.kilo.ai/api/openrouter`), the backend of
-Kilo's own `kilo` provider. That provider cannot be pointed at the gateway itself: it appends
-`/openrouter/` to any base URL, so its requests would miss the routed endpoint. The launcher adds a
-separate provider instead, so your Kilo sign-in (`kilo auth`) is not reused by it.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `KILO_API_KEY` | unset | Your Kilo key, forwarded untouched to the Kilo Gateway. Unset, Kilo sends no credential and the Kilo Gateway serves you anonymously, with free models |
-| `JEV_KILO_MODEL` | `kilo-auto/free` | Model selected as `jev-gateway/<model>`, in the Kilo Gateway's naming (`anthropic/claude-sonnet-4`, ...) |
-| `JEV_KILO_UPSTREAM_BASE_URL` | `https://api.kilo.ai/api/openrouter` | Where the gateway forwards Kilo traffic. Any OpenAI-compatible endpoint works; `KILO_API_KEY` is then the key sent to it |
-| `JEV_KILO_PORT` | `8793` | Router port for Kilo |
-
-**Whether `forced` helps depends on the model behind it.** The free models tried did not reliably
-follow a forced `tool_choice`: `kilo-auto/free` routed to a model that ignored it, and
-`nvidia/nemotron-3-super-120b-a12b:free` honoured it in a direct call but not in a Kilo session.
-An ignored choice does no harm (the turn goes on as it would without the gateway), but it saves
-nothing either. Choose a model that honours `tool_choice` with `JEV_KILO_MODEL`, and check the
-dashboard.
-
-`jev-kilo --print-config` prints the same provider as a `kilo.jsonc` snippet, to point plain `kilo`
-at a gateway kept running with `jev-kilo --start`.
-
-Run end to end with a real Kilo CLI, the real Kilo Gateway and the real Jev (TypeSafe), on
-`kilo-auto/free`: Jev picked `read` twice and then `none`, each call in under half a second.
-
-## Using it with Gemini
-
-`jev-gemini` runs the Gemini CLI with `GOOGLE_GEMINI_BASE_URL` pointed at a gateway on port 8788,
-which forwards to `https://generativelanguage.googleapis.com` (override with
-`JEV_GEMINI_UPSTREAM_BASE_URL`). The gateway handles `POST /v1beta/models/<model>:generateContent`
-and `:streamGenerateContent`, forces a tool through `toolConfig.functionCallingConfig`, and
-proxies every other `/v1beta/*` path unchanged. Your API key travels as the client sent it, in the
-`x-goog-api-key` header or the `key` query parameter.
-
-This covers clients that use a **Gemini API key**. A Gemini CLI signed in with a Google account
-talks to a different Google service and does not go through the gateway. The Gemini path has unit
-tests but has not yet been run against the real API.
-
-## Using it with Devin
-
-`jev-devin` runs the Devin CLI with `WINDSURF_API_SERVER_URL` pointed at a gateway on port 8792,
-which forwards to `https://server.codeium.com` (override with `JEV_DEVIN_UPSTREAM_BASE_URL`). The
-variable's name is a leftover compiled into the `devin` binary — its inference backend is called
-"windsurf" — and it is the only knob that redirects this traffic. `DEVIN_API_URL` points at a
-different service (`api.devin.ai`, for auth and handoff) and is left alone.
-
-Devin does not speak JSON REST. Its requests are Connect RPC envelopes carrying protobuf bodies,
-so the gateway decodes `POST /exa.api_server_pb.ApiServerService/GetChatMessage` without a schema,
-reads the messages and tools out of the wire fields, and re-encodes whatever it changed. There is
-no `tool_choice` on this wire, so steering is always `hint` — a suggestion appended as one more
-message — while `direct` synthesizes the Connect stream an upstream answer would have had. Every
-other `exa.*` endpoint (seat management, model configuration, analytics) is proxied opaque. Token
-usage is read back out of the stream's stats fields, so the dashboard meters Devin traffic like any
-other client's.
-
-Verified end to end on Devin CLI 3000.11.3: a `hint` rewrite was accepted upstream, a `direct`
-answer was executed by the CLI, and the following turn — whose history carries the unsealed
-synthetic call — was accepted, so the server does not enforce the `sealed` field on history.
-`devin -p` and the interactive TUI share the same backend, so both go through the gateway. Other
-versions were not tested; anything the decoder cannot read fails open to passthrough.
-
-One safety net does not reach Devin. Elsewhere, when the upstream refuses a rewritten request with
-400 or 422, the gateway sends the original instead. Connect streams report errors inside the
-stream, after an HTTP 200, so a refused `hint` reaches Devin as a failed turn. Set
-`JEV_ROUTING=off` or run `devin` directly if that happens.
-
-## Running it as a server for your own app
-
-Work from a checkout:
+For your own OpenAI-compatible client, use a checkout and configure Jev in `.env`:
 
 ```bash
 pnpm install
-cp .env.example .env    # set TYPESAFE_API_KEY, and UPSTREAM_BASE_URL if you don't use OpenAI
-pnpm dev                # listens on http://localhost:8787
+cp .env.example .env   # add a Jev provider key
+pnpm dev               # http://127.0.0.1:8787
 ```
 
-Then point your client at it:
+Point the client at `http://127.0.0.1:8787/v1`. The gateway routes these endpoints and proxies
+other paths unchanged:
 
-```python
-from openai import OpenAI
-client = OpenAI(base_url="http://localhost:8787/v1")  # your usual provider key still works
-```
-
-The gateway routes these endpoints and proxies every other path unchanged:
-
-| Endpoint | API |
+| Endpoint | Protocol |
 | --- | --- |
 | `POST /v1/chat/completions` | OpenAI Chat Completions |
 | `POST /v1/responses` | OpenAI Responses |
 | `POST /v1/messages` | Anthropic Messages |
-| `POST /v1beta/models/*` | Google Gemini API (`generateContent`, `streamGenerateContent`) |
-| `POST /exa.api_server_pb.ApiServerService/GetChatMessage` | Devin CLI (Connect/protobuf) |
+| `POST /v1beta/models/*` | Gemini `generateContent` and `streamGenerateContent` |
+| `POST /exa.api_server_pb.ApiServerService/GetChatMessage` | Devin Connect RPC |
 
-By default your client's own `Authorization` header is forwarded to the provider. Set
-`UPSTREAM_API_KEY` to have the gateway hold the provider key instead, and `ROUTER_API_KEY` to
-require a gateway key from clients. Any OpenAI-compatible provider works, for example OpenAI,
-OpenRouter, vLLM, Ollama, or LiteLLM.
+By default the client's Authorization header is forwarded to the LLM provider. `UPSTREAM_API_KEY`
+lets the gateway hold that provider key; `ROUTER_API_KEY` then requires clients to authenticate.
+Keep `HOST=127.0.0.1` unless remote access is necessary. To bypass Jev for a single request, send
+`x-jev-gateway: off`.
 
-To skip Jev for a single request, send the header `x-jev-gateway: off`.
+To inspect a decision without forwarding a request to the session-model upstream, send a
+representative request to `POST /router/decide`. The endpoint still asks Jev to decide. See
+[the example](docs/client-compatibility.md#inspect-a-decision) and
+[architecture overview](docs/architecture.md).
 
-### Try a decision without calling any LLM
+## Settings
 
-`POST /router/decide` takes a request body, asks Jev, and returns the decision: the mode, the tool,
-the arguments, Jev's confidence, and its latency.
+The launchers read settings from the shell or `~/.jev-gateway/.env`; a checkout can use its own
+`.env`. The complete, current list is in [`.env.example`](.env.example).
 
-```bash
-curl -s localhost:8787/router/decide -H 'content-type: application/json' -d '{
-  "model": "gpt-5",
-  "messages": [{"role": "user", "content": "turn the kitchen lights on"}],
-  "tools": [{"type": "function", "function": {
-    "name": "set_lights", "description": "Turn the lights in a room on or off.",
-    "parameters": {"type": "object", "required": ["room", "on"], "properties": {
-      "room": {"type": "string", "enum": ["kitchen", "bedroom", "office"]},
-      "on": {"type": "boolean"}}}}}]
-}'
-```
-
-## How it works
-
-Jev does not generate text. It answers typed questions about a piece of state (pick one option,
-give a score, or yes/no) and returns calibrated probabilities with a confidence, in one fast call.
-Choosing a tool is exactly that kind of question, so the work is split like this:
-
-| Decision | Who makes it |
-| --- | --- |
-| Which tool, or no tool at all | **Jev** |
-| Arguments that are enums, booleans, or constants | **Jev**, in the same call |
-| Open-ended arguments such as free text, numbers, and dates | The LLM, already pointed at Jev's tool |
-| Plain text replies, and any request without tools | The LLM, untouched |
-
-A request that carries tools triggers one Jev call. The conversation becomes the state, and the
-questions are: which tool (or none), whether a tool is needed at all (an independent cross-check),
-and the value of every closed-set argument. The answer selects a mode, which is reported in the
-`x-jev-gateway-mode` response header:
-
-| Mode | When | What happens |
+| Setting | Default | Purpose |
 | --- | --- | --- |
-| `direct` | Jev is confident about the tool and every argument is an enum, boolean, or constant | The gateway builds the tool call itself, streaming included. **No LLM call.** Off for Codex (the synthetic call would carry a response id the upstream history does not know; it falls back to `forced`) and never with extended thinking on (Claude Code), which gets `hint` instead, or with `JEV_DIRECT_CALLS=false` |
-| `forced` | Jev is confident about the tool, but some arguments are open-ended | Forwarded with `tool_choice` set to that tool, so the LLM only fills in arguments. `ARGS_MODEL` can send these to a cheaper model |
-| `hint` | Jev is confident, but `tool_choice` cannot be changed (Anthropic with thinking on, or a cached conversation) | Forwarded with a one-line suggestion added after the client's last block, so cached prefixes stay valid |
-| `none` | Jev is confident that no tool is needed | Forwarded with `tool_choice: "none"` |
-| `passthrough` | Low confidence, the two checks disagree, Jev failed, there are no tools, or the caller already chose | Forwarded byte for byte. `x-jev-gateway-reason` says why |
+| `JEV_PROVIDER` | inferred from key | Jev provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya` |
+| `JEV_MIN_CONFIDENCE` | `0.7` | Lower confidence passes the choice to the session model |
+| `JEV_ARG_MIN_CERTAINTY` | `0.8` | Minimum certainty for each closed-set argument in a direct answer |
+| `JEV_ROUTING` | `on` | Start in routing or baseline mode |
+| `JEV_TIMEOUT_MS` | `4000` | Jev request deadline |
+| `JEV_ADVISOR` | on for advisor launchers | Enable read-only advisor consultations |
+| `JEV_ADVISOR_MODEL` | launcher-specific | Model used for advisor replies |
+| `JEV_ADVISOR_TIMEOUT_MS` | `30000` | Advisor request deadline |
+| `ARGS_MODEL` | unset | Optional model for open-ended tool arguments; not used for Codex |
+| `JEV_ON_NONE` | `force_none` | Send `tool_choice: none` or pass the request through when Jev selects no tool |
+| `HOST` | `127.0.0.1` | Bind address; configure `ROUTER_API_KEY` before exposing the gateway |
+| `JEV_DEBUG_DUMP_DIR` | unset | Opt-in request dumps; includes full conversation bodies, so use with care |
 
-Responses requests containing Codex `agent_message` items pass through without consulting Jev,
-with reason `agent_message`. These carry delegated tasks or replies that the router cannot
-interpret and may contain encrypted content, so the model keeps control of tool selection.
-Once an `agent_message` item is in the input, every later request in the same conversation carries
-it. Passthrough therefore lasts for the rest of that conversation, so a subagent session is never
-routed by Jev.
-
-Requests whose model is exactly `codex-auto-review` bypass Jev with reason `codex_auto_review`.
-Codex's internal reviewer receives the original request and chooses its own tools. Similar model
-names still route normally. Routing opt-outs and the Responses history and `agent_message` checks
-keep their existing reasons.
-
-Tool lists longer than 120 entries (Claude Code sends about 280) take two Jev calls. The first ranks
-the list in groups. The second decides among the top 3 of each group, using full descriptions.
-
-## Configuration
-
-Settings are environment variables. The launchers read them from your shell,
-`~/.jev-gateway/.env`, or a checkout's own `.env`. See [.env.example](.env.example) for the full
-list. The ones worth knowing:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY` or `OPENCODE_API_KEY` | one is required | The key for Jev; the launchers ask for it on first run |
-| `JEV_PROVIDER` | whichever key is set | `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya` |
-| `JEV_MIN_CONFIDENCE` | `0.7` | Below this confidence, the LLM decides. Lower it to route more, raise it to be more careful |
-| `JEV_ARG_MIN_CERTAINTY` | `0.8` | Every argument must reach this for a `direct` answer |
-| `JEV_DIRECT_CALLS` | `true` | Set to `false` so the gateway never answers without the LLM |
-| `JEV_ROUTING` | `on` | Set to `off` to start in baseline mode |
-| `JEV_HEADROOM_MODE` | `off` | `shadow` measures an eligible result without changing the upstream request; `compress` applies a validated shorter result. Keep off until the pinned proxy passes the service and privacy audits |
-| `JEV_HEADROOM_URL` | unset | Explicit loopback URL ending in `/v1/compress`; required when Headroom is enabled. There is no default host or port |
-| `JEV_HEADROOM_TIMEOUT_MS` | `500` | One Headroom request deadline from 1 to 5000 ms, with no retry; failures pass the prepared request through |
-| `JEV_TIMEOUT_MS` | `4000` | How long to wait for Jev before letting the LLM decide |
-| `JEV_ADVISOR` | `on` for the advisor launchers | Consult the advisor when Jev is unsure. The advisor call is synchronous, so its timeout is added to that turn's latency |
-| `JEV_ADVISOR_MODEL` | `gpt-6-astra`, or `claude-opus-5-5` for Claude | Model the advisor answers with. It has to be a model your upstream actually serves |
-| `JEV_ADVISOR_TIMEOUT_MS` | `30000` | Deadline for the advisor call. A real model needs seconds, not the sub-second budget a tool-router call gets; too low and the stream is cut mid-answer, which arrives as an empty reply rather than an error |
-| `JEV_ADVISOR_MAX_CALLS_PER_SESSION` | `6` | Advisor consults per session |
-| `JEV_ADVISOR_MAX_OUTPUT_TOKENS` | `700` | Cap on the advisor's reply |
-| `ARGS_MODEL` | unset | A cheaper model for filling arguments in `forced` mode. Not applied to Codex sessions, which must stay on the model the session started with |
-| `JEV_ON_NONE` | `force_none` | What to do when Jev is sure no tool is needed: `force_none` (`tool_choice: "none"`) or `passthrough` |
-| `HOST` | `127.0.0.1` | Interface to listen on. Set `ROUTER_API_KEY` before exposing it |
-| `JEV_DEBUG_DUMP_DIR` | unset | Write requests and response summaries to this folder. Credentials in headers are redacted; bodies are written whole, system prompts and conversation included, in files only you can read |
-
-Each request also logs one JSON line to stdout, or to `~/.jev-gateway/<client>.log` under a launcher.
+Launcher-specific ports, upstreams and model options are also listed in [`.env.example`](.env.example).
 
 ### Headroom compression
 
-The gateway calls the configured local service directly through its injected `fetch`. It does not
-install or start Headroom. The feature applies only to Codex Responses continuations that contain
-`previous_response_id` and exactly one textual `function_call_output`. Parallel outputs, non-text
-results, internal review requests, and other unsupported requests pass through without a
-Headroom call.
+Headroom is off by default and applies only to eligible Codex continuations containing exactly one
+textual tool result. Enabling `shadow` or `compress` sends that result to the explicitly configured
+loopback `/v1/compress` service. In `shadow`, the upstream request is unchanged; `compress` applies
+only a validated shorter response. Both modes fall back to the prepared request on error. The
+pinned v0.41.0 service returned the gateway's complete JSON result unchanged, so no reduction was
+observed for this use case. See [`decision-record.md`](decision-record.md) before enabling it;
+synthetic tests do not prove semantic fidelity.
 
-`shadow` sends the eligible result to Headroom for measurement and forwards the pre-compression
-request upstream. `compress` applies only a response with the expected tool item and matching
-`tool_call_id` (copied from Responses `call_id`), a non-empty shorter text, and no CCR marker.
-This structural check does not establish semantic fidelity; the synthetic evaluation against the
-pinned service remains a separate gate. Timeout, service error, redirects, malformed or unexpected
-responses fall back to the body already prepared by the router/advisor. No retry is made. Headroom
-receives no upstream authorization or other upstream headers.
+## Limits and privacy
 
-Both modes send the tool result to the local service. The pinned-service gate (Headroom v0.41.0,
-2026-10-22) is complete: the response shape, `tool_call_id` preservation, two sequential
-continuations and the absence of CCR markers and writes on disk all check out, and the service's
-beacon is confirmed on by default (an operator running the proxy needs `HEADROOM_BEACON=off`,
-`DO_NOT_TRACK=1` or `HEADROOM_OFFLINE=1` to keep it quiet). One finding shaped the default: for
-the eligible case the gateway sends — a single textual `function_call_output` that is one complete
-JSON document — v0.41.0's protected-JSON guard and its read protection return the content
-unchanged (`router:noop`), so `compress` has nothing to apply on today's traffic; reduction was
-observed only on truncated JSON log streams, with fidelity sentinels preserved (details in
-`decision-record.md`). The repository tests use a fake service; they do not prove compression or
-semantic fidelity against Headroom v0.41.0. Headroom log fields contain only mode/result, latency
-and token counts, never the result text, headers or credentials.
-Configuring `shadow` or `compress` sends eligible content to the configured service; that is
-operational, not enforced by the code. `decision-record.md` has the full validation and audit.
-
-## Known trade-offs
-
-- Jev adds a network call to every turn that carries tools. Expect roughly half a second to a second.
-- Jev picks **one** tool per turn. In `forced` mode the LLM can still call that tool several times
-  in parallel, but it cannot mix different tools in the same turn.
-- A wrong forced tool can derail a turn. If the model had nothing left to do and is forced to call
-  a tool anyway, it may produce an incomplete reply and the agent will retry. Raise
-  `JEV_MIN_CONFIDENCE` if you see this.
-- In `hint` mode the LLM still does its own reasoning, so the gain is accuracy, not cost.
-- Jev reads text only and has a 32k-token window. Images become placeholders and long conversations
-  keep their newest turns. It is most accurate in English.
-- The default confidence thresholds are starting points. Use the dashboard and baseline mode to tune
-  them for your own work.
-- A gateway started by a launcher has no key of its own, because the one `Authorization` header a
-  client sends belongs to its provider. Any process on your machine can therefore use it: to reach
-  the provider with credentials of its own, and to ask Jev on your key through `/router/decide`.
-  It is not reachable from other machines. A gateway you run as a server can require a key
-  (`ROUTER_API_KEY`), and then `/health` says only that it is up.
-
-## Benchmark
-
-Is it worth it? [jev-gateway-bench](https://github.com/vinilana/jev-gateway-bench) measures that:
-a real coding agent does the same task with routing on and off, the gateway meters every token,
-and a hidden verifier scores the result. The tasks are about building, debugging and extending a
-chess rules engine.
-
-Results so far, from 120 agent sessions: six models, two chess tasks, five runs per mode, agents
-run clean with no MCP servers or plugins. Medians with routing on, compared with the same model
-without it:
-
-| | Fixing bugs: output / input tokens / time | Adding a feature: output / input tokens / time |
-| --- | ---: | ---: |
-| GPT-6 Astra (Codex) | -57% / -7% / -39% | 0% / +2% / +8% |
-| GPT-5.6 Sol (Codex) | -57% / -40% / -36% | -9% / -39% / -16% |
-| GPT-5.6 Luna (Codex) | -12% / -10% / +10% | -14% / -51% / -14% |
-| Fable 5.1 (Claude Code) | -13% / -19% / +6% | -24% / -27% / -26% |
-| Opus 5 (Claude Code) | -7% / -22% / +2% | +22% / +61% / +83% |
-| Sonnet 5 (Claude Code) | -41% / -48% / -25% | +9% / +16% / +37% |
-
-Routing pays off when debugging, for every model. On the feature task it helped some models and
-made Opus 5 and Sonnet 5 clearly worse, and GPT-5.6 Luna got cheaper but less often right (3 of 5
-runs solved, against 5 of 5 without routing). Measure on your own work before trusting it: five
-runs per cell is a small sample. The chart, the spread of the individual runs, the raw data, how
-one run was caught copying from another, and how to run it yourself are in that repository.
-
-A [separate 20-run OpenCode series](https://github.com/vinilana/jev-gateway-bench/tree/main/results/2026-09-23-opencode-opus-5-cliproxy-comparison)
-used Opus 5 on the same tasks. With routing on, median output tokens fell by 62% and time by 79% on
-the bugfix task; on the feature task, output tokens fell by 29% and time by 31%. All 20 runs passed
-every hidden check. That series used forced tools through Chat Completions and a local CLI Proxy
-API, while the Claude Code runs used hints through Anthropic Messages and a claude.ai
-subscription. Gateway version, Jev provider, tool roster and run date differed too, so the
-comparison does not isolate the harness as the cause. Five runs per cell is a small sample.
+- Jev adds a network call to supported tool requests; measured latency is commonly around half a
+  second to a second, but depends on provider and load.
+- Jev chooses one tool per turn. In `forced` mode, the session model can still call that tool more
+  than once in parallel, but cannot mix different tools in that turn.
+- `hint` asks the model to consider a tool; it does not force the choice or guarantee lower cost.
+- Jev reads text, not images, and has a 32k-token context window. Long conversations are reduced
+  to recent context; English is its strongest language.
+- Your logs contain request metadata. Opt-in debug dumps contain conversation bodies. Neither
+  should be shared without reviewing it first.
+- A launcher gateway is local and has no gateway key by default. Other local processes can use it
+  with credentials they provide, or make Jev requests on your configured Jev account. A standalone
+  server can require `ROUTER_API_KEY`.
 
 ## Development
 
 ```bash
 pnpm install
-pnpm test         # runs against fake Jev and provider transports, no keys needed
 pnpm typecheck
+pnpm test
 pnpm build
 ```
 
-Pull requests are welcome and run the same checks in CI. [CONTRIBUTING.md](CONTRIBUTING.md) covers
-running your changes, where things live in the code, how to add a wire format or a client
-launcher, and what a pull request should contain.
+Tests use fake providers and synthetic requests; they require no keys or network. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for project structure and contribution guidance. Releases are
+managed by release-please; merging its release pull request publishes the npm package. See
+[`docs/releasing.md`](docs/releasing.md).
 
-`scripts/mock-jev.mjs` is a local stand-in for Jev. Point `TYPESAFE_BASE_URL` at it to drive a real
-agent end to end without a TypeSafe key.
+## Acknowledgements
 
-Releases are automatic: release-please keeps a release pull request open, and merging it publishes
-to npm through trusted publishing, with no tokens involved. See [docs/releasing.md](docs/releasing.md).
+This project began as a fork of [jev-gateway](https://github.com/vinilana/jev-gateway) by Vinicius
+Lana, licensed under MIT. The advisor and dashboard cost view are additions in this project.
 
 ## License
 
-MIT
+[MIT](LICENSE)

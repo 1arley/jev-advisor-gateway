@@ -149,6 +149,22 @@ covers each mode it touches, and streaming when the format streams.
 When behaviour, a flag or a setting changes, the same change updates the README, and
 `.env.example` for settings. Documentation that is true only after something else happens says so.
 
+### Maintaining the README and overview video
+
+- Keep `README.md` focused on the user path, core behavior, privacy, measured evidence and links.
+  Put client-specific setup and caveats in `docs/client-compatibility.md`.
+- Verify benchmark numbers against their reproducible source before changing them. State the task,
+  sample size, method, date and whether the data is synthetic or live. Request duration is not
+  active usage time; never publish local session logs or private usage metrics without explicit
+  authorization and a privacy review.
+- Check `decision-record.md` before documenting Headroom. Keep its off-by-default, loopback-only
+  and validation limits explicit.
+- The README promo video is generated from `media/Composition.tsx`. Follow `media/README.md`,
+  generate the MP4 and poster together, inspect the result, and preserve synthetic-only content.
+  Run `npx create-video@latest` in a temporary directory; do not overwrite `my-video/`.
+- Keep `docs`, `media` and `decision-record.md` in `package.json`'s `files` allowlist so package
+  README links and the overview assets are available after publishing.
+
 ## Before calling a change done
 
 ```bash

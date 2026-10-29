@@ -49,6 +49,9 @@
     "bin",
     "scripts/mock-jev.mjs",
     "scripts/laya-checkpoints.mjs",
+    "docs",
+    "media",
+    "decision-record.md",
     ".env.example",
     "CHANGELOG.md"
   ],
