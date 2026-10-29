@@ -8,7 +8,7 @@ A local gateway that lets Jev choose a coding agent's next tool. The session mod
 open-ended arguments and writes the final answer. When Jev is uncertain or a session reaches a
 planning checkpoint, an optional read-only advisor can add a note for the agent to consider.
 
-[![Watch the 14-second overview](media/overview-poster.png)](media/jev-advisor-gateway-overview.mp4)
+[![14-second overview](media/overview.gif)](media/jev-advisor-gateway-overview.mp4)
 
 The gateway supports Codex, Claude Code, OpenCode, Kilo, Gemini CLI and Devin. It is an independent
 project, not affiliated with or endorsed by TypeSafe. “Jev” is TypeSafe's model; this gateway calls
@@ -27,17 +27,17 @@ jev-codex-advisor --yolo
 
 Use the matching launcher for your client:
 
-| Launcher | Client | Default behavior |
-| --- | --- | --- |
-| `jev-codex-advisor` | Codex | GPT-6 Luna session with Jev and a GPT advisor |
-| `jev-codex` | Codex | Your Codex default model with Jev; no advisor |
-| `jev-claude-advisor` | Claude Code | Haiku session with Jev and an Opus advisor |
-| `jev-claude` | Claude Code | Your existing Claude model with Jev; no advisor |
-| `jev-opencode-advisor` | OpenCode | OpenAI-compatible model with Jev and an advisor |
-| `jev-opencode` | OpenCode | Your configured OpenCode model with Jev; no advisor |
-| `jev-kilo` | Kilo CLI | Kilo Gateway model with Jev |
-| `jev-gemini` | Gemini CLI | Gemini API-key traffic with Jev |
-| `jev-devin` | Devin CLI | Devin traffic with Jev |
+| Launcher               | Client      | Default behavior                                    |
+| ---------------------- | ----------- | --------------------------------------------------- |
+| `jev-codex-advisor`    | Codex       | GPT-6 Luna session with Jev and a GPT advisor       |
+| `jev-codex`            | Codex       | Your Codex default model with Jev; no advisor       |
+| `jev-claude-advisor`   | Claude Code | Haiku session with Jev and an Opus advisor          |
+| `jev-claude`           | Claude Code | Your existing Claude model with Jev; no advisor     |
+| `jev-opencode-advisor` | OpenCode    | OpenAI-compatible model with Jev and an advisor     |
+| `jev-opencode`         | OpenCode    | Your configured OpenCode model with Jev; no advisor |
+| `jev-kilo`             | Kilo CLI    | Kilo Gateway model with Jev                         |
+| `jev-gemini`           | Gemini CLI  | Gemini API-key traffic with Jev                     |
+| `jev-devin`            | Devin CLI   | Devin traffic with Jev                              |
 
 `jev-codex-advisor` also has the alias `codex-jev-advisor`. Launchers pass their settings to that
 process only: they do not edit your Codex, Claude, OpenCode or other client configuration. Use the
@@ -106,14 +106,14 @@ that comparison uses four routed runs. The other cells use five runs per mode. V
 the change in median with routing, compared with the same model without routing;
 negative values mean fewer tokens or less time.
 
-| Model | Bug fix: output / input / time | Feature: output / input / time |
-| --- | ---: | ---: |
-| GPT-6 Astra (Codex) | −57% / −7% / −39% | 0% / +2% / +8% |
-| GPT-5.6 Sol (Codex) | −57% / −40% / −36% | −9% / −39% / −16% |
-| GPT-5.6 Luna (Codex) | −12% / −10% / +10% | −14% / −51% / −14% |
-| Fable 5.1 (Claude Code) | −13% / −19% / +6% | −24% / −27% / −26% |
-| Opus 5 (Claude Code) | −7% / −22% / +2% | +22% / +61% / +83% |
-| Sonnet 5 (Claude Code) | −41% / −48% / −25% | +9% / +16% / +37% |
+| Model                   | Bug fix: output / input / time | Feature: output / input / time |
+| ----------------------- | -----------------------------: | -----------------------------: |
+| GPT-6 Astra (Codex)     |              −57% / −7% / −39% |                 0% / +2% / +8% |
+| GPT-5.6 Sol (Codex)     |             −57% / −40% / −36% |              −9% / −39% / −16% |
+| GPT-5.6 Luna (Codex)    |             −12% / −10% / +10% |             −14% / −51% / −14% |
+| Fable 5.1 (Claude Code) |              −13% / −19% / +6% |             −24% / −27% / −26% |
+| Opus 5 (Claude Code)    |               −7% / −22% / +2% |             +22% / +61% / +83% |
+| Sonnet 5 (Claude Code)  |             −41% / −48% / −25% |              +9% / +16% / +37% |
 
 Routing reduced median output tokens on the bug-fix task for all six models. Feature results varied:
 it increased time for Astra, Opus 5 and Sonnet 5; Luna solved 3/5 routed runs versus 5/5 baseline
@@ -138,14 +138,14 @@ script is [`scripts/laya-checkpoints.mjs`](scripts/laya-checkpoints.mjs).
 Choose the provider that should receive Jev requests. This is separate from the LLM provider used
 by your coding session.
 
-| Provider | `JEV_PROVIDER` | Key | Default model |
-| --- | --- | --- | --- |
-| TypeSafe | `typesafe` | `TYPESAFE_API_KEY` | `jev-latest` |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
-| Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` | `typesafe-ai/jev` |
-| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` | `jev-1.13-free` |
-| OpenJev, local | `openjev` | none; placeholder accepted | configured by local server |
-| Laya, local | `laya` | optional `LAYA_API_KEY` | `multilingual` |
+| Provider          | `JEV_PROVIDER` | Key                        | Default model              |
+| ----------------- | -------------- | -------------------------- | -------------------------- |
+| TypeSafe          | `typesafe`     | `TYPESAFE_API_KEY`         | `jev-latest`               |
+| OpenRouter        | `openrouter`   | `OPENROUTER_API_KEY`       | `typesafe/jev-1.13`        |
+| Vercel AI Gateway | `vercel`       | `AI_GATEWAY_API_KEY`       | `typesafe-ai/jev`          |
+| OpenCode Zen      | `opencode`     | `OPENCODE_API_KEY`         | `jev-1.13-free`            |
+| OpenJev, local    | `openjev`      | none; placeholder accepted | configured by local server |
+| Laya, local       | `laya`         | optional `LAYA_API_KEY`    | `multilingual`             |
 
 Without an explicit `JEV_PROVIDER`, the launcher uses the first configured Jev key. OpenJev and
 Laya can run the Jev endpoint locally. OpenJev may still send requests to its configured model
@@ -154,14 +154,14 @@ the [local Jev notes](docs/client-compatibility.md#local-jev-options).
 
 ## Client compatibility
 
-| Client | Status and caveat |
-| --- | --- |
-| Codex | Uses your existing login and Responses API. Direct tool answers are disabled to preserve upstream response history. |
-| Claude Code | Uses your existing login. Cached prefixes and extended thinking mean Jev adds a hint; the model still reasons about the tool. |
-| OpenCode | v1 gets a per-process provider. v2 requires a one-time config snippet because it does not accept provider configuration from the environment. Only the selected gateway model is routed. |
-| Kilo | Adds a gateway provider for Kilo Gateway; Kilo's own sign-in is not reused by that provider. |
-| Gemini CLI | The Gemini API-key path is supported. Google-account sign-in uses another service and bypasses this gateway. |
-| Devin | Uses the Connect RPC path and hint mode. Stream errors returned inside HTTP 200 cannot be replayed by the gateway. |
+| Client      | Status and caveat                                                                                                                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex       | Uses your existing login and Responses API. Direct tool answers are disabled to preserve upstream response history.                                                                      |
+| Claude Code | Uses your existing login. Cached prefixes and extended thinking mean Jev adds a hint; the model still reasons about the tool.                                                            |
+| OpenCode    | v1 gets a per-process provider. v2 requires a one-time config snippet because it does not accept provider configuration from the environment. Only the selected gateway model is routed. |
+| Kilo        | Adds a gateway provider for Kilo Gateway; Kilo's own sign-in is not reused by that provider.                                                                                             |
+| Gemini CLI  | The Gemini API-key path is supported. Google-account sign-in uses another service and bypasses this gateway.                                                                             |
+| Devin       | Uses the Connect RPC path and hint mode. Stream errors returned inside HTTP 200 cannot be replayed by the gateway.                                                                       |
 
 See [client setup and compatibility](docs/client-compatibility.md) for exact versions tested,
 OpenCode v2 setup, routing boundaries, and provider details. A supported protocol does not mean
@@ -194,13 +194,13 @@ pnpm dev               # http://127.0.0.1:8787
 Point the client at `http://127.0.0.1:8787/v1`. The gateway routes these endpoints and proxies
 other paths unchanged:
 
-| Endpoint | Protocol |
-| --- | --- |
-| `POST /v1/chat/completions` | OpenAI Chat Completions |
-| `POST /v1/responses` | OpenAI Responses |
-| `POST /v1/messages` | Anthropic Messages |
-| `POST /v1beta/models/*` | Gemini `generateContent` and `streamGenerateContent` |
-| `POST /exa.api_server_pb.ApiServerService/GetChatMessage` | Devin Connect RPC |
+| Endpoint                                                  | Protocol                                             |
+| --------------------------------------------------------- | ---------------------------------------------------- |
+| `POST /v1/chat/completions`                               | OpenAI Chat Completions                              |
+| `POST /v1/responses`                                      | OpenAI Responses                                     |
+| `POST /v1/messages`                                       | Anthropic Messages                                   |
+| `POST /v1beta/models/*`                                   | Gemini `generateContent` and `streamGenerateContent` |
+| `POST /exa.api_server_pb.ApiServerService/GetChatMessage` | Devin Connect RPC                                    |
 
 By default the client's Authorization header is forwarded to the LLM provider. `UPSTREAM_API_KEY`
 lets the gateway hold that provider key; `ROUTER_API_KEY` then requires clients to authenticate.
@@ -217,20 +217,20 @@ representative request to `POST /router/decide`. The endpoint still asks Jev to 
 The launchers read settings from the shell or `~/.jev-gateway/.env`; a checkout can use its own
 `.env`. The complete, current list is in [`.env.example`](.env.example).
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `JEV_PROVIDER` | inferred from key | Jev provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya` |
-| `JEV_MIN_CONFIDENCE` | `0.7` | Lower confidence passes the choice to the session model |
-| `JEV_ARG_MIN_CERTAINTY` | `0.8` | Minimum certainty for each closed-set argument in a direct answer |
-| `JEV_ROUTING` | `on` | Start in routing or baseline mode |
-| `JEV_TIMEOUT_MS` | `4000` | Jev request deadline |
-| `JEV_ADVISOR` | on for advisor launchers | Enable read-only advisor consultations |
-| `JEV_ADVISOR_MODEL` | launcher-specific | Model used for advisor replies |
-| `JEV_ADVISOR_TIMEOUT_MS` | `30000` | Advisor request deadline |
-| `ARGS_MODEL` | unset | Optional model for open-ended tool arguments; not used for Codex |
-| `JEV_ON_NONE` | `force_none` | Send `tool_choice: none` or pass the request through when Jev selects no tool |
-| `HOST` | `127.0.0.1` | Bind address; configure `ROUTER_API_KEY` before exposing the gateway |
-| `JEV_DEBUG_DUMP_DIR` | unset | Opt-in request dumps; includes full conversation bodies, so use with care |
+| Setting                  | Default                  | Purpose                                                                           |
+| ------------------------ | ------------------------ | --------------------------------------------------------------------------------- |
+| `JEV_PROVIDER`           | inferred from key        | Jev provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya` |
+| `JEV_MIN_CONFIDENCE`     | `0.7`                    | Lower confidence passes the choice to the session model                           |
+| `JEV_ARG_MIN_CERTAINTY`  | `0.8`                    | Minimum certainty for each closed-set argument in a direct answer                 |
+| `JEV_ROUTING`            | `on`                     | Start in routing or baseline mode                                                 |
+| `JEV_TIMEOUT_MS`         | `4000`                   | Jev request deadline                                                              |
+| `JEV_ADVISOR`            | on for advisor launchers | Enable read-only advisor consultations                                            |
+| `JEV_ADVISOR_MODEL`      | launcher-specific        | Model used for advisor replies                                                    |
+| `JEV_ADVISOR_TIMEOUT_MS` | `30000`                  | Advisor request deadline                                                          |
+| `ARGS_MODEL`             | unset                    | Optional model for open-ended tool arguments; not used for Codex                  |
+| `JEV_ON_NONE`            | `force_none`             | Send `tool_choice: none` or pass the request through when Jev selects no tool     |
+| `HOST`                   | `127.0.0.1`              | Bind address; configure `ROUTER_API_KEY` before exposing the gateway              |
+| `JEV_DEBUG_DUMP_DIR`     | unset                    | Opt-in request dumps; includes full conversation bodies, so use with care         |
 
 Launcher-specific ports, upstreams and model options are also listed in [`.env.example`](.env.example).
 

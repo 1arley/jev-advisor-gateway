@@ -1,8 +1,18 @@
 # README overview video
 
 `jev-advisor-gateway-overview.mp4` is a 14-second, 1280 × 720 H.264 overview. The composition
-uses synthetic labels and contains no session data or audio. `overview-poster.png` is its linked
-poster image.
+uses synthetic labels and contains no session data or audio. `overview-poster.png` is its still
+frame.
+
+The README embeds `overview.gif` because neither GitHub nor npm animates a linked MP4 in Markdown.
+The GIF is a 640 × 360, 15 fps, 128,000-color-palette render of the same video, click-through to the
+MP4. Regenerate it whenever the MP4 changes:
+
+```bash
+ffmpeg -y -i media/jev-advisor-gateway-overview.mp4 \
+  -vf "fps=15,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
+  -loop 0 media/overview.gif
+```
 
 The editable Remotion composition is `Composition.tsx`. To recreate it from the repository root,
 create a blank project in a unique temporary directory, replace its `src/Composition.tsx` with this
