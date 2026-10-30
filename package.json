@@ -41,6 +41,8 @@
     "jev-opencode": "bin/jev-opencode.mjs",
     "jev-opencode-advisor": "bin/jev-opencode-advisor.mjs",
     "jev-gemini": "bin/jev-gemini.mjs",
+    "jev-agy": "bin/jev-agy.mjs",
+    "jev-agy-advisor": "bin/jev-agy-advisor.mjs",
     "jev-devin": "bin/jev-devin.mjs",
     "jev-kilo": "bin/jev-kilo.mjs"
   },
@@ -70,6 +72,8 @@
     "opencode-advisor": "node bin/jev-opencode-advisor.mjs",
     "kilo": "node bin/jev-kilo.mjs",
     "gemini": "node bin/jev-gemini.mjs",
+    "agy": "node bin/jev-agy.mjs",
+    "agy-advisor": "node bin/jev-agy-advisor.mjs",
     "devin": "node bin/jev-devin.mjs",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
     "prepare": "husky"

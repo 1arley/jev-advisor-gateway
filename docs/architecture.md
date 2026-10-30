@@ -11,6 +11,7 @@ The advisor is not tied to a provider. The same code path serves:
 
 - `jev-codex-advisor` — GPT-6 Luna coding with a GPT advisor over the Responses API;
 - `jev-claude-advisor` — Haiku coding with an Opus advisor over the Messages API.
+- `jev-agy-advisor` — the selected Antigravity Gemini model with a Gemini advisor over the Gemini API.
 
 Both use the client's own login and upstream; the gateway only adds a request in between.
 
@@ -51,6 +52,8 @@ gateway already routed to. The router therefore branches on adapter capability, 
 - **Messages (Claude):** Anthropic rejects two consecutive `user` turns, so the note is merged into
   the trailing user turn. Each request stands alone, so the advisor budget caps calls within a turn,
   not across the chat.
+- **Gemini (Antigravity CLI):** the advisor uses the same Gemini operation and query parameters with
+  its model in the URL; its note joins the trailing user content.
 
 ## Jev policy
 

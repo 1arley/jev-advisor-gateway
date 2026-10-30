@@ -175,7 +175,7 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
     let tools: number | undefined;
     let session: SessionState | undefined;
     let sessionAction: Awaited<ReturnType<typeof decideSessionAction>> | undefined;
-    // Undefined for wire formats the advisor cannot speak (chat, gemini, exa): no consult, no policy.
+    // Undefined for wire formats the advisor cannot speak (exa): no consult, no policy.
     const advisorImpl = advisorFor(adapter);
     if (!req) decision = { mode: "passthrough", reason: encoding ? "unsupported_encoding" : "unparseable_body" };
     else if (c.req.header("x-jev-gateway") === "off") decision = { mode: "passthrough", reason: "disabled_by_header" };

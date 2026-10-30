@@ -200,3 +200,39 @@ ser aplicada no GitHub.
 - `last-release-sha` é temporário; remover o campo da release PR de recuperação antes de mesclá-la para release-please retomar pelo novo tag.
 - A auditoria não altera a tag publicada nem conclui publicação externa.
 - O JEV usou o endpoint OpenCode Zen salvo. Uma chamada inicial falhou por precedência de credenciais do ambiente; a chamada válida usou a credencial salva e reportou custo zero. As recomendações escaladas foram aceitas pelo usuário.
+
+## Antigravity CLI (`agy`) e advisor Gemini
+
+Data: 2026-10-30
+Status: implementado; validação sintética concluída em 2026-10-30
+
+### Decisões
+
+| Tema | Decisão |
+|---|---|
+| Launchers | Adicionar `jev-agy` e `jev-agy-advisor`, usando o `agy` instalado e preservando seu modelo padrão. |
+| Transporte | Usar a API Gemini compatível do gateway via `GOOGLE_GEMINI_BASE_URL` no processo lançado e `agy --settings '{"modelProvider":"gemini"}'`; não editar configurações persistentes do usuário. |
+| Argumentos do CLI | Sem `--settings`, injetar apenas `modelProvider: "gemini"`. Com JSON inline, mesclar essa chave e preservar as demais opções. Com caminho de arquivo, aceitar somente se ele já definir `modelProvider: "gemini"`; não editar, copiar nem exibir o arquivo. Rejeitar opções duplicadas ou arquivos incompatíveis com instrução clara. |
+| Credencial | Usar `GEMINI_API_KEY` somente no ambiente do processo. Não gravar nem encaminhar a chave do cliente para o serviço Jev. |
+| Advisor | No upstream Gemini, trocar o modelo na URL e preservar operação, streaming, query e autenticação. Em provider externo opt-in, enviar apenas texto recente de user/model, sem instruções de sistema nem chamadas ou resultados de ferramentas. Manter a nota delimitada como entrada não confiável e seguir fail-open. |
+| Perfil dos comandos | `jev-agy` inicia com advisor desligado; `jev-agy-advisor` liga o advisor e seleciona `gemini-3.1-pro-preview` por padrão, com override por `JEV_ADVISOR_MODEL`. |
+| Testes e docs | Cobrir construção/extração/apêndice da chamada Gemini, extração textual para providers externos, ordem e fail-open no router, launchers e comandos de status. Atualizar README e `docs/client-compatibility.md` juntos. |
+
+### Proveniência e evidência
+
+- O usuário escolheu os dois comandos e pediu explicitamente habilitar o advisor Gemini e fazê-lo funcionar. Proveniência: `user`.
+- A documentação oficial do Antigravity descreve `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY`, `modelProvider: "gemini"` e `--settings`. A ajuda local reporta `agy` 1.4.11.
+- Testes sintéticos isolados, com HOME temporário, chave falsa e gateway/upstream loopback, confirmaram chamadas Gemini `streamGenerateContent` e resposta sintética para `agy`, tanto com `--settings` inline quanto por arquivo. Não houve chamada a modelo real.
+- A revisão apontou turnos `user` consecutivos na chamada advisor e o fallback GPT ao ativar o advisor em `jev-agy`; ambos foram corrigidos e cobertos por testes.
+
+### Premissas e riscos em aberto
+
+- O usuário tem ou fornecerá `GEMINI_API_KEY` com acesso aos modelos Gemini aceitos pelo endpoint escolhido. O launcher não instalará nem persistirá credenciais.
+- A chamada real pode ser recusada se a conta não tiver acesso ao modelo; nesse caso, a chamada principal segue em fail-open.
+- Os testes sintéticos demonstram compatibilidade estrutural, não integração ao vivo nem disponibilidade de modelo/credencial.
+- Nenhuma configuração global do Antigravity, arquivo de credenciais ou arquivo de cliente é alterado.
+
+### Implementação e validação
+
+- Registrados `jev-agy` e `jev-agy-advisor`, incluindo scripts npm e transformação segura de `--settings` por processo.
+- `pnpm typecheck`, `pnpm test` (312/312), `pnpm build` e `npm pack --dry-run` passaram em 2026-10-30. A integração real com Gemini permanece não verificada.

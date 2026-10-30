@@ -81,6 +81,20 @@ The supported path is Gemini CLI traffic authenticated with a Gemini API key. A 
 a Google account uses another Google service and bypasses this gateway. The adapter has offline
 tests; live Gemini API behavior has not been verified.
 
+## Antigravity CLI
+
+Install `agy` and set `GEMINI_API_KEY`, then run `jev-agy` or `jev-agy-advisor`. Both use
+`GOOGLE_GEMINI_BASE_URL` for the launched process and preserve the model selected by Antigravity.
+Without `--settings`, the launcher supplies `modelProvider: "gemini"`. Inline JSON settings are
+merged with that provider. A settings file must already set `modelProvider` to `gemini`; the
+launcher does not edit or copy it. Only one `--settings` option is accepted.
+
+`jev-agy` starts with the advisor off; `jev-agy --advisor on` enables it. `jev-agy-advisor` starts
+with it on. Both use a read-only Gemini advisor, defaulting to `gemini-3.1-pro-preview`; a
+configured `JEV_ADVISOR_MODEL` overrides that default and must name a model available through the
+Gemini API. The CLI/advisor path has
+synthetic local transport tests, but live Gemini model access has not been verified.
+
 ## Devin CLI
 
 The gateway supports Devin CLI 3000.11.3 over Connect RPC. Its wire format has no `tool_choice`, so

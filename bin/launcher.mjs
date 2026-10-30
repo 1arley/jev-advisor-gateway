@@ -27,7 +27,8 @@ const ENV_FILES = [...(FROM_SOURCE && !process.env.JEV_SKIP_PROJECT_ENV ? [join(
  * @param {string} spec.upstreamHelp          help text describing the upstream default
  * @param {(origin: string) => string[]} [spec.args]   extra leading arguments for the client
  * @param {(origin: string) => Record<string, string>} [spec.env]  extra environment for the client
- * @param {Record<string, string>} [spec.gatewayEnv] extra environment for this launcher's gateway
+ * @param {Record<string, string> | (() => Record<string, string>)} [spec.gatewayEnv] extra environment for this launcher's gateway
+ * @param {(origin: string, args: string[]) => string[]} [spec.transformArgs] final per-process client argument preparation
  * @param {(origin: string, argv: string[]) => Promise<string[]>} [spec.notices]  what the user should
  *   know before this session starts, e.g. traffic that will not reach the gateway; never throws
  * @param {(origin: string) => string | Promise<string>} spec.configHelp  how to wire the client up permanently
@@ -42,6 +43,7 @@ export { ROOT, ROUTER_ARGS as GATEWAY_ARGS };
 
 export async function runLauncher(spec) {
   loadEnv();
+  const gatewayEnv = typeof spec.gatewayEnv === "function" ? spec.gatewayEnv() : spec.gatewayEnv;
 
   const port = Number(process.env[spec.portEnv] ?? spec.defaultPort);
   const origin = `http://127.0.0.1:${port}`;
@@ -51,7 +53,7 @@ export async function runLauncher(spec) {
   const logFile = join(STATE_DIR, `${state}.log`);
   const pidFile = join(STATE_DIR, `${state}.pid`);
   // Wire formats the advisor can speak: Chat Completions, Codex Responses, and Claude Messages.
-  const advisorCapable = ["codex", "claude", "opencode"].includes(spec.client);
+  const advisorCapable = ["codex", "claude", "opencode", "agy"].includes(spec.client);
 
   const providers = loadProviders(ROOT);
   const providerLabels = Object.values(providers).map((p) => p.label).join(", ");
@@ -145,7 +147,7 @@ Environment (or ${ENV_FILES.at(-1)}):
     const child = spawn(process.execPath, ROUTER_ARGS, {
       cwd: ROOT,
       // JEV_LOG_FILE is where stdout goes (below): the router replays it so the dashboard keeps its history.
-      env: { ...env, ...spec.gatewayEnv, PORT: String(port), UPSTREAM_BASE_URL: upstream, JEV_CLIENT: spec.client, JEV_LOG_FILE: logFile },
+      env: { ...env, ...gatewayEnv, PORT: String(port), UPSTREAM_BASE_URL: upstream, JEV_CLIENT: spec.client, JEV_LOG_FILE: logFile },
       detached: true,
       stdio: ["ignore", log, log],
     });
@@ -239,7 +241,7 @@ Environment (or ${ENV_FILES.at(-1)}):
   }
   if (flag === "--advisor") {
     const wanted = process.argv[3];
-    if (!advisorCapable) return console.error(`${spec.name}: --advisor is only available for Codex, Claude and OpenCode.`);
+    if (!advisorCapable) return console.error(`${spec.name}: --advisor is only available for Codex, Claude, OpenCode and Antigravity CLI.`);
     if (wanted !== "on" && wanted !== "off") return console.error(`usage: ${spec.name} --advisor on|off`);
     await ensureRouter();
     const key = process.env.ROUTER_API_KEY ? `&key=${encodeURIComponent(process.env.ROUTER_API_KEY)}` : "";
@@ -287,9 +289,16 @@ Environment (or ${ENV_FILES.at(-1)}):
 
   // Asked while the gateway starts, so the two waits overlap. Printed before the client takes over
   // the terminal; `--status` shows the same lines at any time.
+  let clientArgs = [...(spec.args?.(origin) ?? []), ...process.argv.slice(2)];
+  try {
+    if (spec.transformArgs) clientArgs = spec.transformArgs(origin, clientArgs);
+  } catch (error) {
+    console.error(`${spec.name}: ${error instanceof Error ? error.message : "invalid client arguments"}`);
+    process.exit(2);
+  }
   const [, warnings] = await Promise.all([ensureRouter(), notices(process.argv.slice(2))]);
   for (const line of warnings) console.error(line);
-  const child = spawn(spec.client, [...(spec.args?.(origin) ?? []), ...process.argv.slice(2)], {
+  const child = spawn(spec.client, clientArgs, {
     stdio: "inherit",
     env: { ...process.env, ...spec.env?.(origin) },
   });

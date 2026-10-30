@@ -3,7 +3,7 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** Codex talks to a different backend depending on how the user logged in. */
 function codexUpstream() {
@@ -489,4 +489,75 @@ export const gemini = {
     `# Point your Gemini client or SDK at:\n` +
     `#   GEMINI_API_BASE=${origin}\n` +
     `#   or endpoint: ${origin}/v1beta\n`,
+};
+
+export function agyClientArgs(args) {
+  const settingsArgs = [];
+  const clientArgs = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--settings") {
+      if (!args[i + 1]) throw new Error("--settings requires a JSON object or file path.");
+      settingsArgs.push(args[++i]);
+    } else if (args[i].startsWith("--settings=")) {
+      settingsArgs.push(args[i].slice("--settings=".length));
+    } else {
+      clientArgs.push(args[i]);
+    }
+  }
+  if (settingsArgs.length > 1) throw new Error("Use one --settings option; duplicate settings are not merged by agy.");
+
+  let settings = { modelProvider: "gemini" };
+  if (settingsArgs.length) {
+    const value = settingsArgs[0].trim();
+    if (value.startsWith("{") || value.startsWith("[")) {
+      let supplied;
+      try { supplied = JSON.parse(value); } catch { throw new Error("--settings JSON must be a valid object."); }
+      if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) throw new Error("--settings JSON must be an object.");
+      settings = { ...supplied, modelProvider: "gemini" };
+    } else {
+      let supplied;
+      try { supplied = JSON.parse(readFileSync(resolve(value), "utf8")); } catch { throw new Error("--settings file must be readable JSON and set modelProvider to gemini."); }
+      if (!supplied || typeof supplied !== "object" || Array.isArray(supplied) || supplied.modelProvider !== "gemini") {
+        throw new Error("--settings file must already set modelProvider to gemini; the launcher will not edit or copy it.");
+      }
+      settings = undefined;
+    }
+  }
+  return [...(settings ? ["--settings", JSON.stringify(settings)] : ["--settings", settingsArgs[0]]), ...clientArgs];
+}
+
+const agyGatewayEnv = () => ({
+  JEV_ADVISOR: "off",
+  JEV_ADVISOR_MODEL: process.env.JEV_ADVISOR_MODEL || "gemini-3.1-pro-preview",
+});
+const agyAdvisorGatewayEnv = () => ({ ...agyGatewayEnv(), JEV_ADVISOR: "on" });
+
+export const agy = {
+  ...gemini,
+  name: "jev-agy",
+  client: "agy",
+  portEnv: "JEV_AGY_PORT",
+  defaultPort: 8796,
+  state: "agy",
+  gatewayEnv: agyGatewayEnv,
+  transformArgs: (_origin, args) => agyClientArgs(args),
+  configHelp: (origin) =>
+    `# Requires GEMINI_API_KEY for the Gemini API. No global agy settings are changed.\n` +
+    `# jev-agy sets GOOGLE_GEMINI_BASE_URL=${origin} and modelProvider=gemini for this process.\n` +
+    `# jev-agy --advisor on enables a Gemini advisor (override with JEV_ADVISOR_MODEL).\n` +
+    `# With a settings file, it must already contain: {"modelProvider":"gemini"}\n`,
+};
+
+export const agyAdvisor = {
+  ...agy,
+  name: "jev-agy-advisor",
+  portEnv: "JEV_AGY_ADVISOR_PORT",
+  defaultPort: 8797,
+  state: "agy-advisor",
+  gatewayEnv: agyAdvisorGatewayEnv,
+  configHelp: (origin) =>
+    `# Requires GEMINI_API_KEY for the Gemini API. No global agy settings are changed.\n` +
+    `# jev-agy-advisor uses GOOGLE_GEMINI_BASE_URL=${origin}, modelProvider=gemini, and\n` +
+    `# a read-only Gemini 3.1 Pro advisor (override with JEV_ADVISOR_MODEL).\n` +
+    `# With a settings file, it must already contain: {"modelProvider":"gemini"}\n`,
 };

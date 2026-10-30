@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -14,7 +15,7 @@ interface LauncherSpec {
   client: string;
   portEnv: string;
   defaultPort: number;
-  gatewayEnv?: Record<string, string>;
+  gatewayEnv?: Record<string, string> | (() => Record<string, string>);
   upstream: () => string;
   upstreamHelp: string;
   args?: (origin: string) => string[];
@@ -28,11 +29,14 @@ const codex = clients.codex as LauncherSpec;
 const codexAdvisor = clients.codexAdvisor as LauncherSpec;
 const claude = clients.claude as LauncherSpec;
 const devin = clients.devin as LauncherSpec;
+const agy = clients.agy as LauncherSpec;
+const agyAdvisor = clients.agyAdvisor as LauncherSpec;
 
 const origin = "http://127.0.0.1:8791";
 const launcherBin = fileURLToPath(new URL("../bin/jev-opencode.mjs", import.meta.url));
+const agyLauncherBin = fileURLToPath(new URL("../bin/jev-agy.mjs", import.meta.url));
 
-const managedEnv = ["OPENCODE_CONFIG_CONTENT", "JEV_OPENCODE_UPSTREAM_BASE_URL", "JEV_OPENCODE_MODEL", "JEV_CODEX_UPSTREAM_BASE_URL", "JEV_CLAUDE_UPSTREAM_BASE_URL", "JEV_DEVIN_UPSTREAM_BASE_URL", "CODEX_HOME"] as const;
+const managedEnv = ["OPENCODE_CONFIG_CONTENT", "JEV_OPENCODE_UPSTREAM_BASE_URL", "JEV_OPENCODE_MODEL", "JEV_CODEX_UPSTREAM_BASE_URL", "JEV_CLAUDE_UPSTREAM_BASE_URL", "JEV_DEVIN_UPSTREAM_BASE_URL", "JEV_ADVISOR_MODEL", "CODEX_HOME"] as const;
 const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -206,6 +210,54 @@ describe("jev-devin entrypoint", () => {
     expect(pkg.bin["jev-devin"]).toBe("bin/jev-devin.mjs");
     expect(pkg.scripts.devin).toBe("node bin/jev-devin.mjs");
     expect(pkg.keywords).toContain("devin");
+  });
+});
+
+describe("Antigravity launchers", () => {
+  it("preserves the selected model and separates advisor settings", () => {
+    expect(agy.name).toBe("jev-agy");
+    expect(agy.client).toBe("agy");
+    expect(agy.portEnv).toBe("JEV_AGY_PORT");
+    const gatewayEnv = typeof agy.gatewayEnv === "function" ? agy.gatewayEnv() : agy.gatewayEnv;
+    expect(gatewayEnv).toMatchObject({ JEV_ADVISOR: "off", JEV_ADVISOR_MODEL: "gemini-3.1-pro-preview" });
+    expect(agy.env!(origin).GOOGLE_GEMINI_BASE_URL).toBe(origin);
+    expect(agyAdvisor.name).toBe("jev-agy-advisor");
+    expect(agyAdvisor.portEnv).toBe("JEV_AGY_ADVISOR_PORT");
+    const advisorEnv = typeof agyAdvisor.gatewayEnv === "function" ? agyAdvisor.gatewayEnv() : agyAdvisor.gatewayEnv;
+    expect(advisorEnv).toMatchObject({ JEV_ADVISOR: "on", JEV_ADVISOR_MODEL: "gemini-3.1-pro-preview" });
+    process.env.JEV_ADVISOR_MODEL = "gemini-2.5-pro";
+    expect((agy.gatewayEnv as () => Record<string, string>)()).toMatchObject({ JEV_ADVISOR_MODEL: "gemini-2.5-pro" });
+    expect((agyAdvisor.gatewayEnv as () => Record<string, string>)()).toMatchObject({ JEV_ADVISOR_MODEL: "gemini-2.5-pro" });
+    expect(agyAdvisor.configHelp(origin)).toContain("JEV_ADVISOR_MODEL");
+  });
+
+  it("merges inline settings, accepts only compatible files and rejects duplicates", () => {
+    const args = clients.agyClientArgs as (args: string[]) => string[];
+    expect(args(["--settings", '{"model":"gemini-2.5-pro","other":true}', "--prompt", "hello"])).toEqual([
+      "--settings", '{"model":"gemini-2.5-pro","other":true,"modelProvider":"gemini"}', "--prompt", "hello",
+    ]);
+    const dir = mkdtempSync(join(tmpdir(), "jev-agy-settings-"));
+    const file = join(dir, "settings.json");
+    try {
+      writeFileSync(file, '{"modelProvider":"gemini","model":"gemini-2.5-pro"}');
+      expect(args(["--settings", file])).toEqual(["--settings", file]);
+      writeFileSync(file, '{"modelProvider":"other"}');
+      expect(() => args(["--settings", file])).toThrow("modelProvider to gemini");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    expect(() => args(["--settings", "{}", "--settings", "{}"])).toThrow("one --settings option");
+  });
+
+  it("registers both commands and provides launcher help", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as any;
+    expect(pkg.bin["jev-agy"]).toBe("bin/jev-agy.mjs");
+    expect(pkg.bin["jev-agy-advisor"]).toBe("bin/jev-agy-advisor.mjs");
+    expect(pkg.scripts.agy).toBe("node bin/jev-agy.mjs");
+    expect(pkg.scripts["agy-advisor"]).toBe("node bin/jev-agy-advisor.mjs");
+    const out = execFileSync(process.execPath, [agyLauncherBin, "--gateway-help"], { encoding: "utf8", timeout: 30_000 });
+    expect(out).toContain("jev-agy: agy with tool selection routed through Jev");
+    expect(out).toContain("JEV_AGY_PORT");
   });
 });
 

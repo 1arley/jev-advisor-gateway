@@ -1,5 +1,6 @@
 import type { Adapter } from "../adapters/adapter.js";
 import { chatAdapter } from "../adapters/chat.js";
+import { geminiAdapter, type GeminiRequest } from "../adapters/gemini.js";
 import { messagesAdapter, type MessagesRequest } from "../adapters/messages.js";
 import { responsesAdapter, type ResponsesRequest } from "../adapters/responses.js";
 import type { Config } from "../config.js";
@@ -76,6 +77,16 @@ function chatContext(req: ChatRequest, config: Config): AdvisorMessage[] {
     if (message.role !== "user" && message.role !== "assistant") return [];
     const content = externalText(message.content, "text");
     return content ? [{ role: message.role, content }] : [];
+  });
+  return boundedExternalMessages(messages, config);
+}
+
+function geminiContext(req: GeminiRequest, config: Config): AdvisorMessage[] {
+  const messages = (Array.isArray(req.contents) ? req.contents : []).flatMap((content): AdvisorMessage[] => {
+    if (content.role !== "user" && content.role !== "model") return [];
+    const text = (content.parts ?? []).flatMap((part) => typeof part.text === "string" ? [part.text] : []).join("");
+    if (!text.trim()) return [];
+    return [{ role: content.role === "model" ? "assistant" : "user", content: text }];
   });
   return boundedExternalMessages(messages, config);
 }
@@ -272,6 +283,64 @@ export function appendMessagesAdvisorNote(req: MessagesRequest, note: string): M
   return appendUser(req, asNote(note));
 }
 
+/* ------------------------------------ Gemini ------------------------------------ */
+
+interface GeminiAdvisorResponse {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> } }>;
+}
+
+function geminiResponseText(response: unknown): string {
+  if (!response || typeof response !== "object") return "";
+  const candidates = (response as GeminiAdvisorResponse).candidates;
+  if (!Array.isArray(candidates)) return "";
+  return candidates.flatMap((candidate) => candidate?.content?.parts ?? [])
+    .map((part) => typeof part?.text === "string" ? part.text : "").join("");
+}
+
+export function buildGeminiAdvisorRequest(req: GeminiRequest, config: Config, session: SessionState) {
+  const contents = (req.contents ?? []).map((content) => structuredClone(content));
+  const prompt = { text: advisorPrompt(session) };
+  const last = contents.at(-1);
+  if (last?.role === "user") last.parts = [...(last.parts ?? []), prompt];
+  else contents.push({ role: "user", parts: [prompt] });
+  return {
+    contents,
+    systemInstruction: { parts: [{ text: ADVISOR_INSTRUCTIONS }] },
+    generationConfig: { maxOutputTokens: config.advisorMaxOutputTokens },
+  };
+}
+
+export function appendGeminiAdvisorNote(req: GeminiRequest, note: string): GeminiRequest {
+  const contents = (req.contents ?? []).map((content) => structuredClone(content));
+  const last = contents.at(-1);
+  if (last?.role === "user") last.parts = [...(last.parts ?? []), { text: asNote(note) }];
+  else contents.push({ role: "user", parts: [{ text: asNote(note) }] });
+  return { ...req, contents };
+}
+
+export function extractGeminiAdvisorText(body: string): string | undefined {
+  const textFrom = (value: unknown) => {
+    if (Array.isArray(value)) return value.map(geminiResponseText).join("");
+    return geminiResponseText(value);
+  };
+  if (body.trimStart().startsWith("{") || body.trimStart().startsWith("[")) {
+    try { return bounded(textFrom(JSON.parse(body)).trim()); } catch { return undefined; }
+  }
+  const chunks: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.startsWith("data:") || line.slice(5).trim() === "[DONE]") continue;
+    try { chunks.push(textFrom(JSON.parse(line.slice(5)))); } catch { /* Ignore non-JSON SSE frames. */ }
+  }
+  return bounded(chunks.join("").trim());
+}
+
+function geminiAdvisorUrl(url: URL, config: Config): URL {
+  const match = url.pathname.match(/^(.*\/models\/)[^/:]+:(generateContent|streamGenerateContent)$/);
+  if (!match) throw new Error("unsupported_gemini_operation");
+  url.pathname = `${match[1]}${encodeURIComponent(config.advisorModel)}:${match[2]}`;
+  return url;
+}
+
 function anthropicText(response: AnthropicResponse): string | undefined {
   const text = (response.content ?? [])
     .filter((block) => block.type === "text" && typeof block.text === "string")
@@ -314,6 +383,7 @@ export interface Advisor<Req> {
   request(req: Req, config: Config, session: SessionState): unknown;
   externalMessages(req: Req, config: Config): AdvisorMessage[];
   append(req: Req, note: string): Req;
+  requestUrl?(url: URL, config: Config): URL;
   /** The advisor's text in a reply body, streamed or as one JSON object. */
   text(body: string): string | undefined;
 }
@@ -330,6 +400,13 @@ const messagesAdvisor: Advisor<MessagesRequest> = {
   externalMessages: messagesContext,
   append: appendMessagesAdvisorNote,
   text: extractMessagesAdvisorText,
+};
+const geminiAdvisor: Advisor<GeminiRequest> = {
+  request: buildGeminiAdvisorRequest,
+  externalMessages: geminiContext,
+  append: appendGeminiAdvisorNote,
+  requestUrl: geminiAdvisorUrl,
+  text: extractGeminiAdvisorText,
 };
 const chatAdvisor: Advisor<ChatRequest> = {
   externalMessages: chatContext,
@@ -379,6 +456,7 @@ export function advisorFor<Req extends { model?: string; stream?: boolean }>(ada
   if (adapter === (chatAdapter as unknown as Adapter<Req>)) return chatAdvisor as unknown as Advisor<Req>;
   if (adapter === responsesAdapter) return responsesAdvisor as unknown as Advisor<Req>;
   if (adapter === messagesAdapter) return messagesAdvisor as unknown as Advisor<Req>;
+  if (adapter === geminiAdapter) return geminiAdvisor as unknown as Advisor<Req>;
   return undefined;
 }
 
@@ -407,6 +485,10 @@ export async function consultAdvisor<Req>(
     const messages = config.advisorProvider ? advisor.externalMessages(req, config) : undefined;
     if (messages && messages.length === 0) return { reason: "advisor_context_unavailable" };
     const requestBody = JSON.stringify(messages ? externalAdvisorRequest(messages, config) : advisor.request(req, config, session));
+    const url = !config.advisorProvider ? advisor.requestUrl?.(new URL(incoming.url), config) : undefined;
+    const advisorIncoming = url
+      ? new Request(url, { method: incoming.method, headers: incoming.headers, signal: incoming.signal })
+      : incoming;
     const response = config.advisorProvider
       ? await fetchImpl(externalAdvisorUrl(config), {
           method: "POST",
@@ -415,7 +497,7 @@ export async function consultAdvisor<Req>(
           redirect: "error",
           signal: AbortSignal.any([incoming.signal, AbortSignal.timeout(config.advisorTimeoutMs)]),
         })
-      : await forward(incoming, config, fetchImpl, {
+      : await forward(advisorIncoming, config, fetchImpl, {
           body: requestBody,
           signal: AbortSignal.timeout(config.advisorTimeoutMs),
         });

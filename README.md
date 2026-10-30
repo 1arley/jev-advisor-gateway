@@ -37,11 +37,16 @@ Use the matching launcher for your client:
 | `jev-opencode`         | OpenCode    | Your configured OpenCode model with Jev; no advisor |
 | `jev-kilo`             | Kilo CLI    | Kilo Gateway model with Jev                         |
 | `jev-gemini`           | Gemini CLI  | Gemini API-key traffic with Jev                     |
+| `jev-agy`              | Antigravity CLI | Your default Gemini model with Jev; no advisor                      |
+| `jev-agy-advisor`      | Antigravity CLI | Your default Gemini model with Jev and a Gemini advisor             |
 | `jev-devin`            | Devin CLI   | Devin traffic with Jev                              |
 
 `jev-codex-advisor` also has the alias `codex-jev-advisor`. Launchers pass their settings to that
 process only: they do not edit your Codex, Claude, OpenCode or other client configuration. Use the
-launcher like the client command; its arguments are forwarded.
+launcher like the client command; its arguments are forwarded. `jev-agy` requires `agy` and
+`GEMINI_API_KEY`; it keeps the selected Gemini model and accepts `--settings` JSON or a compatible
+settings file. The advisor launcher defaults to `gemini-3.1-pro-preview`; set `JEV_ADVISOR_MODEL`
+to choose another advisor model.
 
 On first run, choose where Jev runs. For a hosted provider, enter its key; the launcher checks it
 with one real request and saves it in `~/.jev-gateway/.env`, readable only by your account. Local
@@ -167,6 +172,7 @@ the [local Jev notes](docs/client-compatibility.md#local-jev-options).
 | OpenCode    | v1 gets a per-process provider. v2 requires a one-time config snippet because it does not accept provider configuration from the environment. Only the selected gateway model is routed. |
 | Kilo        | Adds a gateway provider for Kilo Gateway; Kilo's own sign-in is not reused by that provider.                                                                                             |
 | Gemini CLI  | The Gemini API-key path is supported. Google-account sign-in uses another service and bypasses this gateway.                                                                             |
+| Antigravity CLI | `jev-agy` and `jev-agy-advisor` use the Gemini API key and preserve the CLI's selected model.                                  |
 | Devin       | Uses the Connect RPC path and hint mode. Stream errors returned inside HTTP 200 cannot be replayed by the gateway.                                                                       |
 
 See [client setup and compatibility](docs/client-compatibility.md) for exact versions tested,
