@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.11.0...v0.12.0) (2026-10-30)
+
+
+### Added
+
+* add Gemini advisor support ([78b42cf](https://github.com/1arley/jev-advisor-gateway/commit/78b42cf13476ed38a87c22a06185175924a51424))
+
 ## [0.11.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.10.1...v0.11.0) (2026-10-29)
 
 
