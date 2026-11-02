@@ -1,6 +1,8 @@
 # Changelog
 
-## [0.12.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.11.0...v0.12.0) (2026-10-30)
+## [0.12.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.12.0...v0.12.1) (2026-11-02)
+### Fixed
+* fix Laya tool choice options limit to 100
 
 
 ### Added
