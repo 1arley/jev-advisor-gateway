@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.13.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.12.1...v0.13.0) (2026-11-02)
+
+
+### Added
+
+* add Gemini advisor support ([78b42cf](https://github.com/1arley/jev-advisor-gateway/commit/78b42cf13476ed38a87c22a06185175924a51424))
+* **advisor:** support external advisor provider (openai/anthropic) ([7973df7](https://github.com/1arley/jev-advisor-gateway/commit/7973df7104e30bc118b9b2d6a48eb06970555ae5))
+
+
+### Fixed
+
+* **laya:** limit tool choice options to 100 for Laya provider ([1353b02](https://github.com/1arley/jev-advisor-gateway/commit/1353b027ca6ce5f72b3726993e4341a27fec0024))
+
+
+### Maintenance
+
+* add husky pre-commit hooks with lint-staged and prettier ([488205d](https://github.com/1arley/jev-advisor-gateway/commit/488205d3784611e772f3cc3be914f953a0945af3))
+* **main:** release 0.10.1 ([9d8b097](https://github.com/1arley/jev-advisor-gateway/commit/9d8b097790edfea77b5057172709bfd510f1cd9e))
+* **main:** release 0.11.0 ([077ad99](https://github.com/1arley/jev-advisor-gateway/commit/077ad9938871c3fd793fd99b2fef223e23607c38))
+* **main:** release 0.11.0 ([d425381](https://github.com/1arley/jev-advisor-gateway/commit/d42538133646a968c09ecb24a95ff304f2498ae2))
+* **main:** release 0.12.0 ([#12](https://github.com/1arley/jev-advisor-gateway/issues/12)) ([b33896b](https://github.com/1arley/jev-advisor-gateway/commit/b33896be6ea85d981bfab0fb434195a612c772a4))
+* **release:** add release identity validation and release PR CI ([f910f67](https://github.com/1arley/jev-advisor-gateway/commit/f910f67023a3c810a5e48386d7425cf6a85469c2))
+* **release:** bump version to 0.12.1 ([0c98229](https://github.com/1arley/jev-advisor-gateway/commit/0c98229c3aeac0b1c915e9fb29e6ae9013322d4c))
+* trigger release-please ([eb400b3](https://github.com/1arley/jev-advisor-gateway/commit/eb400b316cd76c430a7663263a515a9ffceb0142))
+* update README overview to animated GIF and add pre-commit skill ([9637700](https://github.com/1arley/jev-advisor-gateway/commit/9637700bc2c6612ac4985a8ccf8ee51525d687cf))
+
 ## [0.12.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.12.0...v0.12.1) (2026-11-02)
 ### Fixed
 * fix Laya tool choice options limit to 100
