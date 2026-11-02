@@ -112,8 +112,10 @@ has its own provider and billing; `OPENJEV_KEY` is only a setup placeholder. See
 [Laya](https://github.com/NandhaKishorM/laya) can serve the same protocol locally with
 `JEV_PROVIDER=laya`. Install and run `laya-serve` separately. The gateway warms it at startup so a
 checkpoint load does not consume the first request's deadline. Laya has a shorter context window
-than Jev and has only been measured on a six-question synthetic sample. See the benchmark notes in
-the [README](../README.md#laya-checkpoint-comparison).
+than Jev and rejects choice questions with more than 100 options. The gateway handles large tool
+rosters by ranking them in groups and asking Laya to choose from the finalists; enum arguments
+above 100 values are left for the main model to fill. Laya has only been measured on a six-question
+synthetic sample. See the benchmark notes in the [README](../README.md#laya-checkpoint-comparison).
 
 ## Inspect a decision
 

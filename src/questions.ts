@@ -34,7 +34,12 @@ export interface ToolPlan {
   closedParams?: ClosedParam[];
 }
 
-function closedParam(name: string, schema: JsonSchema, required: boolean): ClosedParam | undefined {
+function closedParam(
+  name: string,
+  schema: JsonSchema,
+  required: boolean,
+  maxChoiceOptions: number,
+): ClosedParam | undefined {
   if ("const" in schema) return { name, required, kind: "const", value: schema.const as Json };
   if (Array.isArray(schema.enum) && schema.enum.length > 0) {
     if (schema.enum.length === 1) return { name, required, kind: "const", value: schema.enum[0]! };
@@ -44,14 +49,14 @@ function closedParam(name: string, schema: JsonSchema, required: boolean): Close
       values.set(String(value), value);
     }
     // Labels are what Jev sees; colliding labels ("1" vs 1) can't be mapped back.
-    if (values.size !== schema.enum.length || values.size > 255) return undefined;
+    if (values.size !== schema.enum.length || values.size > maxChoiceOptions) return undefined;
     return { name, required, kind: "enum", description: schema.description, values };
   }
   if (schema.type === "boolean") return { name, required, kind: "boolean", description: schema.description };
   return undefined;
 }
 
-export function planTool(tool: RouterTool): ToolPlan {
+export function planTool(tool: RouterTool, maxChoiceOptions = 255): ToolPlan {
   const schema = tool.parameters;
   // Only function tools take JSON arguments, and without a recognizable object schema
   // there is nothing safe to infer about them.
@@ -60,7 +65,7 @@ export function planTool(tool: RouterTool): ToolPlan {
   const required = new Set(schema?.required ?? []);
   const closedParams: ClosedParam[] = [];
   for (const [name, property] of Object.entries(schema?.properties ?? {})) {
-    const param = closedParam(name, property, required.has(name));
+    const param = closedParam(name, property, required.has(name), maxChoiceOptions);
     if (!param) return { name: tool.name };
     closedParams.push(param);
   }
@@ -88,8 +93,11 @@ export const shardKey = (index: number) => `shard:${index}`;
  * First pass over a roster too big for one question: every shard is ranked in the same Jev call,
  * and the best few of each go on to the real decision — ranking wide, then judging a shortlist.
  */
-export function buildShortlistQuestions(tools: RouterTool[]): { questions: Questions; shards: RouterTool[][] } {
-  const shardCount = Math.ceil(tools.length / MAX_TOOLS);
+export function buildShortlistQuestions(
+  tools: RouterTool[],
+  maxTools = MAX_TOOLS,
+): { questions: Questions; shards: RouterTool[][] } {
+  const shardCount = Math.ceil(tools.length / maxTools);
   const size = Math.ceil(tools.length / shardCount);
   const shards = Array.from({ length: shardCount }, (_, index) => tools.slice(index * size, (index + 1) * size));
   const questions: Questions = {};
@@ -112,9 +120,9 @@ export function buildShortlistQuestions(tools: RouterTool[]): { questions: Quest
  */
 export function buildQuestions(
   tools: RouterTool[],
-  options: { allowNone: boolean; withArgs: boolean },
+  options: { allowNone: boolean; withArgs: boolean; maxChoiceOptions?: number },
 ): { questions: Questions; plans: ToolPlan[] } {
-  const plans = tools.map(planTool);
+  const plans = tools.map((tool) => planTool(tool, options.maxChoiceOptions));
   const criteria = toolCriteria(tools);
   if (options.allowNone) {
     criteria[NO_TOOL] =

@@ -32,6 +32,40 @@ function setup(canned: Parameters<typeof fakeJev>[0], config = testConfig()) {
 }
 
 describe("router module", () => {
+  it("keeps Laya tool questions within its 100-option limit", async () => {
+    const largeTools = Array.from({ length: 205 }, (_, index) => ({
+      type: "function",
+      function: {
+        name: `tool_${index}`,
+        description: "A tool",
+        parameters: { type: "object", properties: { input: { type: "string" } } },
+      },
+    }));
+    const { post, jev, upstream } = setup(
+      {
+        "shard:0": { choice: "tool_0" },
+        "shard:1": { choice: "none_of_these" },
+        "shard:2": { choice: "none_of_these" },
+        tool: { choice: "tool_0" },
+        needs_tool: { noul: 0.97 },
+      },
+      testConfig({ jevProvider: "laya" }),
+    );
+
+    const response = await post({ ...chat("Use the matching tool"), tools: largeTools });
+    await settled();
+
+    expect(jev.requests).toHaveLength(2);
+    expect(
+      jev.requests
+        .flatMap(({ questions }) => Object.values(questions))
+        .filter((question) => question.type === "choice")
+        .every((question) => Object.keys(question.criteria).length <= 100),
+    ).toBe(true);
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("forced");
+    expect(upstream.calls[0]!.body.tool_choice.function.name).toBe("tool_0");
+  });
+
   it("decides before forwarding when its route is mounted directly", async () => {
     const order: string[] = [];
     const upstream = fakeUpstream();

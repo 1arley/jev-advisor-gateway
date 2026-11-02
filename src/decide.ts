@@ -154,20 +154,25 @@ async function shortlist(
   state: SystemOneRequest<Questions>["state"],
   config: Config,
   askJev: AskJev,
+  maxTools: number,
 ): Promise<{ tools: RouterTool[]; inputTokens: number } | undefined> {
-  const { questions, shards } = buildShortlistQuestions(tools);
+  const { questions, shards } = buildShortlistQuestions(tools, maxTools);
   const result = await askJev({ state, questions, model: config.jevModel });
   if (!validResult(result, questions)) return undefined;
-  const kept = shards.flatMap((shard, index) => {
+  const ranked = shards.flatMap((shard, index) => {
     const answer = result.answers[shardKey(index)];
     if (answer?.type !== "choice") return [];
-    const ranked = Object.entries(answer.probabilities)
+    return Object.entries(answer.probabilities)
       .filter(([name]) => name !== NONE_OF_THESE)
       .sort(([, a], [, b]) => b - a)
       .slice(0, SHORTLIST_PER_SHARD)
-      .map(([name]) => name);
-    return shard.filter((tool) => ranked.includes(tool.name));
+      .map(([name, confidence]) => ({ name, confidence }));
   });
+  const selected = new Set(ranked
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, maxTools)
+    .map(({ name }) => name));
+  const kept = tools.filter((tool) => selected.has(tool.name));
   return { tools: kept, inputTokens: result.usage.input_tokens };
 }
 
@@ -177,13 +182,15 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
 
   const startedAt = performance.now();
   const state = buildState(input, config);
+  // Laya rejects any single choice question with more than 100 options, including the optional no-tool label.
+  const maxTools = config.jevProvider === "laya" ? 99 : MAX_TOOLS;
   let tools = input.tools;
   let shortlistTokens = 0;
   let result: SystemOneResult<Questions>;
   let plans: ToolPlan[];
   try {
-    if (tools.length > MAX_TOOLS) {
-      const shortlisted = await shortlist(tools, state, config, askJev);
+    if (tools.length > maxTools) {
+      const shortlisted = await shortlist(tools, state, config, askJev, maxTools);
       if (!shortlisted) return { mode: "passthrough", reason: "jev_unexpected_answer" };
       ({ tools, inputTokens: shortlistTokens } = shortlisted);
       if (tools.length === 0) return { mode: "passthrough", reason: "jev_unexpected_answer" };
@@ -191,6 +198,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     const built = buildQuestions(tools, {
       allowNone: input.toolChoice !== "required",
       withArgs: config.directCalls,
+      maxChoiceOptions: config.jevProvider === "laya" ? 100 : undefined,
     });
     plans = built.plans;
     result = await askJev({ state, questions: built.questions, model: config.jevModel });
