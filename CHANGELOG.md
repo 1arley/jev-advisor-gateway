@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.13.0...v0.14.0) (2026-11-04)
+
+
+### Added
+
+* **opencode:** Add OpenCode launcher configuration management ([f3c012a](https://github.com/1arley/jev-advisor-gateway/commit/f3c012ad7a99aa0d0fac41f09944d66e31202e5a))
+
+
+### Fixed
+
+* **laya:** send max_len and size Laya's state limits to its window ([91ef0d6](https://github.com/1arley/jev-advisor-gateway/commit/91ef0d63ea5ae035d4080103b228a058fea9aa25))
+
 ## [0.13.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.12.1...v0.13.0) (2026-11-02)
 
 
