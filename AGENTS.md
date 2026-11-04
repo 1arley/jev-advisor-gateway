@@ -30,8 +30,10 @@ reviewing code, tests, configuration, workflows, or project documentation.
 - Treat client credentials and conversation text as private. Do not add them to logs, dashboard
   events, metrics, or persistent files. Dashboard fields are explicitly allowlisted in
   `src/events.ts`.
-- Keep the gateway bound to loopback by default. Never edit the user's Codex, Claude, OpenCode, or
-  other client configuration; launchers pass per-process settings instead.
+- Keep the gateway bound to loopback by default. Never edit client configuration except the
+  explicitly approved OpenCode launcher flow: it may back up and temporarily repoint only
+  providers whose `baseURL` matches `JEV_OPENCODE_UPSTREAM_BASE_URL`, then conditionally restore
+  those values when its gateway stops. Do not edit Codex, Claude, or other client configuration.
 - Keep Responses history and cached prefixes stable. `previous_response_id` belongs to the
   provider's history; do not rewrite prior inputs or unrelated request fields.
 - Keep external services injectable (`fetch`, `askJev`). Tests must use synthetic data, fake

@@ -18,9 +18,7 @@ export function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return JSON.stringify(content);
   return content
-    .map((part: { type?: string; text?: unknown }) =>
-      typeof part?.text === "string" ? part.text : `[${part?.type ?? "attachment"}]`,
-    )
+    .map((part: { type?: string; text?: unknown }) => (typeof part?.text === "string" ? part.text : `[${part?.type ?? "attachment"}]`))
     .join("\n");
 }
 
@@ -30,7 +28,8 @@ export function textOf(content: unknown): string {
  */
 export function buildState(input: Pick<RouterInput, "system" | "turns">, limits: Limits): { [key: string]: Json } {
   const systemText = truncate(input.system, limits.maxMessageChars);
-  let budget = limits.maxStateChars - systemText.length;
+  const base = JSON.stringify({ conversation: [] }).length;
+  let budget = limits.maxStateChars - systemText.length - base;
   const conversation: Turn[] = [];
   for (let i = input.turns.length - 1; i >= 0; i--) {
     const turn = input.turns[i]!;
@@ -38,9 +37,16 @@ export function buildState(input: Pick<RouterInput, "system" | "turns">, limits:
     if (budget < 0 && conversation.length > 0) break;
     conversation.unshift(turn);
   }
+  while (
+    conversation.length > 1 &&
+    JSON.stringify({ ...(systemText ? { assistant_instructions: systemText } : {}), conversation }).length > limits.maxStateChars
+  )
+    conversation.shift();
+  const envelope = JSON.stringify({ ...(systemText ? { assistant_instructions: "" } : {}), conversation }).length;
+  const keptSystem = truncate(systemText, Math.max(0, limits.maxStateChars - envelope));
   const omitted = input.turns.length - conversation.length;
   return {
-    ...(systemText ? { assistant_instructions: systemText } : {}),
+    ...(keptSystem ? { assistant_instructions: keptSystem } : {}),
     ...(omitted ? { earlier_turns_omitted: omitted } : {}),
     conversation,
   };

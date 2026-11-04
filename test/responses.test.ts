@@ -86,12 +86,22 @@ const codexLiteRequest = (extra: Record<string, unknown> = {}) => ({
     { type: "message", id: "msg_3", role: "assistant", content: [{ type: "output_text", text: "I’ll wait first." }], phase: "commentary" },
     { type: "function_call", id: "fc_1", name: "sleep", namespace: "clock", arguments: '{"duration_ms":10}', call_id: "call_1" },
     { type: "function_call_output", id: "fco_1", call_id: "call_1", output: "slept" },
-    { type: "custom_tool_call", id: "ctc_1", status: "completed", call_id: "call_2", name: "exec", input: 'text((await tools.exec_command({cmd:"echo hi"})).output);' },
+    {
+      type: "custom_tool_call",
+      id: "ctc_1",
+      status: "completed",
+      call_id: "call_2",
+      name: "exec",
+      input: 'text((await tools.exec_command({cmd:"echo hi"})).output);',
+    },
     {
       type: "custom_tool_call_output",
       id: "ctco_1",
       call_id: "call_2",
-      output: [{ type: "input_text", text: "Script completed\nOutput:\n" }, { type: "input_text", text: "hi\n" }],
+      output: [
+        { type: "input_text", text: "Script completed\nOutput:\n" },
+        { type: "input_text", text: "hi\n" },
+      ],
     },
   ],
   tool_choice: "auto",
@@ -109,7 +119,12 @@ function setup(canned: Parameters<typeof fakeJev>[0], reply?: (body: any) => Res
     return reply?.(upstream.calls.at(-1)!.body) ?? response;
   }) as typeof fetch;
   const logged: Record<string, unknown>[] = [];
-  const app = createApp({ config: testConfig(), askJev: jev.askJev, fetch: fetchImpl, log: (entry) => logged.push(entry) });
+  const app = createApp({
+    config: testConfig({ client: "codex" }),
+    askJev: jev.askJev,
+    fetch: fetchImpl,
+    log: (entry) => logged.push(entry),
+  });
   const post = (body: BodyInit, headers: Record<string, string> = {}) =>
     app.request("/v1/responses", { method: "POST", headers: { "content-type": "application/json", ...headers }, body });
   return { post, jev, upstream, logged };
@@ -149,7 +164,8 @@ describe("POST /v1/responses", () => {
     const res = await app.request("/v1/responses", {
       method: "POST",
       headers: {
-        "content-type": "application/json", authorization: "Bearer synthetic-client",
+        "content-type": "application/json",
+        authorization: "Bearer synthetic-client",
         ...(compressed ? { "content-encoding": "zstd" } : {}),
       },
       body,
@@ -167,10 +183,14 @@ describe("POST /v1/responses", () => {
     expect(res.headers.get("content-type")).toBe(contentType);
     expect(await res.text()).toBe(reply);
     await settled();
-    const feed = await (await app.request("/dashboard/events")).json() as { events: Record<string, unknown>[] };
+    const feed = (await (await app.request("/dashboard/events")).json()) as { events: Record<string, unknown>[] };
     expect(feed.events).toHaveLength(1);
     expect(feed.events[0]).toMatchObject({
-      model: "codex-auto-review", tools: 4, mode: "passthrough", reason: "codex_auto_review", status: 200,
+      model: "codex-auto-review",
+      tools: 4,
+      mode: "passthrough",
+      reason: "codex_auto_review",
+      status: 200,
       usage: { input: 12, output: 3 },
     });
     expect(feed.events[0]!.jev).toBeUndefined();
@@ -189,18 +209,19 @@ describe("POST /v1/responses", () => {
     expect(logged[0]).toMatchObject({ tools: 3, mode: "passthrough", reason: "codex_auto_review" });
   });
 
-  it.each([
-    "codex-auto-review-preview", "prefix-codex-auto-review", "CODEX-AUTO-REVIEW", " codex-auto-review", "codex-auto-review ",
-  ])("still routes a similar model name through Jev: %j", async (model) => {
-    const { post, jev, upstream } = setup({ tool: { choice: "shell" }, needs_tool: { noul: 0.9 } });
-    const res = await post(JSON.stringify(codexRequest({ model })));
+  it.each(["codex-auto-review-preview", "prefix-codex-auto-review", "CODEX-AUTO-REVIEW", " codex-auto-review", "codex-auto-review "])(
+    "still routes a similar model name through Jev: %j",
+    async (model) => {
+      const { post, jev, upstream } = setup({ tool: { choice: "shell" }, needs_tool: { noul: 0.9 } });
+      const res = await post(JSON.stringify(codexRequest({ model })));
 
-    expect(jev.requests).toHaveLength(1);
-    expect(res.headers.get("x-jev-gateway-mode")).toBe("forced");
-    expect(upstream.calls).toHaveLength(1);
-    expect(upstream.calls[0]!.body.model).toBe(model);
-    expect(upstream.calls[0]!.body.tool_choice).toEqual({ type: "function", name: "shell" });
-  });
+      expect(jev.requests).toHaveLength(1);
+      expect(res.headers.get("x-jev-gateway-mode")).toBe("forced");
+      expect(upstream.calls).toHaveLength(1);
+      expect(upstream.calls[0]!.body.model).toBe(model);
+      expect(upstream.calls[0]!.body.tool_choice).toEqual({ type: "function", name: "shell" });
+    },
+  );
 
   it.each([
     { source: "config", reason: "routing_disabled" },
@@ -242,13 +263,7 @@ describe("POST /v1/responses", () => {
       ],
     });
     const tool = questions.tool!;
-    expect(tool.type === "choice" && Object.keys(tool.criteria)).toEqual([
-      "shell",
-      "apply_patch",
-      "list_plans",
-      "web_search",
-      NO_TOOL,
-    ]);
+    expect(tool.type === "choice" && Object.keys(tool.criteria)).toEqual(["shell", "apply_patch", "list_plans", "web_search", NO_TOOL]);
   });
 
   it("forces function and free-form tools with the matching tool_choice shape", async () => {
@@ -337,7 +352,6 @@ describe("POST /v1/responses", () => {
     const tool = questions.tool!;
     expect(tool.type === "choice" && tool.criteria).toMatchObject({
       exec: "Run JavaScript code to orchestrate/compose tool calls",
-      wait: "Waits on a yielded `exec` cell.",
       "clock.sleep": "[Tools for reading and waiting on time.] Pause execution for a specified duration.",
     });
     expect(state).toEqual({
@@ -367,6 +381,37 @@ describe("POST /v1/responses", () => {
     expect(upstream.calls[0]!.body.tool_choice).toBe("auto");
   });
 
+  it.each(["Script completed\nOutput:\nhi", "Script running with cell ID synthetic_cell"])(
+    "keeps wait out of Jev's choices when the last exec reports %j",
+    async (output) => {
+      const { post, upstream, logged, jev } = setup({ tool: { choice: "exec", confidence: 0.74 }, needs_tool: { noul: 0.9 } });
+      const request = codexLiteRequest();
+      const last = request.input.at(-1)!;
+      const body = { ...request, input: [...request.input.slice(0, -1), { ...last, output }] };
+      const res = await post(JSON.stringify(body));
+
+      expect(res.headers.get("x-jev-gateway-mode")).toBe("forced");
+      expect(jev.requests[0]!.questions.tool?.type === "choice" && jev.requests[0]!.questions.tool.criteria).not.toHaveProperty("wait");
+      expect(upstream.calls).toHaveLength(1);
+      expect(upstream.calls[0]!.body.tool_choice).toEqual({ type: "custom", name: "exec" });
+      await settled();
+      expect(logged[0]).toMatchObject({ mode: "forced", tool: "exec", jev: { choice: "exec", confidence: 0.74 } });
+    },
+  );
+
+  it("never synthesizes a wait call even when Jev can fill every argument", async () => {
+    const jev = fakeJev({ tool: { choice: "wait" }, needs_tool: { noul: 0.9 } });
+    const upstream = fakeUpstream();
+    const app = createApp({ config: testConfig({ client: "codex", directCalls: true }), askJev: jev.askJev, fetch: upstream.fetchImpl });
+    const request = codexRequest({
+      tools: [{ type: "function", name: "wait", parameters: { type: "object", properties: {} } }],
+    });
+    const res = await app.request("/v1/responses", { method: "POST", body: JSON.stringify(request) });
+
+    expect(upstream.calls).toHaveLength(1);
+    expect(upstream.calls[0]!.body).toEqual(request);
+  });
+
   it("routes continued Responses requests and preserves the Luna branch when Astra advises", async () => {
     const jev = fakeJev({
       session_action: { choice: "consult_advisor" },
@@ -380,9 +425,11 @@ describe("POST /v1/responses", () => {
       fetch: (async (_url: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
         calls.push({ body, headers: new Headers(init?.headers) });
-        return Response.json(body.model === "gpt-6-astra"
-          ? { id: "resp_astra", output: [{ content: [{ type: "output_text", text: "Check failure handling before proceeding." }] }] }
-          : { id: "resp_luna", output: [{ content: [{ type: "output_text", text: "I will inspect that path." }] }] });
+        return Response.json(
+          body.model === "gpt-6-astra"
+            ? { id: "resp_astra", output: [{ content: [{ type: "output_text", text: "Check failure handling before proceeding." }] }] }
+            : { id: "resp_luna", output: [{ content: [{ type: "output_text", text: "I will inspect that path." }] }] },
+        );
       }) as typeof fetch,
     });
     const request = codexRequest({
@@ -433,12 +480,15 @@ describe("POST /v1/responses", () => {
     const request = codexRequest({ model });
     const body = {
       ...request,
-      input: [...request.input, {
-        type: "agent_message",
-        author: "/root",
-        recipient: "/root/reviewer",
-        content: [{ type: "input_text", text: "Read main.py and report what it does." }],
-      }],
+      input: [
+        ...request.input,
+        {
+          type: "agent_message",
+          author: "/root",
+          recipient: "/root/reviewer",
+          content: [{ type: "input_text", text: "Read main.py and report what it does." }],
+        },
+      ],
     };
     const res = await post(JSON.stringify(body));
 
@@ -456,18 +506,27 @@ describe("POST /v1/responses", () => {
     { model: "codex-auto-review", compressed: true },
   ])("forwards encrypted agent messages untouched (model: $model, compressed: $compressed)", async ({ model, compressed }) => {
     const request = codexLiteRequest({ model });
-    const raw = Buffer.from(JSON.stringify({
-      ...request,
-      input: [...request.input, {
-        type: "agent_message",
-        author: "/root",
-        recipient: "/root/reviewer",
-        content: [
-          { type: "input_text", text: "Message Type: NEW_TASK\nPayload:\n" },
-          { type: "encrypted_content", encrypted_content: "opaque-delegated-task" },
-        ],
-      }],
-    }, null, 2));
+    const raw = Buffer.from(
+      JSON.stringify(
+        {
+          ...request,
+          input: [
+            ...request.input,
+            {
+              type: "agent_message",
+              author: "/root",
+              recipient: "/root/reviewer",
+              content: [
+                { type: "input_text", text: "Message Type: NEW_TASK\nPayload:\n" },
+                { type: "encrypted_content", encrypted_content: "opaque-delegated-task" },
+              ],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
     const body = compressed ? zstdCompressSync(raw) : raw;
     const reply = 'data: {"type":"response.completed"}\n\ndata: [DONE]\n\n';
     const jev = fakeJev({ tool: { choice: NO_TOOL, confidence: 0.98 }, needs_tool: { noul: 0.16 } });

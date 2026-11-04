@@ -208,15 +208,15 @@ Status: implementado; validação sintética concluída em 2026-10-30
 
 ### Decisões
 
-| Tema | Decisão |
-|---|---|
-| Launchers | Adicionar `jev-agy` e `jev-agy-advisor`, usando o `agy` instalado e preservando seu modelo padrão. |
-| Transporte | Usar a API Gemini compatível do gateway via `GOOGLE_GEMINI_BASE_URL` no processo lançado e `agy --settings '{"modelProvider":"gemini"}'`; não editar configurações persistentes do usuário. |
-| Argumentos do CLI | Sem `--settings`, injetar apenas `modelProvider: "gemini"`. Com JSON inline, mesclar essa chave e preservar as demais opções. Com caminho de arquivo, aceitar somente se ele já definir `modelProvider: "gemini"`; não editar, copiar nem exibir o arquivo. Rejeitar opções duplicadas ou arquivos incompatíveis com instrução clara. |
-| Credencial | Usar `GEMINI_API_KEY` somente no ambiente do processo. Não gravar nem encaminhar a chave do cliente para o serviço Jev. |
-| Advisor | No upstream Gemini, trocar o modelo na URL e preservar operação, streaming, query e autenticação. Em provider externo opt-in, enviar apenas texto recente de user/model, sem instruções de sistema nem chamadas ou resultados de ferramentas. Manter a nota delimitada como entrada não confiável e seguir fail-open. |
-| Perfil dos comandos | `jev-agy` inicia com advisor desligado; `jev-agy-advisor` liga o advisor e seleciona `gemini-3.1-pro-preview` por padrão, com override por `JEV_ADVISOR_MODEL`. |
-| Testes e docs | Cobrir construção/extração/apêndice da chamada Gemini, extração textual para providers externos, ordem e fail-open no router, launchers e comandos de status. Atualizar README e `docs/client-compatibility.md` juntos. |
+| Tema                | Decisão                                                                                                                                                                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Launchers           | Adicionar `jev-agy` e `jev-agy-advisor`, usando o `agy` instalado e preservando seu modelo padrão.                                                                                                                                                                                                                                    |
+| Transporte          | Usar a API Gemini compatível do gateway via `GOOGLE_GEMINI_BASE_URL` no processo lançado e `agy --settings '{"modelProvider":"gemini"}'`; não editar configurações persistentes do usuário.                                                                                                                                           |
+| Argumentos do CLI   | Sem `--settings`, injetar apenas `modelProvider: "gemini"`. Com JSON inline, mesclar essa chave e preservar as demais opções. Com caminho de arquivo, aceitar somente se ele já definir `modelProvider: "gemini"`; não editar, copiar nem exibir o arquivo. Rejeitar opções duplicadas ou arquivos incompatíveis com instrução clara. |
+| Credencial          | Usar `GEMINI_API_KEY` somente no ambiente do processo. Não gravar nem encaminhar a chave do cliente para o serviço Jev.                                                                                                                                                                                                               |
+| Advisor             | No upstream Gemini, trocar o modelo na URL e preservar operação, streaming, query e autenticação. Em provider externo opt-in, enviar apenas texto recente de user/model, sem instruções de sistema nem chamadas ou resultados de ferramentas. Manter a nota delimitada como entrada não confiável e seguir fail-open.                 |
+| Perfil dos comandos | `jev-agy` inicia com advisor desligado; `jev-agy-advisor` liga o advisor e seleciona `gemini-3.1-pro-preview` por padrão, com override por `JEV_ADVISOR_MODEL`.                                                                                                                                                                       |
+| Testes e docs       | Cobrir construção/extração/apêndice da chamada Gemini, extração textual para providers externos, ordem e fail-open no router, launchers e comandos de status. Atualizar README e `docs/client-compatibility.md` juntos.                                                                                                               |
 
 ### Proveniência e evidência
 
@@ -236,3 +236,58 @@ Status: implementado; validação sintética concluída em 2026-10-30
 
 - Registrados `jev-agy` e `jev-agy-advisor`, incluindo scripts npm e transformação segura de `--settings` por processo.
 - `pnpm typecheck`, `pnpm test` (312/312), `pnpm build` e `npm pack --dry-run` passaram em 2026-10-30. A integração real com Gemini permanece não verificada.
+
+## OpenCode com upstream transparente
+
+Data: 2026-11-03
+Status: implementação local concluída; validação sintética pendente; integração com OpenCode instalado não verificada
+
+### Decisões
+
+| Tema                     | Decisão                                                                                                                                                                                                                                  | Proveniência                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Configuração por cliente | Carregar `~/.jev-gateway/.env.<cliente>` por cima de `~/.jev-gateway/.env` ao iniciar o launcher daquele cliente.                                                                                                                        | Usuário, Rodada 1                                            |
+| Configuração OpenCode    | O launcher atualiza `~/.config/opencode/opencode.json`, com backup reversível, preservando os demais campos e providers.                                                                                                                 | Usuário, Rodada 1                                            |
+| Modelo                   | Não fixar nem reescrever o ID do modelo. O usuário escolhe livremente entre os modelos oferecidos pelo upstream configurado no provider OpenCode roteado ao gateway; o body e o campo `model` seguem intactos.                           | Usuário, Rodadas 1 e 2                                       |
+| Integração               | Permanecer agnóstico de 9router. O gateway encaminha ao `JEV_OPENCODE_UPSTREAM_BASE_URL` configurado para o launcher; não terá lógica específica de marca ou modelo 9router.                                                             | Usuário, Rodada 1                                            |
+| Probe                    | Probe opcional no boot pode validar a conectividade e o modelo selecionado, sem impor um modelo fixo.                                                                                                                                    | Usuário, Rodada 1                                            |
+| Repoint                  | Redirecionar o `baseURL` do provider OpenCode configurado para o upstream escolhido para a URL local do gateway. A seleção de qualquer modelo servida por esse upstream continua livre e passa pelo gateway enquanto este estiver ativo. | Usuário, Rodada 2                                            |
+| Fail-safe                | Se o gateway não estiver disponível no boot ou em `--status`, restaurar a URL direta. No erro de spawn, restaurar também. Restauração durante sessão não é prometida sem validar o reload do cliente.                                    | Usuário, Rodada 2; limite técnico mantido até validação live |
+
+### Compatibilidade observada
+
+- OpenCode v1 lê configuração `provider`/`options`; o launcher atual injeta `OPENCODE_CONFIG_CONTENT` para esse fluxo.
+- OpenCode v2 lê arquivos de configuração e oferece formas distintas (`providers`/`settings`); o launcher atual detecta a versão via `opencode debug config` e hoje apenas pede edição manual.
+- OpenCode permite modelo padrão, modelo por agente e override por `--model`. O fluxo transparente precisa preservar os IDs e alcançar esses três caminhos sem forçar um provider `jev-gateway`.
+- O gateway encaminha `/v1/*` que não interpreta de forma opaca e mantém um único upstream por processo. Seus adapters conhecidos podem inspecionar/regravar formatos suportados; demais rotas `/v1/*` passam sem alteração.
+- O OpenCode não transmite a URL original do provider em cada requisição. Para isso, o launcher precisa reconfigurar o provider; uma única instância do gateway não consegue inferir vários upstreams distintos a partir do modelo sozinho.
+- Portanto, “qualquer modelo” significa qualquer modelo selecionável que o upstream configurado ofereça e que fale uma rota compatível com o gateway. Providers configurados para destinos distintos não entram automaticamente neste escopo.
+- O 9router é software aberto e expõe uma camada de proxy/compatibilidade com modelos e protocolos; a pesquisa do código confirma tradutores OpenAI↔Claude e OpenAI Responses. Isso não substitui testes de compatibilidade de cada endpoint/stream usado pelo OpenCode.
+
+### Escopo e validação da implementação
+
+1. Fazer merge de `.env` base com `.env.opencode` sem imprimir valores secretos, preservando a precedência do ambiente do processo.
+2. Com backup prévio, atualizar apenas o `baseURL` do provider que corresponde ao upstream configurado; preservar modelo, credenciais por referência de ambiente, agentes, MCP, permissões e providers não relacionados. A edição precisa ser idempotente e preservar JSONC válido.
+3. Detectar gateway saudável antes de repoint; se indisponível, restaurar o valor original do backup sem iniciar OpenCode apontando para loopback morto.
+4. Ao parar o gateway pelo launcher, restaurar a URL original somente se o campo ainda tiver o valor gerenciado pelo launcher, para não apagar edição posterior do usuário.
+5. A restauração durante uma sessão continua pendente: verificar experimentalmente se OpenCode recarrega `opencode.json` antes de adicionar supervisão ou prometer failover imediato.
+6. Validar modelos por `--model`, default e agente, incluindo `/v1/chat/completions`, streaming e passthrough opaco, com upstream sintético. Não usar credenciais nem conteúdo de conversas reais.
+7. Atualizar a regra de projeto que atualmente proíbe modificar configuração OpenCode para declarar esta exceção estreita, e atualizar README e `docs/client-compatibility.md` juntos.
+
+### Pesquisa de código aberto
+
+- OpenCode `anomalyco/opencode`, `packages/cli/src/config/config.ts`: configurações são mescladas em camadas; conteúdo de ambiente de CLI fica disponível somente para a configuração da CLI, não injeta provider/model da aplicação. O launcher atual já observou v2 ignorando `OPENCODE_CONFIG_CONTENT` no fluxo de provider.
+- 9router `decolua/9router`, `open-sse/translator/request/openai-to-claude.js` e catálogo de tradutores: implementa tradução entre formatos além do proxy OpenAI compatível. A existência de tradutores não garante que todo modelo/protocolo de toda configuração OpenCode funcione pelo endpoint configurado.
+- Pesquisa feita em 2026-11-03 contra os repositórios públicos; não foi executada integração live nem foi consultado um serviço local.
+
+### Riscos e limites
+
+- Um arquivo global atualizado afeta também invocações normais do OpenCode. A restauração precisa ser condicional e sobreviver a encerramento/crash do launcher; backup não pode ser sobrescrito em cada boot quando o valor já aponta para o gateway.
+- Gateway fora do ar após o OpenCode carregar a configuração pode interromper a requisição atual. Fallback instantâneo sem cooperação do cliente não é garantido pelo simples restore em disco.
+- Um probe de modelo pode consumir uma chamada/custo e depende do endpoint; deve ser explicitamente opcional e não enviar contexto de conversa.
+- O repoint para um upstream único não deve alterar providers independentes com destinos diferentes nem transformar a promessa em “todos os providers do OpenCode”. Um provider `jev-gateway` já apontado à porta local é preservado e não entra no backup; selecione o provider que corresponde ao upstream (por exemplo, `9router/main`) para usar o caminho transparente. O launcher não migra um provider preexistente automaticamente.
+
+### Evidência local
+
+- Os testes sintéticos cobrem JSONC, preservação do modelo e dos demais blocos, repoint/restauração condicional, porta pertencente a outro gateway, probe sem contexto real e precedência dos overlays de ambiente.
+- Não houve probe real, chamada ao 9router nem experimento de reload no OpenCode instalado. A queda do gateway durante uma sessão pode interromper a requisição atual.

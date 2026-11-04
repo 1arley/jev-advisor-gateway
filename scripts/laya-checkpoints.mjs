@@ -5,11 +5,12 @@
 //
 //   pip install "laya[serve]"; LAYA_HOST=127.0.0.1 laya-serve &
 //   node scripts/laya-checkpoints.mjs [--url http://127.0.0.1:8000/v1/systemone] [--models multilingual,typed-decisions]
+//   node scripts/laya-checkpoints.mjs --codex-roster [--max-len 2048]
 //
 // Prints per-checkpoint accuracy (choice matches the fixture's label) and latency. Fixtures
 // are deliberately unambiguous: they probe whether a checkpoint follows the roster at all,
 // not how it ties to real sessions — real-session measurement stays the dashboard's work.
-import { readFile } from "node:fs/promises";
+import { confidenceOf, FIXTURES as CODEX_FIXTURES, MAX_LEN, TOOLS as CODEX_TOOLS, buildPayload } from "./laya-codex-fixtures.mjs";
 
 const OPTIONS = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -17,7 +18,11 @@ const flag = (name, fallback) => {
   return at !== -1 && OPTIONS[at + 1] ? OPTIONS[at + 1] : fallback;
 };
 const URL_ = flag("--url", process.env.LAYA_URL ?? "http://127.0.0.1:8000/v1/systemone");
-const MODELS = flag("--models", "multilingual,typed-decisions").split(",").map((model) => model.trim());
+const MODELS = flag("--models", "multilingual,typed-decisions")
+  .split(",")
+  .map((model) => model.trim());
+const CODEX_ROSTER = OPTIONS.includes("--codex-roster");
+const CODEX_MAX_LEN = Number(flag("--max-len", String(MAX_LEN)));
 
 const NO_TOOL = "no_tool_needed";
 const NO_TOOL_CRITERION =
@@ -26,8 +31,7 @@ const NO_TOOL_CRITERION =
 const TOOL_INSTRUCTIONS =
   "Given the conversation, what should the assistant do next? Pick the single tool whose call " +
   "best advances the user's latest request.";
-const NEEDS_TOOL_INSTRUCTIONS =
-  "Does the assistant need to call one of its tools now, rather than reply to the user in plain text?";
+const NEEDS_TOOL_INSTRUCTIONS = "Does the assistant need to call one of its tools now, rather than reply to the user in plain text?";
 
 /** One routing scenario: why it is labeled, the tools on offer, and the conversation. */
 const FIXTURES = [
@@ -43,7 +47,11 @@ const FIXTURES = [
     turns: [
       { role: "user", text: "the CI on my branch is red, can you check?" },
       { role: "assistant", tool_calls: [{ tool: "run_command", arguments: '"git status"' }] },
-      { role: "tool_result", tool: "run_command", content: "On branch fix/signup-validation\nYour branch is ahead of 'origin/main' by 2 commits." },
+      {
+        role: "tool_result",
+        tool: "run_command",
+        content: "On branch fix/signup-validation\nYour branch is ahead of 'origin/main' by 2 commits.",
+      },
       { role: "user", text: "Run the signup test suite now so we see what fails." },
     ],
   },
@@ -60,7 +68,11 @@ const FIXTURES = [
     turns: [
       { role: "user", text: "types/config.ts exports a typo'd constant API_BASEURL, please rename it to API_BASE_URL" },
       { role: "assistant", tool_calls: [{ tool: "read_file", arguments: '"types/config.ts"' }] },
-      { role: "tool_result", tool: "read_file", content: "export const API_BASEURL = \"https://api.example.com\";\nexport const API_TIMEOUT_MS = 4000;" },
+      {
+        role: "tool_result",
+        tool: "read_file",
+        content: 'export const API_BASEURL = "https://api.example.com";\nexport const API_TIMEOUT_MS = 4000;',
+      },
     ],
   },
   {
@@ -84,7 +96,10 @@ const FIXTURES = [
     ),
     turns: [
       { role: "user", text: "why does the gateway fail open when Jev is down?" },
-      { role: "assistant", text: "Because the gateway must never be the reason a request fails: a Jev outage routes the request untouched and the LLM decides." },
+      {
+        role: "assistant",
+        text: "Because the gateway must never be the reason a request fails: a Jev outage routes the request untouched and the LLM decides.",
+      },
       { role: "user", text: "Got it, thanks. That answers my question." },
     ],
   },
@@ -138,10 +153,13 @@ function buildQuestions(fixture) {
 }
 
 async function ask(url, model, fixture) {
+  const requestBody = CODEX_ROSTER
+    ? buildPayload(fixture, fixture.tools, model, CODEX_MAX_LEN)
+    : { state: buildState(fixture), questions: buildQuestions(fixture), model };
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ state: buildState(fixture), questions: buildQuestions(fixture), model }),
+    body: JSON.stringify(requestBody),
     signal: AbortSignal.timeout(120_000),
   });
   if (!response.ok) throw Object.assign(new Error(`${response.status} for ${fixture.name}`), { status: response.status });
@@ -152,34 +170,61 @@ async function ask(url, model, fixture) {
   }
   // Confidence and the needs-tool cross-check are what the gateway acts on (JEV_MIN_CONFIDENCE
   // and the 0.3/0.7 disagreement gate), so the report carries them with the pick.
-  const confidence = typeof answer.confidence === "number" ? answer.confidence.toFixed(2) : "none";
+  const confidence = confidenceOf(answer);
   const needs = result?.answers?.needs_tool?.noul;
   const saidNeedsTool = typeof needs === "number" ? `needs ${needs.toFixed(2)}` : "no needs_tool";
-  return { choice: answer.choice, confidence, saidNeedsTool };
+  const probabilities =
+    answer.probabilities && typeof answer.probabilities === "object"
+      ? Object.entries(answer.probabilities)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([key, value]) => `${key}:${Number(value).toFixed(2)}`)
+          .join(",")
+      : "none";
+  return {
+    choice: answer.choice,
+    confidence: typeof confidence === "number" ? confidence.toFixed(2) : "none",
+    saidNeedsTool,
+    probabilities,
+  };
 }
 
 async function main() {
-  const stats = new Map(MODELS.map((model) => [model, { correct: 0, ms: 0 }]));
-  for (const fixture of FIXTURES) {
-    const row = FIXTURES.indexOf(fixture) + 1;
+  const fixtures = CODEX_ROSTER
+    ? CODEX_FIXTURES.flatMap((fixture) => {
+        const offered = CODEX_TOOLS.filter((entry) => fixture.wait !== false || entry.name !== "wait");
+        return Array.from({ length: offered.length }, (_, offset) => ({
+          ...fixture,
+          name: `${fixture.name}-rotation-${offset + 1}`,
+          tools: offered.slice(offset).concat(offered.slice(0, offset)),
+        }));
+      })
+    : FIXTURES;
+  const stats = CODEX_ROSTER ? undefined : new Map(MODELS.map((model) => [model, { correct: 0, ms: 0 }]));
+  if (CODEX_ROSTER) console.log(`Synthetic Codex roster diagnostic; max_len=${CODEX_MAX_LEN}; ${fixtures.length} paired order rotations.`);
+  for (const [row, fixture] of fixtures.entries()) {
     const outcomes = [];
     for (const model of MODELS) {
       const started = performance.now();
-      const { choice, confidence, saidNeedsTool } = await ask(URL_, model, fixture);
+      const { choice, confidence, saidNeedsTool, probabilities } = await ask(URL_, model, fixture);
       const ms = Math.round(performance.now() - started);
-      const stat = stats.get(model);
-      stat.correct += Number(choice === fixture.label);
-      stat.ms += ms;
-      const verdict = choice === fixture.label ? "hit" : "MISS";
-      outcomes.push(`${model}: ${verdict} ${ms} ms (${choice}, conf ${confidence}, ${saidNeedsTool})`);
+      const stat = stats?.get(model);
+      if (stat) {
+        stat.correct += Number(choice === fixture.label);
+        stat.ms += ms;
+      }
+      const verdict = CODEX_ROSTER ? "paired" : choice === fixture.label ? "hit" : "MISS";
+      outcomes.push(`${model}: ${verdict} ${ms} ms (${choice}, conf ${confidence}, ${saidNeedsTool}, top ${probabilities})`);
     }
-    console.log(`[${row}/${FIXTURES.length}] ${fixture.name} → ${fixture.label} | ${outcomes.join(" | ")}`);
+    console.log(`[${row + 1}/${fixtures.length}] ${fixture.name} → ${fixture.label} | ${outcomes.join(" | ")}`);
   }
-  console.log("");
-  for (const [model, stat] of stats) {
-    const accuracy = stat.correct / FIXTURES.length;
-    const meanMs = Math.round(stat.ms / FIXTURES.length);
-    console.log(`${model}: ${stat.correct}/${FIXTURES.length} (${(accuracy * 100).toFixed(0)}%), mean ${meanMs} ms`);
+  if (stats) {
+    console.log("");
+    for (const [model, stat] of stats) {
+      const accuracy = stat.correct / fixtures.length;
+      const meanMs = Math.round(stat.ms / fixtures.length);
+      console.log(`${model}: ${stat.correct}/${fixtures.length} (${(accuracy * 100).toFixed(0)}%), mean ${meanMs} ms`);
+    }
   }
 }
 

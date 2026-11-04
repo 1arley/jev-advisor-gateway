@@ -231,21 +231,24 @@ describe("router module", () => {
       config: testConfig({ client: "codex", advisorEnabled: true }),
       askJev: jev.askJev,
       fetch: (async () => Response.json({ id: "resp_first", output: [] })) as typeof fetch,
-      log: () => { throw new Error("synthetic logger failure"); },
+      log: () => {
+        throw new Error("synthetic logger failure");
+      },
       routing: { enabled: true },
       advisorEnabled: { enabled: true },
     });
     const app = new Hono();
     app.post("/responses", router.route(responsesAdapter));
-    const request = (text: string, previous_response_id?: string) => app.request("/responses", {
-      method: "POST",
-      body: JSON.stringify({
-        model: "gpt-synthetic",
-        ...(previous_response_id ? { previous_response_id } : {}),
-        input: [{ type: "message", role: "user", content: [{ type: "input_text", text }] }],
-        tools: [{ type: "function", name: "inspect", parameters: { type: "object", properties: {} } }],
-      }),
-    });
+    const request = (text: string, previous_response_id?: string) =>
+      app.request("/responses", {
+        method: "POST",
+        body: JSON.stringify({
+          model: "gpt-synthetic",
+          ...(previous_response_id ? { previous_response_id } : {}),
+          input: [{ type: "message", role: "user", content: [{ type: "input_text", text }] }],
+          tools: [{ type: "function", name: "inspect", parameters: { type: "object", properties: {} } }],
+        }),
+      });
 
     expect((await request("first synthetic turn")).status).toBe(200);
     await settled();
@@ -261,7 +264,9 @@ describe("router module", () => {
     const upstream = fakeUpstream();
     const router = createRouter({
       config: testConfig(),
-      askJev: async () => { throw new Error("synthetic Jev failure"); },
+      askJev: async () => {
+        throw new Error("synthetic Jev failure");
+      },
       fetch: upstream.fetchImpl,
       log: () => {},
       routing: { enabled: true },
@@ -288,7 +293,12 @@ describe("router module", () => {
       routing: { enabled: true },
       advisorEnabled: { enabled: false },
     });
-    const brokenAdapter = { ...chatAdapter, apply: () => { throw new Error("synthetic prepare failure"); } };
+    const brokenAdapter = {
+      ...chatAdapter,
+      apply: () => {
+        throw new Error("synthetic prepare failure");
+      },
+    };
     const app = new Hono();
     app.post("/chat", router.route(brokenAdapter));
     const body = chat("kitchen lights on");
@@ -334,6 +344,19 @@ describe("chatAdapter.toInput + buildState", () => {
       { role: "tool_result", tool: "get_weather", content: "sunny" },
     ]);
   });
+
+  it("keeps Laya state within its configured limit when system instructions are oversized", () => {
+    const state = buildState(
+      { system: "s".repeat(60_000), turns: [{ role: "user", text: "current request" }] },
+      {
+        maxStateChars: 50_000,
+        maxMessageChars: 60_000,
+      },
+    );
+
+    expect(JSON.stringify(state).length).toBeLessThanOrEqual(50_000);
+    expect(state.conversation).toEqual([{ role: "user", text: "current request" }]);
+  });
 });
 
 describe("POST /v1/chat/completions", () => {
@@ -341,12 +364,10 @@ describe("POST /v1/chat/completions", () => {
     ["no arguments", { type: "object", properties: {} }],
     ["only constant arguments", { type: "object", properties: { mode: { const: "brief" } }, required: ["mode"] }],
   ])("forces the tool instead of answering when direct calls are off and it takes %s", async (_name, parameters) => {
-    const { app, post, upstream } = setup(
-      { tool: { choice: "status" }, needs_tool: { noul: 0.99 } },
-      testConfig({ directCalls: false }),
-    );
+    const { app, post, upstream } = setup({ tool: { choice: "status" }, needs_tool: { noul: 0.99 } }, testConfig({ directCalls: false }));
     const body = {
-      model: "m", messages: [{ role: "user", content: "Show status" }],
+      model: "m",
+      messages: [{ role: "user", content: "Show status" }],
       tools: [{ type: "function", function: { name: "status", parameters } }],
     };
     const res = await post(body);
@@ -354,7 +375,9 @@ describe("POST /v1/chat/completions", () => {
     expect(upstream.calls).toHaveLength(1);
     expect(upstream.calls[0]!.body.tool_choice).toEqual({ type: "function", function: { name: "status" } });
     const decision = await app.request("/router/decide", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
     expect(await decision.json()).toMatchObject({ mode: "forced", tool: "status" });
     expect(upstream.calls).toHaveLength(1);
@@ -388,7 +411,10 @@ describe("POST /v1/chat/completions", () => {
     const { post } = setup(lightsAnswers);
     const res = await post(chat("kitchen lights on", { stream: true, stream_options: { include_usage: true } }));
     expect(res.headers.get("content-type")).toContain("text/event-stream");
-    const events = (await res.text()).trim().split("\n\n").map((line) => line.replace(/^data: /, ""));
+    const events = (await res.text())
+      .trim()
+      .split("\n\n")
+      .map((line) => line.replace(/^data: /, ""));
     expect(events.at(-1)).toBe("[DONE]");
     const chunks = events.slice(0, -1).map((event) => JSON.parse(event));
     const args = chunks.map((chunk) => chunk.choices[0]?.delta.tool_calls?.[0]?.function?.arguments ?? "").join("");
@@ -398,10 +424,7 @@ describe("POST /v1/chat/completions", () => {
   });
 
   it("forces the tool Jev picked and lets the LLM fill open-ended arguments", async () => {
-    const { post, upstream } = setup(
-      { ...lightsAnswers, tool: { choice: "get_weather" } },
-      testConfig({ argsModel: "cheap-model" }),
-    );
+    const { post, upstream } = setup({ ...lightsAnswers, tool: { choice: "get_weather" } }, testConfig({ argsModel: "cheap-model" }));
     const res = await post(chat("weather in Lisbon?"));
 
     expect(res.headers.get("x-jev-gateway-mode")).toBe("forced");

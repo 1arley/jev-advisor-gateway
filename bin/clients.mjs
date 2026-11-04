@@ -4,6 +4,9 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseJsonc, repointOpenCodeConfig, repointOpenCodeOverlay, restoreOpenCodeConfig } from "./opencode-config.mjs";
+
+export { parseJsonc } from "./opencode-config.mjs";
 
 /** Codex talks to a different backend depending on how the user logged in. */
 function codexUpstream() {
@@ -54,11 +57,21 @@ const codexSpec = ({ name, provider, portEnv, defaultPort, advisor, pinLuna }) =
 });
 
 export const codexAdvisor = codexSpec({
-  name: "jev-codex-advisor", provider: "jev-advisor-gateway", portEnv: "JEV_CODEX_PORT", defaultPort: 8790, advisor: true, pinLuna: true,
+  name: "jev-codex-advisor",
+  provider: "jev-advisor-gateway",
+  portEnv: "JEV_CODEX_PORT",
+  defaultPort: 8790,
+  advisor: true,
+  pinLuna: true,
 });
 
 export const codex = codexSpec({
-  name: "jev-codex", provider: "jev-codex", portEnv: "JEV_CODEX_BASIC_PORT", defaultPort: 8794, advisor: false, pinLuna: false,
+  name: "jev-codex",
+  provider: "jev-codex",
+  portEnv: "JEV_CODEX_BASIC_PORT",
+  defaultPort: 8794,
+  advisor: false,
+  pinLuna: false,
 });
 
 const claudeConfigHelp = (launcher, origin) =>
@@ -95,101 +108,12 @@ export const claudeAdvisor = {
 };
 
 /** Where OpenCode traffic goes by default; override with JEV_OPENCODE_UPSTREAM_BASE_URL. */
-function opencodeUpstream() {
-  return process.env.JEV_OPENCODE_UPSTREAM_BASE_URL ?? "https://api.openai.com/v1";
-}
-
-/** Model id selected as `jev-gateway/<model>`; override with JEV_OPENCODE_MODEL. */
-function opencodeModel() {
-  return process.env.JEV_OPENCODE_MODEL ?? "gpt-5";
-}
-
-const OPENCODE_PROVIDER = "jev-gateway";
-
-/**
- * Stable custom-provider config for the launched OpenCode process. Injected through
- * OPENCODE_CONFIG_CONTENT — inline config merges over the user's global/project files, which
- * are never written. OpenCode v2 ignores that variable and every other config one, so its
- * provider comes from opencodeV2Config through opencode.json instead. `@ai-sdk/openai-compatible`
- * speaks `/v1/chat/completions` off `${origin}/v1`, an endpoint the gateway already routes. `{env:OPENAI_API_KEY}` reuses the
- * user's own OpenAI credential untouched (resolving to empty when unset, like OpenCode's own
- * local-provider examples). The launcher-spawned gateway forwards that client credential
- * untouched: launcher.mjs strips UPSTREAM_API_KEY/ROUTER_API_KEY by design, so no gateway
- * key swap applies here. TYPESAFE_API_KEY is separate — it only authorizes the Jev
- * tool-selection call and is never sent as the LLM upstream credential.
- */
-function opencodeInlineConfig(origin) {
-  const model = opencodeModel();
-  return {
-    $schema: "https://opencode.ai/config.json",
-    model: `${OPENCODE_PROVIDER}/${model}`,
-    small_model: `${OPENCODE_PROVIDER}/${model}`,
-    provider: {
-      [OPENCODE_PROVIDER]: {
-        npm: "@ai-sdk/openai-compatible",
-        name: "Jev Gateway",
-        options: { baseURL: `${origin}/v1`, apiKey: "{env:OPENAI_API_KEY}" },
-        models: { [model]: { name: `Jev Gateway (${model})` } },
-      },
-    },
-  };
-}
-
-/**
- * The same default models and provider for OpenCode v2, which renamed the shapes: `providers`
- * (plural), a `package` naming the runtime package, and `settings` for the package options. v2
- * resolves no configuration from environment variables at all, so this is the block the launcher
- * asks to be added to opencode.json once.
- */
-function opencodeV2Config(origin) {
-  const model = opencodeModel();
-  return {
-    $schema: "https://opencode.ai/config.json",
-    model: `${OPENCODE_PROVIDER}/${model}`,
-    small_model: `${OPENCODE_PROVIDER}/${model}`,
-    providers: {
-      [OPENCODE_PROVIDER]: {
-        package: "@opencode/ai/providers/openai-compatible",
-        name: "Jev Gateway",
-        settings: { baseURL: `${origin}/v1`, apiKey: "{env:OPENAI_API_KEY}" },
-        models: { [model]: { name: `Jev Gateway (${model})` } },
-      },
-    },
-  };
+function opencodeUpstream(env = process.env) {
+  return env.JEV_OPENCODE_UPSTREAM_BASE_URL ?? "https://api.openai.com/v1";
 }
 
 const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-
-// Each matches a whole string first, so that `//` in a URL and a comma inside quotes are kept.
-const JSONC_COMMENT = /"(?:\\.|[^"\\])*"|\/\/[^\n]*|\/\*[\s\S]*?\*\//g;
-const JSONC_TRAILING_COMMA = /"(?:\\.|[^"\\])*"|,(?=\s*[}\]])/g;
-const keepStrings = (match) => (match.startsWith('"') ? match : "");
-
-/**
- * OpenCode reads its inline config as JSONC, comments and trailing commas included, so plain
- * `JSON.parse` would throw away content OpenCode accepts. Undefined when it does not parse.
- */
-export function parseJsonc(text) {
-  try {
-    return JSON.parse(text.replace(JSONC_COMMENT, keepStrings).replace(JSONC_TRAILING_COMMA, keepStrings));
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * OPENCODE_CONFIG_CONTENT is one variable, and the user may already be using it. Theirs is kept
- * and the gateway's is laid over it: the default models and the `jev-gateway` provider are the
- * launcher's to set, everything else (agents, permissions, other providers) stays as they wrote
- * it. Content that is not a JSON object cannot be merged, so it is dropped, and the notices say so.
- */
-export function opencodeConfigContent(origin, inherited) {
-  const ours = opencodeInlineConfig(origin);
-  const theirs = inherited?.trim() ? parseJsonc(inherited) : undefined;
-  if (!isObject(theirs)) return JSON.stringify(ours);
-  const provider = { ...(isObject(theirs.provider) ? theirs.provider : {}), ...ours.provider };
-  return JSON.stringify({ ...theirs, ...ours, provider });
-}
+const OPENCODE_PROVIDER = "jev-gateway";
 
 const providerOf = (model) => (typeof model === "string" && model.includes("/") ? model.slice(0, model.indexOf("/")) : undefined);
 
@@ -199,7 +123,8 @@ const providerOf = (model) => (typeof model === "string" && model.includes("/") 
  */
 const modelIdOf = (model) => {
   if (typeof model === "string") return model;
-  if (isObject(model) && typeof model.providerID === "string" && typeof model.model === "string") return `${model.providerID}/${model.model}`;
+  if (isObject(model) && typeof model.providerID === "string" && typeof model.model === "string")
+    return `${model.providerID}/${model.model}`;
   return undefined;
 };
 
@@ -283,6 +208,47 @@ export function opencodeOutsideGateway(resolved, argv = [], origin) {
   ];
 }
 
+/** Probe the selected OpenAI-compatible model with one synthetic, one-token request. */
+export async function probeOpenCodeModel({ origin, upstream, argv = [], env = process.env, fetchImpl = fetch }) {
+  const found = await opencodeResolvedConfig(env);
+  if (!found || !isObject(found.resolved)) return { ok: false, reason: "config_unavailable" };
+  const selected = modelFlag(argv) ?? modelIdOf(found.resolved.model);
+  const separator = typeof selected === "string" ? selected.indexOf("/") : -1;
+  if (separator < 1) return { ok: false, reason: "model_unresolved" };
+  const providerId = selected.slice(0, separator);
+  const model = selected.slice(separator + 1);
+  const providers = {
+    ...(isObject(found.resolved.provider) ? found.resolved.provider : {}),
+    ...(isObject(found.resolved.providers) ? found.resolved.providers : {}),
+  };
+  const provider = providers[providerId];
+  const settings = isObject(provider) ? (provider.settings ?? provider.options) : undefined;
+  const baseURL = isObject(settings) && typeof settings.baseURL === "string" ? settings.baseURL : undefined;
+  const upstreamURL = new URL(upstream);
+  const gatewayURL = `${origin}${upstreamURL.pathname.replace(/\/+$/, "")}`;
+  if (!baseURL || (baseURL.replace(/\/+$/, "") !== gatewayURL && baseURL.replace(/\/+$/, "") !== upstream.replace(/\/+$/, ""))) {
+    return { ok: false, reason: "model_provider_not_routed" };
+  }
+
+  try {
+    const configuredKey = isObject(settings) && typeof settings.apiKey === "string" ? settings.apiKey : undefined;
+    const keyName = configuredKey?.match(/^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/)?.[1];
+    const key = keyName ? env[keyName] : (configuredKey ?? (Array.isArray(provider.env) ? env[provider.env[0]] : undefined));
+    const headers = new Headers({ "content-type": "application/json" });
+    if (typeof key === "string" && key) headers.set("authorization", `Bearer ${key}`);
+    const response = await fetchImpl(`${upstream.replace(/\/+$/, "")}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model, messages: [{ role: "user", content: "Reply OK" }], max_tokens: 1, stream: false }),
+      signal: AbortSignal.timeout(5000),
+      redirect: "error",
+    });
+    return { ok: response.ok, reason: response.ok ? undefined : `http_${response.status}` };
+  } catch {
+    return { ok: false, reason: "unreachable" };
+  }
+}
+
 /**
  * Ask OpenCode how it resolves its configuration with the launcher's config over the user's.
  * Undefined when it cannot say. v2's answer is an array of per-source documents; v1's is the
@@ -306,21 +272,6 @@ function opencodeResolvedConfig(env) {
   });
 }
 
-/**
- * The v2 block cannot be injected: v2 resolves no configuration from environment variables, so
- * the only honest thing the launcher can do is say where it goes.
- */
-function opencodeSetupLines(origin) {
-  const block = JSON.stringify(opencodeV2Config(origin), null, 2).split("\n").map((line) => `  ${line}`);
-  return [
-    "OpenCode v2 reads no configuration from environment variables, so the provider this launcher",
-    "spawns cannot be injected for the process. Add this once to ~/.config/opencode/opencode.json",
-    "(a project opencode.json wins over it), keep the gateway running, and plain `opencode` as well as",
-    "this launcher route through the gateway:",
-    ...block,
-  ];
-}
-
 export const opencode = {
   name: "jev-opencode",
   client: "opencode",
@@ -329,75 +280,73 @@ export const opencode = {
   upstream: opencodeUpstream,
   upstreamHelp:
     "JEV_OPENCODE_UPSTREAM_BASE_URL   where OpenCode traffic goes (default https://api.openai.com/v1)\n" +
-    "  JEV_OPENCODE_MODEL               model selected as jev-gateway/<model> (default gpt-5)\n" +
     "  JEV_OPENCODE_CHECK               off skips listing the agents that bypass the gateway (saves about a second)",
-  // No `args`: the model default comes from the injected config below, so a user `-m provider/model`
-  // keeps its documented top priority and every other `opencode` flag forwards untouched.
-  // The two experimental flags stay off for the launched process only (environment, never a user
-  // file): the stable AI SDK provider path above is the supported one.
+  prepare: (origin) => {
+    let result;
+    try {
+      result = repointOpenCodeConfig({ origin, upstream: opencodeUpstream() });
+    } catch {
+      return {
+        changed: false,
+        reason: "config_update_failed",
+        warning: "OpenCode config could not be updated; its original file and backup were kept.",
+        abort: true,
+      };
+    }
+    const warning = {
+      config_missing: "OpenCode config file was not found; its provider was left unchanged.",
+      config_invalid: "OpenCode config is invalid; it was left unchanged.",
+      provider_not_found: "No configured OpenCode provider uses JEV_OPENCODE_UPSTREAM_BASE_URL; no provider was changed.",
+      already_routed: "OpenCode already has a provider on this gateway URL; it was left unchanged.",
+      backup_missing: "The managed OpenCode URL has no backup; it was left unchanged.",
+      backup_exists: "A prior OpenCode backup exists without a valid marker; it was left unchanged.",
+      marker_failed: "OpenCode routing state could not be saved; its config was left unchanged.",
+      config_changed: "OpenCode config changed during setup; it was left unchanged.",
+      config_update_failed: "OpenCode config could not be updated; its backup was kept.",
+      marker_invalid: "The managed OpenCode config marker is invalid; its backup was kept.",
+      different_gateway: "Another OpenCode gateway owns the config. Stop that launcher before switching gateways.",
+    }[result.reason];
+    return {
+      ...result,
+      ...(warning ? { warning } : {}),
+      ...(result.reason === "different_gateway" || (result.reason !== undefined && result.reason !== "already_routed")
+        ? { abort: true }
+        : {}),
+    };
+  },
+  restore: (origin) => restoreOpenCodeConfig({ origin, upstream: opencodeUpstream() }),
+  probe: (origin, argv) =>
+    probeOpenCodeModel({
+      origin,
+      upstream: opencodeUpstream(),
+      argv,
+      env: { ...process.env, ...opencode.env(origin) },
+    }),
+  // Keep model choice and provider IDs as OpenCode configured them; only their matching endpoint moves.
   env: (origin, inherited = process.env) => ({
-    OPENCODE_CONFIG_CONTENT: opencodeConfigContent(origin, inherited.OPENCODE_CONFIG_CONTENT),
+    ...(inherited.OPENCODE_CONFIG_CONTENT !== undefined
+      ? {
+          OPENCODE_CONFIG_CONTENT: repointOpenCodeOverlay(inherited.OPENCODE_CONFIG_CONTENT, {
+            origin,
+            upstream: opencodeUpstream(inherited),
+          }),
+        }
+      : {}),
     OPENCODE_EXPERIMENTAL_NATIVE_LLM: "false",
     OPENCODE_EXPERIMENTAL_CODE_MODE: "false",
   }),
-  // Asking OpenCode costs about a second, which is OpenCode loading its configuration.
-  // JEV_OPENCODE_CHECK=off skips that part; an inline config that had to be dropped is always
-  // said. With the check off there is no version probe, so a v2 (which ignores the variable)
-  // still hears this v1 notice — the known cost of the opt-out, not worth a spawn to avoid.
+  // JEV_OPENCODE_CHECK=off skips the config read and bypass summary.
   notices: async function (origin, argv, inherited = process.env) {
-    const content = inherited.OPENCODE_CONFIG_CONTENT;
-    const dropped = content?.trim() && !isObject(parseJsonc(content))
-      ? ["OPENCODE_CONFIG_CONTENT in your environment is not a JSON object, so this session gets only the gateway's settings from it."]
-      : [];
-    if (inherited.JEV_OPENCODE_CHECK === "off") return dropped;
+    if (inherited.JEV_OPENCODE_CHECK === "off") return [];
     const found = await opencodeResolvedConfig({ ...inherited, ...opencode.env(origin, inherited) });
-    if (!found) return dropped;
-    // On v2 the variable is never read, so saying the user's inline content was dropped would
-    // describe a knob OpenCode ignores; there the setup lines carry every word that matters.
-    const live = found.v2 ? [] : dropped;
-    // On v2 the injected config is inert, so the whole v1 flow of saying what bypasses the gateway
-    // would measure nothing: say the setup step instead until the block is in opencode.json.
-    const setup = found.v2 && !(isObject(found.resolved) && isObject(found.resolved.providers) && isObject(found.resolved.providers[OPENCODE_PROVIDER]))
-      ? opencodeSetupLines(origin)
-      : [];
-    const outside = opencodeOutsideGateway(found.resolved, argv, origin);
-    // The launcher prefixes the first line of the whole answer; when something already came
-    // before, the following notice carries its own name. Otherwise it stays unprefixed.
-    const tail = [...setup, ...outside];
-    if (!tail.length) return live;
-    if (!live.length) return tail;
-    const lines = [...live, ...tail];
-    return [...lines.slice(0, live.length), `${this.name}: ${tail[0]}`, ...lines.slice(live.length + 1)];
+    return opencodeOutsideGateway(found?.resolved, argv, origin);
   },
-  configHelp: async function (origin, env = process.env) {
-    // No OPENCODE_CONFIG_CONTENT one-liner here: single-quoting raw JSON breaks when a custom
-    // model ID contains an apostrophe. The opencode.json file workflow below needs no shell
-    // quoting and matches what `jev-opencode --print-config` documents.
-    // The version choice follows the shape `debug config` prints — v2 answers per-source
-    // documents, v1 the merged object — the same detection the notices use, so there is one
-    // way to be wrong instead of two. When OpenCode cannot be asked, print the v1 block,
-    // which both versions read; v2 users reach the v2 block from the launcher's startup notice.
-    if ((await opencodeResolvedConfig(env))?.v2 === true) {
-      const config = opencodeV2Config(origin);
-      const manual = JSON.stringify(config, null, 2);
-      return (
-        `# OpenCode v2 reads no configuration from environment variables, so the launcher cannot\n` +
-        `# inject the provider per process. Add to opencode.json (project root or\n` +
-        `# ~/.config/opencode/opencode.json), with the gateway running (${this.name} --start):\n` +
-        `${manual}\n` +
-        `# Then plain \`opencode\` routes through the gateway too. An agent or \`-m\` naming another\n` +
-        `# provider keeps going straight to it, as the launcher says at startup.\n`
-      );
-    }
-    const config = opencodeInlineConfig(origin);
-    const manual = JSON.stringify({ model: config.model, small_model: config.small_model, provider: config.provider }, null, 2);
-    return (
-      `# Keep the gateway running (jev-opencode --start), then add to opencode.json\n` +
-      `# (project root or ~/.config/opencode/opencode.json):\n` +
-      `${manual}\n` +
-      `# then select it with: opencode --model ${config.model}`
-    );
-  },
+  configHelp: (origin) =>
+    `# Set JEV_OPENCODE_UPSTREAM_BASE_URL to the OpenAI-compatible provider URL already in opencode.json.\n` +
+    `# The launcher backs up the file, repoints matching providers to ${origin}/v1, and restores them\n` +
+    `# when the gateway stops. Model IDs, provider names, agents, and --model choices remain unchanged.\n` +
+    `# Use ~/.jev-gateway/.env.opencode for OpenCode-only upstream settings.\n` +
+    `# Run ${opencode.name} --start to activate the route; ${opencode.name} --stop restores the saved URL.`,
 };
 export const opencodeAdvisor = {
   ...opencode,
@@ -418,9 +367,7 @@ export const devin = {
   // The variable's name is a leftover compiled into the devin binary itself; it is the only
   // knob that redirects the exa protocol. DEVIN_API_URL points at api.devin.ai instead.
   env: (origin) => ({ WINDSURF_API_SERVER_URL: origin }),
-  configHelp: (origin) =>
-    `# Keep the gateway running (jev-devin --start), then:\n` +
-    `#   WINDSURF_API_SERVER_URL=${origin} devin\n`,
+  configHelp: (origin) => `# Keep the gateway running (jev-devin --start), then:\n` + `#   WINDSURF_API_SERVER_URL=${origin} devin\n`,
 };
 
 function kiloUpstream() {
@@ -486,9 +433,7 @@ export const gemini = {
     GOOGLE_GEMINI_BASE_URL: origin,
   }),
   configHelp: (origin) =>
-    `# Point your Gemini client or SDK at:\n` +
-    `#   GEMINI_API_BASE=${origin}\n` +
-    `#   or endpoint: ${origin}/v1beta\n`,
+    `# Point your Gemini client or SDK at:\n` + `#   GEMINI_API_BASE=${origin}\n` + `#   or endpoint: ${origin}/v1beta\n`,
 };
 
 export function agyClientArgs(args) {
@@ -511,12 +456,20 @@ export function agyClientArgs(args) {
     const value = settingsArgs[0].trim();
     if (value.startsWith("{") || value.startsWith("[")) {
       let supplied;
-      try { supplied = JSON.parse(value); } catch { throw new Error("--settings JSON must be a valid object."); }
+      try {
+        supplied = JSON.parse(value);
+      } catch {
+        throw new Error("--settings JSON must be a valid object.");
+      }
       if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) throw new Error("--settings JSON must be an object.");
       settings = { ...supplied, modelProvider: "gemini" };
     } else {
       let supplied;
-      try { supplied = JSON.parse(readFileSync(resolve(value), "utf8")); } catch { throw new Error("--settings file must be readable JSON and set modelProvider to gemini."); }
+      try {
+        supplied = JSON.parse(readFileSync(resolve(value), "utf8"));
+      } catch {
+        throw new Error("--settings file must be readable JSON and set modelProvider to gemini.");
+      }
       if (!supplied || typeof supplied !== "object" || Array.isArray(supplied) || supplied.modelProvider !== "gemini") {
         throw new Error("--settings file must already set modelProvider to gemini; the launcher will not edit or copy it.");
       }

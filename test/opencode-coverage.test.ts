@@ -1,25 +1,21 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { fakeOpencodeDir } from "./helpers.js";
 
 // @ts-ignore: bin/ is plain JavaScript outside the tsconfig include; resolved at runtime.
-const { opencode, opencodeConfigContent, opencodeOutsideGateway } = await import("../bin/clients.mjs");
+const { opencode, opencodeOutsideGateway } = await import("../bin/clients.mjs");
 
 const origin = "http://127.0.0.1:8791";
-// These cases assert the default config; the workstation's model override must not change it.
-beforeEach(() => vi.stubEnv("JEV_OPENCODE_MODEL", "gpt-5"));
-afterEach(() => vi.unstubAllEnvs());
 // Plain shell one-liners: each overridable fake answers whatever the launcher asks it.
 const says = (json: string) => `printf '%s\\n' '${json}'`;
 
 /**
  * What `opencode debug config` printed (OpenCode 1.18.31) for a project whose opencode.json gives
  * `build` and `reviewer` a model, with a third agent defined in .opencode/agent/docs-writer.md,
- * started with the launcher's OPENCODE_CONFIG_CONTENT. Trimmed to the keys read here. The default
- * model is the gateway's, and every agent that named a model kept it.
+ * started with a gateway-configured provider. Trimmed to the keys read here.
  */
 const resolved = {
   $schema: "https://opencode.ai/config.json",
@@ -45,36 +41,31 @@ describe("what jev-opencode says will not go through the gateway", () => {
     expect(lines.join("\n")).toContain('agent "explorer" (9router/slm)');
   });
 
-  it("says the v2 setup block when v2 gives no way to inject the provider", async () => {
-    const dir = fakeOpencodeDir(says(`[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":"9router/main","agents":{},"providers":{"9router":{}}}}]`));
+  it("reports a provider that still points directly to its upstream", async () => {
+    const dir = fakeOpencodeDir(
+      says(
+        `[{"type":"document","information":{"model":{"providerID":"9router","model":"main"},"agents":{},"providers":{"9router":{"settings":{"baseURL":"http://127.0.0.1:20128/v1"}}}}}]`,
+      ),
+    );
     try {
       const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
       const joined = lines.join("\n");
-      expect(joined).toContain("reads no configuration from environment variables");
-      expect(joined).toContain("~/.config/opencode/opencode.json");
-      expect(joined).toContain("jev-gateway/gpt-5");
-      expect(joined).toContain(`${origin}/v1`);
-      expect(joined).toContain('"providers"');
-      // The whole block is valid JSON, so pasting it works without editing.
-      const start = joined.indexOf("{");
-      const end = joined.lastIndexOf("}") + 1;
-      expect(() => JSON.parse(joined.slice(start, end))).not.toThrow();
-      expect(start).toBeGreaterThan(0);
+      expect(joined).toContain("the default model (9router/main)");
+      expect(joined).toContain("go straight to their provider");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it("on v2, once the provider is in opencode.json, falls back to saying what bypasses the gateway", async () => {
-    const dir = fakeOpencodeDir(says(`[{"type":"document","path":"~/.config/opencode/opencode.json","information":{"model":{"providerID":"9router","model":"main"},"agents":{"explorer":{"mode":"subagent","model":{"providerID":"9router","model":"slm"}}},"providers":{"9router":{},"jev-gateway":{}}}}]`));
+  it("treats default and agent models from the repointed provider as routed", async () => {
+    const dir = fakeOpencodeDir(
+      says(
+        `[{"type":"document","information":{"model":{"providerID":"9router","model":"main"},"agents":{"explorer":{"mode":"subagent","model":{"providerID":"9router","model":"slm"}}},"providers":{"9router":{"settings":{"baseURL":"${origin}/v1"}}}}}]`,
+      ),
+    );
     try {
       const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
-      const joined = lines.join("\n");
-      expect(joined).not.toContain("reads no configuration from environment variables");
-      expect(joined).toContain("the default model (9router/main)");
-      expect(joined).toContain('agent "explorer" (9router/slm)');
-      // The launcher names the first line; notices do not say their own name again.
-      expect(lines[0]).not.toMatch(/jev-opencode:/);
+      expect(lines).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -91,16 +82,11 @@ describe("what jev-opencode says will not go through the gateway", () => {
     }
   });
 
-  it("says the second notice with the name of the launcher speaking it", async () => {
-    const advisor: { name: string; notices: (...a: unknown[]) => Promise<string[]> } = {
-      ...(opencode as never as { name: string; notices: (...a: unknown[]) => Promise<string[]> }),
-      name: "jev-opencode-advisor",
-    };
+  it("reports direct providers for the advisor launcher too", async () => {
     const dir = fakeOpencodeDir(says(`{"model":"openai/gpt-5","agent":{},"provider":{"openai":{"options":{}}}}`));
     try {
-      const lines = (await advisor.notices(origin, [], { PATH: dir, OPENCODE_CONFIG_CONTENT: "{ not json" })) as string[];
-      expect(lines.some((line) => line.startsWith("jev-opencode-advisor:"))).toBe(true);
-      expect(lines.some((line) => line.startsWith("jev-opencode:"))).toBe(false);
+      const lines = (await opencode.notices(origin, [], { PATH: dir })) as string[];
+      expect(lines.join("\n")).toContain("the default model (openai/gpt-5)");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -113,7 +99,7 @@ describe("what jev-opencode says will not go through the gateway", () => {
     expect(opencodeOutsideGateway(byOptions as never, [], origin)).toEqual([]);
   });
 
-  it("on v2 says nothing about the inline content OpenCode will not read", async () => {
+  it("keeps an existing gateway provider covered", async () => {
     const dir = fakeOpencodeDir(says(`[{"type":"document","information":{"providers":{"jev-gateway":{}},"model":"jev-gateway/gpt-5"}}]`));
     try {
       const lines = (await opencode.notices(origin, [], { PATH: dir, OPENCODE_CONFIG_CONTENT: "not json" })) as string[];
@@ -171,8 +157,16 @@ describe("what jev-opencode says will not go through the gateway", () => {
   });
 
   it("counts a provider the user pointed at the gateway as covered, whatever its name", () => {
-    const provider = { opencode: { options: { baseURL: `${origin}/v1` } }, anthropic: { options: { baseURL: "https://api.anthropic.com/v1" } } };
-    const config = { ...resolved, model: "opencode/grok-code", agent: { build: { model: "opencode/grok-code" }, plan: { model: "anthropic/claude-sonnet-4-5" } }, provider };
+    const provider = {
+      opencode: { options: { baseURL: `${origin}/v1` } },
+      anthropic: { options: { baseURL: "https://api.anthropic.com/v1" } },
+    };
+    const config = {
+      ...resolved,
+      model: "opencode/grok-code",
+      agent: { build: { model: "opencode/grok-code" }, plan: { model: "anthropic/claude-sonnet-4-5" } },
+      provider,
+    };
     const lines = (opencodeOutsideGateway(config, ["-m", "opencode/grok-code"], origin) as string[]).join("\n");
     expect(lines).not.toContain("grok-code");
     expect(lines).toContain('agent "plan" (anthropic/claude-sonnet-4-5)');
@@ -203,20 +197,23 @@ describe("what jev-opencode says will not go through the gateway", () => {
 
 describe("an OPENCODE_CONFIG_CONTENT the user already set", () => {
   const theirs = {
-    model: "openai/gpt-5",
+    model: "9router/main",
     permission: { bash: "ask" },
-    agent: { reviewer: { mode: "subagent", model: "google/gemini-2.5-pro" } },
-    provider: { local: { npm: "@ai-sdk/openai-compatible", options: { baseURL: "http://127.0.0.1:11434/v1" } } },
+    agent: { reviewer: { mode: "subagent", model: "9router/slm" } },
+    provider: {
+      "9router": { npm: "@ai-sdk/openai-compatible", options: { baseURL: "https://api.openai.com/v1" } },
+      local: { npm: "@ai-sdk/openai-compatible", options: { baseURL: "http://127.0.0.1:11434/v1" } },
+    },
   };
 
-  it("is kept, with the gateway's default models and provider laid over it", () => {
-    const merged = JSON.parse(opencodeConfigContent(origin, JSON.stringify(theirs)));
+  it("keeps the chosen model and repoints only the provider matching the upstream", () => {
+    const env = opencode.env(origin, { OPENCODE_CONFIG_CONTENT: JSON.stringify(theirs) });
+    const merged = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
     expect(merged.permission).toEqual(theirs.permission);
     expect(merged.agent).toEqual(theirs.agent);
     expect(merged.provider.local).toEqual(theirs.provider.local);
-    expect(merged.provider["jev-gateway"].options.baseURL).toBe(`${origin}/v1`);
-    expect(merged.model).toBe("jev-gateway/gpt-5");
-    expect(merged.small_model).toBe("jev-gateway/gpt-5");
+    expect(merged.provider["9router"].options.baseURL).toBe(`${origin}/v1`);
+    expect(merged.model).toBe("9router/main");
   });
 
   it("reaches the launched process through the spec's env", () => {
@@ -224,29 +221,27 @@ describe("an OPENCODE_CONFIG_CONTENT the user already set", () => {
     expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT).permission).toEqual(theirs.permission);
   });
 
-  it("is kept when written as JSONC, with comments and trailing commas, as OpenCode accepts it", () => {
+  it("keeps JSONC values and the chosen model while repointing its provider", () => {
     const jsonc = `{
       // ask before running commands
       "permission": { "bash": "ask", },
       /* a local model */
-      "provider": { "local": { "options": { "baseURL": "http://127.0.0.1:11434/v1" } } },
-      "agent": { "reviewer": { "prompt": "Say \\"done\\", then stop // not a comment, ] }" } },
+      "model": "9router/main",
+      "provider": { "9router": { "options": { "baseURL": "https://api.openai.com/v1" } } },
     }`;
-    const merged = JSON.parse(opencodeConfigContent(origin, jsonc));
+    const merged = JSON.parse(opencode.env(origin, { OPENCODE_CONFIG_CONTENT: jsonc }).OPENCODE_CONFIG_CONTENT);
     expect(merged.permission).toEqual({ bash: "ask" });
-    expect(merged.provider.local.options.baseURL).toBe("http://127.0.0.1:11434/v1");
-    expect(merged.agent.reviewer.prompt).toBe('Say "done", then stop // not a comment, ] }');
-    expect(merged.model).toBe("jev-gateway/gpt-5");
+    expect(merged.provider["9router"].options.baseURL).toBe(`${origin}/v1`);
+    expect(merged.model).toBe("9router/main");
   });
 
-  it.each(["", "   ", "not json", "[1, 2]", "null", '"text"'])("is replaced when it is %j, which cannot be merged", (content) => {
-    const config = JSON.parse(opencodeConfigContent(origin, content));
-    expect(Object.keys(config)).toEqual(["$schema", "model", "small_model", "provider"]);
+  it.each(["", "   ", "not json", "[1, 2]", "null", '"text"'])("leaves content %j unchanged when it is not an object", (content) => {
+    expect(opencode.env(origin, { OPENCODE_CONFIG_CONTENT: content }).OPENCODE_CONFIG_CONTENT).toBe(content);
   });
 
-  it("is said to be dropped when it cannot be read, even with the check switched off", async () => {
+  it("has no bypass summary when the check is switched off", async () => {
     const lines = await opencode.notices(origin, [], { JEV_OPENCODE_CHECK: "off", OPENCODE_CONFIG_CONTENT: "{ not json" });
-    expect(lines).toEqual([expect.stringContaining("OPENCODE_CONFIG_CONTENT in your environment is not a JSON object")]);
+    expect(lines).toEqual([]);
     expect(await opencode.notices(origin, [], { JEV_OPENCODE_CHECK: "off", OPENCODE_CONFIG_CONTENT: '{ "model": "x", }' })).toEqual([]);
   });
 });

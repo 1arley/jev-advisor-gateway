@@ -26,9 +26,10 @@ matching it. Do that first, every time.
    dumps, which redact headers loosely on purpose. Nothing but request metadata reaches the
    dashboard: build what the browser sees field by field (`events.ts`), never by spreading a log
    entry.
-3. **Never write the client's own configuration.** Launchers point a client at the gateway with
-   arguments and environment for that one process. Nothing under `~/.codex`, `~/.claude`,
-   `~/.config/opencode`, `~/.config/kilo` is modified.
+3. **Do not write client configuration**, except for the approved OpenCode transparent-proxy
+   launcher: it backs up `opencode.json`, changes only provider `baseURL` values matching the
+   configured upstream, and restores them conditionally when the gateway stops. Nothing under
+   `~/.codex`, `~/.claude` or `~/.config/kilo` is modified.
 4. **Keep prompt caches valid.** If rewriting a request would invalidate a cached prefix, add a
    hint after the client's last block instead (`hint` mode).
 5. **Few dependencies.** The runtime dependencies fit on one line of `package.json`. Prefer twenty

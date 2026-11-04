@@ -44,6 +44,10 @@ GPT-6 Luna session model and can consult a GPT advisor. Direct tool answers are 
 Codex's upstream does not know synthetic response IDs; Jev can still force a tool or pass the
 request through. If the upstream rejects a rewrite, the gateway retries the original request.
 
+The gateway does not offer Codex's `wait` tool to Jev. Codex decides whether an `exec` cell is
+still running; the remaining tools stay eligible for Jev's selection. Advisor consultations still
+run on eligible turns.
+
 ## Claude Code
 
 `jev-claude` sets `ANTHROPIC_BASE_URL` only for the launched process, preserving Claude Code's saved
@@ -53,19 +57,39 @@ cost or latency.
 
 ## OpenCode
 
-The launcher supports OpenCode v1.18.31 and v2.1.2. v1 receives a provider through
-`OPENCODE_CONFIG_CONTENT`; the launcher preserves existing JSON object settings and does not write
-configuration files. v2 does not accept provider configuration from the environment, so run
-`jev-opencode --print-config` and add the printed provider block to `~/.config/opencode/opencode.json`
-or a project `opencode.json`.
+The launcher supports OpenCode v1.18.31 and v2.1.2. Set
+`JEV_OPENCODE_UPSTREAM_BASE_URL` to the URL already used by an OpenAI-compatible provider in
+`opencode.json`; the launcher backs up the file and repoints every matching provider to its local
+gateway. It leaves model IDs, agents, and `--model` choices unchanged, so any model served by that
+upstream continues through Jev. Providers using another URL remain direct.
 
-Only requests using the `jev-gateway/<model>` provider reach the gateway. Agents that specify a
-different provider/model and sessions started with `-m` for another provider bypass it. Use
-`jev-opencode --status` to see configured bypasses. The launcher checks OpenCode's merged config at
-startup; set `JEV_OPENCODE_CHECK=off` to skip that check.
+The backup is `opencode.json.jev-gateway.bak` (or the equivalent beside the configured file). The
+launcher restores only provider URLs it changed when `jev-opencode --stop` runs. Stop the active
+OpenCode launcher before switching between `jev-opencode` and `jev-opencode-advisor`; both use the
+same global config file but different gateway ports. On a later launcher start, a stale managed URL
+is restored when its gateway is down. `jev-opencode --status` also restores a managed URL when its
+gateway is down. A gateway failure during an active session can interrupt requests; the launcher
+does not claim an automatic live fallback. Set `JEV_OPENCODE_CHECK=off` to skip the startup bypass
+summary.
 
-The advisor launcher uses the configured OpenAI-compatible upstream. `JEV_OPENCODE_MODEL` selects
-the model exposed through the gateway; `JEV_OPENCODE_UPSTREAM_BASE_URL` selects its upstream.
+Add `--probe-upstream` to a launcher invocation to send one synthetic `chat/completions` request
+for the selected model, with `max_tokens: 1`. For example, `jev-opencode --probe-upstream --model
+9router/main` probes that model before starting OpenCode. The probe can incur a small charge; an
+error is reported without preventing the session from starting. It sends no conversation text.
+
+Use `~/.jev-gateway/.env.opencode` for OpenCode-only values such as
+`JEV_OPENCODE_UPSTREAM_BASE_URL`; it overlays `~/.jev-gateway/.env`, while shell variables still
+take precedence. The launcher modifies the global OpenCode config so plain OpenCode invocations
+also use the active gateway. Project config can override the global provider and remain direct.
+Providers with different upstream URLs are outside this single-upstream setup. A provider that
+already points at a gateway URL is left unchanged, including a pre-existing `jev-gateway` provider;
+select the provider whose configured URL matches `JEV_OPENCODE_UPSTREAM_BASE_URL` (for example,
+`9router/main`) for transparent routing. A model using the pre-existing `jev-gateway` provider is
+not migrated automatically and may still point to a stopped gateway. With a 9router upstream,
+select `9router/main` and set the explorer agent to `9router/slm`; both use the gateway while the
+provider is repointed, then return to the direct 9router URL after `--stop`. If a config file contains
+JSONC comments, the launcher edits only the provider URL text and preserves comments, formatting,
+and all other values.
 
 ## Kilo
 
