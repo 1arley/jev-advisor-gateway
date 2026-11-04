@@ -116,7 +116,7 @@ function normalize(result: unknown): SystemOneResult<Questions> {
 
 /** The one call the gateway makes to Jev, for whichever provider is configured. */
 export function createAskJev(
-  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs">,
+  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs"> & Partial<Pick<Config, "jevMaxLen">>,
   fetchImpl: typeof fetch = fetch,
 ): AskJev {
   const provider = providers[config.jevProvider];
@@ -135,14 +135,18 @@ export function createAskJev(
         "http-referer": "https://github.com/1arley/jev-advisor-gateway",
         "x-title": "jev-advisor-gateway",
       },
-      body: JSON.stringify(request),
+      // Laya may otherwise trim state to its default 1,024-token window.
+      body: JSON.stringify(
+        config.jevProvider === "laya" && config.jevMaxLen !== undefined ? { ...request, max_len: config.jevMaxLen } : request,
+      ),
       signal: AbortSignal.timeout(config.jevTimeoutMs),
     });
     if (!response.ok) {
       const detail = (await response.text().catch(() => "")).slice(0, 200);
-      const paidHint = config.jevProvider === "opencode" && request.model === provider.model && MODEL_GONE.has(response.status)
-        ? `free model unavailable; set JEV_MODEL=${provider.paidModel} for paid Jev. `
-        : "";
+      const paidHint =
+        config.jevProvider === "opencode" && request.model === provider.model && MODEL_GONE.has(response.status)
+          ? `free model unavailable; set JEV_MODEL=${provider.paidModel} for paid Jev. `
+          : "";
       throw Object.assign(new Error(`${response.status} from ${provider.label}: ${paidHint}${detail}`), { status: response.status });
     }
     return normalize(await response.json());
@@ -152,6 +156,8 @@ export function createAskJev(
     try {
       return await once(request);
     } catch (error) {
+      const name = (error as { name?: string }).name;
+      if (config.jevProvider === "laya" && (name === "TimeoutError" || name === "AbortError")) throw error;
       const status = (error as { status?: number }).status;
       if (status !== undefined && !RETRYABLE.has(status)) throw error;
       await new Promise((done) => setTimeout(done, 100));

@@ -110,12 +110,22 @@ has its own provider and billing; `OPENJEV_KEY` is only a setup placeholder. See
 [OpenJev project](https://github.com/1arley/OpenJev).
 
 [Laya](https://github.com/NandhaKishorM/laya) can serve the same protocol locally with
-`JEV_PROVIDER=laya`. Install and run `laya-serve` separately. The gateway warms it at startup so a
-checkpoint load does not consume the first request's deadline. Laya has a shorter context window
-than Jev and rejects choice questions with more than 100 options. The gateway handles large tool
-rosters by ranking them in groups and asking Laya to choose from the finalists; enum arguments
-above 100 values are left for the main model to fill. Laya has only been measured on a six-question
-synthetic sample. See the benchmark notes in the [README](../README.md#laya-checkpoint-comparison).
+`JEV_PROVIDER=laya`. Install and run `laya-serve` separately. Its default state window is about
+1,024 tokens; the gateway sends `max_len` (default `JEV_LAYA_MAX_LEN=2048`) so it reads the full
+bounded request state. Laya uses its own `JEV_LAYA_MAX_STATE_CHARS=7000` and
+`JEV_LAYA_MAX_MESSAGE_CHARS=1500` limits. Hosted providers keep the generic
+`JEV_MAX_STATE_CHARS=60000` and `JEV_MAX_MESSAGE_CHARS=4000` limits; `--setup` switches these
+limits with the selected provider. Laya has its own `JEV_LAYA_TIMEOUT_MS=8000` deadline, independent
+of `JEV_TIMEOUT_MS`; timeout and abort errors are not retried because another Laya request would
+consume the same narrow deadline. Connection failures still get one retry. Increase the Laya window
+only when the server has `LAYA_MAX_TOKEN_BUDGET >= JEV_LAYA_MAX_LEN`: larger windows can increase
+latency, and exceeding `JEV_LAYA_TIMEOUT_MS` (8,000 ms by default) yields `jev_timeout` and
+passthrough. Check `--logs` for
+`jev.inputTokens` to vary and stay below `max_len`. Laya also rejects choice questions with more
+than 100 options. The gateway handles large tool rosters by ranking them in groups and asking Laya
+to choose from finalists; enum arguments above 100 values are left for the main model to fill.
+Laya has only been measured on a six-question synthetic sample. See the benchmark notes in the
+[README](../README.md#laya-checkpoint-comparison).
 
 ## Inspect a decision
 

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createAskJev, resolveModel, resolveProvider } from "../src/jev.js";
 
-const request = { model: "m", state: "s", questions: { tool: { type: "choice" as const, instructions: "?", criteria: { a: null, b: null } } } };
+const request = {
+  model: "m",
+  state: "s",
+  questions: { tool: { type: "choice" as const, instructions: "?", criteria: { a: null, b: null } } },
+};
 
 function capture(reply: () => Response) {
   const calls: { url: string; headers: Headers; body: any }[] = [];
@@ -47,15 +51,24 @@ describe("choosing a provider", () => {
 
   it("reads the matching key, endpoint and model into the config", () => {
     const config = loadConfig({ AI_GATEWAY_API_KEY: "vck", JEV_MODEL: "jev-latest" });
-    expect(config).toMatchObject({ jevProvider: "vercel", jevApiKey: "vck", jevModel: "typesafe-ai/jev", jevUrl: "https://ai-gateway.vercel.sh/typesafe/v1/systemone" });
+    expect(config).toMatchObject({
+      jevProvider: "vercel",
+      jevApiKey: "vck",
+      jevModel: "typesafe-ai/jev",
+      jevUrl: "https://ai-gateway.vercel.sh/typesafe/v1/systemone",
+    });
     expect(loadConfig({ OPENROUTER_API_KEY: "ork" }).jevUrl).toBe("https://openrouter.ai/api/alpha/decisions");
     // The variable TypeSafe's SDK reads still points a local stand-in at the gateway.
-    expect(loadConfig({ TYPESAFE_API_KEY: "k", TYPESAFE_BASE_URL: "http://127.0.0.1:8799/" }).jevUrl).toBe("http://127.0.0.1:8799/v1/systemone");
+    expect(loadConfig({ TYPESAFE_API_KEY: "k", TYPESAFE_BASE_URL: "http://127.0.0.1:8799/" }).jevUrl).toBe(
+      "http://127.0.0.1:8799/v1/systemone",
+    );
   });
 
   it("requires Headroom to be explicitly loopback and pins its deadline", () => {
-    expect(loadConfig({ JEV_HEADROOM_MODE: "shadow", JEV_HEADROOM_URL: "http://127.0.0.1:8788/v1/compress" }))
-      .toMatchObject({ headroomMode: "shadow", headroomTimeoutMs: 500 });
+    expect(loadConfig({ JEV_HEADROOM_MODE: "shadow", JEV_HEADROOM_URL: "http://127.0.0.1:8788/v1/compress" })).toMatchObject({
+      headroomMode: "shadow",
+      headroomTimeoutMs: 500,
+    });
     expect(() => loadConfig({ JEV_HEADROOM_MODE: "compress" })).toThrow(/JEV_HEADROOM_URL is required/);
     for (const headroomUrl of [
       "https://headroom.example/v1/compress",
@@ -80,7 +93,11 @@ describe("choosing a provider", () => {
 });
 
 describe("asking Jev", () => {
-  const answer = { model: "m", answers: { tool: { type: "choice", choice: "a", confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } } }, usage: { input_tokens: 10, output_tokens: 0 } };
+  const answer = {
+    model: "m",
+    answers: { tool: { type: "choice", choice: "a", confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } } },
+    usage: { input_tokens: 10, output_tokens: 0 },
+  };
 
   it("posts the same body to whichever provider, with its key as a bearer token", async () => {
     for (const env of [{ TYPESAFE_API_KEY: "k1" }, { OPENROUTER_API_KEY: "k2" }, { AI_GATEWAY_API_KEY: "k3" }]) {
@@ -119,11 +136,29 @@ describe("asking Jev", () => {
 });
 
 describe("asking Laya locally", () => {
-  const answer = { model: "m", answers: { tool: { type: "choice", choice: "a", confidence: 0.5, x_jev_confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } }, needs_tool: { type: "noul", noul: 0.9 } }, usage: { input_tokens: 10, output_tokens: 0 } };
+  const answer = {
+    model: "m",
+    answers: {
+      tool: { type: "choice", choice: "a", confidence: 0.5, x_jev_confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } },
+      needs_tool: { type: "noul", noul: 0.9 },
+    },
+    usage: { input_tokens: 10, output_tokens: 0 },
+  };
 
   it("answers with no key at all, and sends no Authorization header unless one is configured", async () => {
     const keyless = loadConfig({ JEV_PROVIDER: "laya" });
-    expect(keyless).toMatchObject({ jevProvider: "laya", jevApiKey: undefined, jevModel: "multilingual", jevUrl: "http://127.0.0.1:8000/v1/systemone", maxStateChars: 50_000 });
+    expect(keyless).toMatchObject({
+      jevProvider: "laya",
+      jevApiKey: undefined,
+      jevModel: "multilingual",
+      jevUrl: "http://127.0.0.1:8000/v1/systemone",
+      maxStateChars: 7_000,
+      maxMessageChars: 1_500,
+      jevMaxLen: 2_048,
+      jevTimeoutMs: 8_000,
+    });
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_TIMEOUT_MS: "4000" }).jevTimeoutMs).toBe(8_000);
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_LAYA_TIMEOUT_MS: "9000" }).jevTimeoutMs).toBe(9_000);
     const { calls, fetchImpl } = capture(() => Response.json(answer));
     const result = await createAskJev(keyless, fetchImpl)(request);
     expect(calls[0]!.headers.get("authorization")).toBeNull();
@@ -135,6 +170,45 @@ describe("asking Laya locally", () => {
     const keyed = capture(() => Response.json(answer));
     await createAskJev(withKey, keyed.fetchImpl)(request);
     expect(keyed.calls[0]!.headers.get("authorization")).toBe("Bearer k");
+  });
+
+  it("sends Laya's configured max_len while leaving other providers' bodies unchanged", async () => {
+    const laya = loadConfig({ JEV_PROVIDER: "laya" });
+    const { calls: layaCalls, fetchImpl: layaFetch } = capture(() => Response.json(answer));
+    await createAskJev(laya, layaFetch)(request);
+    expect(layaCalls[0]!.body).toEqual({ ...request, max_len: 2_048 });
+
+    const configured = loadConfig({ JEV_PROVIDER: "laya", JEV_LAYA_MAX_LEN: "4096" });
+    const override = capture(() => Response.json(answer));
+    await createAskJev(configured, override.fetchImpl)(request);
+    expect(override.calls[0]!.body.max_len).toBe(4_096);
+
+    const other = loadConfig({ TYPESAFE_API_KEY: "k" });
+    const { calls: otherCalls, fetchImpl: otherFetch } = capture(() => Response.json(answer));
+    await createAskJev(other, otherFetch)(request);
+    expect(otherCalls[0]!.body).toEqual(request);
+    expect(otherCalls[0]!.body).not.toHaveProperty("max_len");
+    expect(loadConfig({ TYPESAFE_API_KEY: "k" })).toMatchObject({ maxStateChars: 60_000, maxMessageChars: 4_000 });
+    expect(loadConfig({ TYPESAFE_API_KEY: "k", JEV_LAYA_TIMEOUT_MS: "9000" }).jevTimeoutMs).toBe(4_000);
+  });
+
+  it("keeps Laya and hosted-provider size limits independent", () => {
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_MAX_STATE_CHARS: "60000", JEV_MAX_MESSAGE_CHARS: "4000" })).toMatchObject({
+      maxStateChars: 7_000,
+      maxMessageChars: 1_500,
+    });
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_LAYA_MAX_STATE_CHARS: "8000", JEV_LAYA_MAX_MESSAGE_CHARS: "1800" })).toMatchObject({
+      maxStateChars: 8_000,
+      maxMessageChars: 1_800,
+    });
+    expect(loadConfig({ TYPESAFE_API_KEY: "k", JEV_LAYA_MAX_STATE_CHARS: "8000", JEV_LAYA_MAX_MESSAGE_CHARS: "1800" })).toMatchObject({
+      maxStateChars: 60_000,
+      maxMessageChars: 4_000,
+    });
+    expect(loadConfig({ JEV_PROVIDER: "opencode", JEV_MAX_STATE_CHARS: "12000" })).toMatchObject({
+      maxStateChars: 12_000,
+      maxMessageChars: 4_000,
+    });
   });
 
   it("pins JEV_MODEL to a checkpoint Laya actually serves", () => {
@@ -153,7 +227,11 @@ describe("asking Laya locally", () => {
 });
 
 describe("OpenCode model availability", () => {
-  const answer = { model: "m", answers: { tool: { type: "choice", choice: "a", confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } } }, usage: { input_tokens: 10, output_tokens: 0 } };
+  const answer = {
+    model: "m",
+    answers: { tool: { type: "choice", choice: "a", confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } } },
+    usage: { input_tokens: 10, output_tokens: 0 },
+  };
 
   it.each([404, 410])("passes through when the free model returns %i without calling the paid model", async (status) => {
     const config = loadConfig({ OPENCODE_API_KEY: "ock" });
@@ -190,11 +268,29 @@ describe("OpenCode model availability", () => {
     expect(models).toEqual(["jev-1.13-free", "jev-1.13-free"]);
   });
 
+  it.each(["TimeoutError", "AbortError"])("does not retry a Laya %s but retries a refused local connection", async (name) => {
+    const config = loadConfig({ JEV_PROVIDER: "laya" });
+    let calls = 0;
+    const timeout = (async () => {
+      calls++;
+      throw new DOMException("Timed out", name);
+    }) as unknown as typeof fetch;
+    await expect(createAskJev(config, timeout)(request)).rejects.toThrow("Timed out");
+    expect(calls).toBe(1);
+
+    calls = 0;
+    const refused = (async () => {
+      calls++;
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    await expect(createAskJev(config, refused)(request)).rejects.toThrow("fetch failed");
+    expect(calls).toBe(2);
+  });
+
   it("does not retry a refused key", async () => {
     const config = loadConfig({ OPENCODE_API_KEY: "ock" });
     const { calls, fetchImpl } = capture(() => new Response("bad key", { status: 401 }));
     await expect(createAskJev(config, fetchImpl)({ ...request, model: config.jevModel })).rejects.toThrow(/401 from OpenCode/);
     expect(calls).toHaveLength(1);
   });
-
 });

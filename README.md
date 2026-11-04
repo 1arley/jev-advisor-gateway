@@ -27,19 +27,19 @@ jev-codex-advisor --yolo
 
 Use the matching launcher for your client:
 
-| Launcher               | Client      | Default behavior                                    |
-| ---------------------- | ----------- | --------------------------------------------------- |
-| `jev-codex-advisor`    | Codex       | GPT-6 Luna session with Jev and a GPT advisor       |
-| `jev-codex`            | Codex       | Your Codex default model with Jev; no advisor       |
-| `jev-claude-advisor`   | Claude Code | Haiku session with Jev and an Opus advisor          |
-| `jev-claude`           | Claude Code | Your existing Claude model with Jev; no advisor     |
-| `jev-opencode-advisor` | OpenCode    | OpenAI-compatible model with Jev and an advisor     |
-| `jev-opencode`         | OpenCode    | Your configured OpenCode model with Jev; no advisor |
-| `jev-kilo`             | Kilo CLI    | Kilo Gateway model with Jev                         |
-| `jev-gemini`           | Gemini CLI  | Gemini API-key traffic with Jev                     |
-| `jev-agy`              | Antigravity CLI | Your default Gemini model with Jev; no advisor                      |
-| `jev-agy-advisor`      | Antigravity CLI | Your default Gemini model with Jev and a Gemini advisor             |
-| `jev-devin`            | Devin CLI   | Devin traffic with Jev                              |
+| Launcher               | Client          | Default behavior                                        |
+| ---------------------- | --------------- | ------------------------------------------------------- |
+| `jev-codex-advisor`    | Codex           | GPT-6 Luna session with Jev and a GPT advisor           |
+| `jev-codex`            | Codex           | Your Codex default model with Jev; no advisor           |
+| `jev-claude-advisor`   | Claude Code     | Haiku session with Jev and an Opus advisor              |
+| `jev-claude`           | Claude Code     | Your existing Claude model with Jev; no advisor         |
+| `jev-opencode-advisor` | OpenCode        | OpenAI-compatible model with Jev and an advisor         |
+| `jev-opencode`         | OpenCode        | Your configured OpenCode model with Jev; no advisor     |
+| `jev-kilo`             | Kilo CLI        | Kilo Gateway model with Jev                             |
+| `jev-gemini`           | Gemini CLI      | Gemini API-key traffic with Jev                         |
+| `jev-agy`              | Antigravity CLI | Your default Gemini model with Jev; no advisor          |
+| `jev-agy-advisor`      | Antigravity CLI | Your default Gemini model with Jev and a Gemini advisor |
+| `jev-devin`            | Devin CLI       | Devin traffic with Jev                                  |
 
 `jev-codex-advisor` also has the alias `codex-jev-advisor`. Launchers pass their settings to that
 process only: they do not edit your Codex, Claude, OpenCode or other client configuration. Use the
@@ -165,15 +165,15 @@ the [local Jev notes](docs/client-compatibility.md#local-jev-options).
 
 ## Client compatibility
 
-| Client      | Status and caveat                                                                                                                                                                        |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Codex       | Uses your existing login and Responses API. Direct tool answers are disabled to preserve upstream response history.                                                                      |
-| Claude Code | Uses your existing login. Cached prefixes and extended thinking mean Jev adds a hint; the model still reasons about the tool.                                                            |
-| OpenCode    | v1 gets a per-process provider. v2 requires a one-time config snippet because it does not accept provider configuration from the environment. Only the selected gateway model is routed. |
-| Kilo        | Adds a gateway provider for Kilo Gateway; Kilo's own sign-in is not reused by that provider.                                                                                             |
-| Gemini CLI  | The Gemini API-key path is supported. Google-account sign-in uses another service and bypasses this gateway.                                                                             |
-| Antigravity CLI | `jev-agy` and `jev-agy-advisor` use the Gemini API key and preserve the CLI's selected model.                                  |
-| Devin       | Uses the Connect RPC path and hint mode. Stream errors returned inside HTTP 200 cannot be replayed by the gateway.                                                                       |
+| Client          | Status and caveat                                                                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex           | Uses your existing login and Responses API. Direct tool answers are disabled to preserve upstream response history.                                                                      |
+| Claude Code     | Uses your existing login. Cached prefixes and extended thinking mean Jev adds a hint; the model still reasons about the tool.                                                            |
+| OpenCode        | v1 gets a per-process provider. v2 requires a one-time config snippet because it does not accept provider configuration from the environment. Only the selected gateway model is routed. |
+| Kilo            | Adds a gateway provider for Kilo Gateway; Kilo's own sign-in is not reused by that provider.                                                                                             |
+| Gemini CLI      | The Gemini API-key path is supported. Google-account sign-in uses another service and bypasses this gateway.                                                                             |
+| Antigravity CLI | `jev-agy` and `jev-agy-advisor` use the Gemini API key and preserve the CLI's selected model.                                                                                            |
+| Devin           | Uses the Connect RPC path and hint mode. Stream errors returned inside HTTP 200 cannot be replayed by the gateway.                                                                       |
 
 See [client setup and compatibility](docs/client-compatibility.md) for exact versions tested,
 OpenCode v2 setup, routing boundaries, and provider details. A supported protocol does not mean
@@ -236,6 +236,8 @@ The launchers read settings from the shell or `~/.jev-gateway/.env`; a checkout 
 | `JEV_ARG_MIN_CERTAINTY`  | `0.8`                    | Minimum certainty for each closed-set argument in a direct answer                 |
 | `JEV_ROUTING`            | `on`                     | Start in routing or baseline mode                                                 |
 | `JEV_TIMEOUT_MS`         | `4000`                   | Jev request deadline                                                              |
+| `JEV_LAYA_TIMEOUT_MS`    | `8000`                   | Laya request deadline; other providers ignore it                                  |
+| `JEV_LAYA_MAX_LEN`       | `2048`                   | `max_len` sent to Laya only                                                       |
 | `JEV_ADVISOR`            | on for advisor launchers | Enable read-only advisor consultations                                            |
 | `JEV_ADVISOR_MODEL`      | launcher-specific        | Model used for advisor replies                                                    |
 | `JEV_ADVISOR_PROVIDER`   | unset                    | Opt into `openai-compatible` or `anthropic`; requires an explicit URL and model   |

@@ -37,6 +37,8 @@ export interface Config {
   jevUrl: string;
   jevModel: string;
   jevTimeoutMs: number;
+  /** max_len tells laya-serve how much state to read from its default 1,024-token window. */
+  jevMaxLen?: number;
   /** Below this, Jev's tool decision is ignored and the LLM decides. */
   minConfidence: number;
   /** Per-argument certainty needed to answer without calling the LLM. */
@@ -184,17 +186,16 @@ export function loadConfig(env: Env = process.env): Config {
     jevApiKey: str(env, PROVIDERS[jevProvider].keyEnv),
     jevUrl: resolveUrl(jevProvider, env),
     jevModel,
-    jevTimeoutMs: num(env, "JEV_TIMEOUT_MS", 4000),
+    jevTimeoutMs: jevProvider === "laya" ? num(env, "JEV_LAYA_TIMEOUT_MS", 8_000) : num(env, "JEV_TIMEOUT_MS", 4_000),
+    jevMaxLen: jevProvider === "laya" ? num(env, "JEV_LAYA_MAX_LEN", 2048) : undefined,
     minConfidence: num(env, "JEV_MIN_CONFIDENCE", 0.7),
     argMinCertainty: num(env, "JEV_ARG_MIN_CERTAINTY", 0.8),
     onNone,
     // Synthetic Responses IDs are not known to Codex's upstream history store.
     directCalls: client === "codex" ? false : bool(env, "JEV_DIRECT_CALLS", true),
     routing: bool(env, "JEV_ROUTING", true),
-    // laya-serve refuses a state above 50,000 characters; the laya default keeps under it so no
-    // request goes unrouted for size.
-    maxStateChars: num(env, "JEV_MAX_STATE_CHARS", jevProvider === "laya" ? 50_000 : 60_000),
-    maxMessageChars: num(env, "JEV_MAX_MESSAGE_CHARS", 4_000),
+    maxStateChars: jevProvider === "laya" ? num(env, "JEV_LAYA_MAX_STATE_CHARS", 7_000) : num(env, "JEV_MAX_STATE_CHARS", 60_000),
+    maxMessageChars: jevProvider === "laya" ? num(env, "JEV_LAYA_MAX_MESSAGE_CHARS", 1_500) : num(env, "JEV_MAX_MESSAGE_CHARS", 4_000),
     debugDumpDir: str(env, "JEV_DEBUG_DUMP_DIR"),
     client,
     logFile: str(env, "JEV_LOG_FILE"),
