@@ -114,17 +114,13 @@ function skipReason(input: RouterInput): string | undefined {
 }
 
 function recentToolResults(input: RouterInput): Set<string> {
-  const tools = new Set<string>();
-  let foundToolCall = false;
+  const recent: string[] = [];
   for (const turn of input.turns.toReversed()) {
-    if (turn.role === "assistant" && Array.isArray(turn.tool_calls)) {
-      foundToolCall = true;
-      break;
-    }
-    if (turn.role !== "tool_result") continue;
-    if (typeof turn.tool === "string") tools.add(turn.tool);
+    if (turn.role === "tool_result" && typeof turn.tool === "string") recent.push(turn.tool);
+    if (turn.role === "assistant" && Array.isArray(turn.tool_calls)) return new Set(recent);
+    if (turn.role === "user") return new Set();
   }
-  return foundToolCall ? tools : new Set();
+  return new Set();
 }
 
 /** Fill every argument from Jev's answers; the weakest judgement bounds the whole call. */

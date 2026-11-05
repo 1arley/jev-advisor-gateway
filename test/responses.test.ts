@@ -515,6 +515,30 @@ describe("POST /v1/responses", () => {
     expect(upstream.calls[0]!.body.tool_choice).toBe("auto");
   });
 
+  it("does not treat a prior turn's tool result as recent in a new user request", async () => {
+    const request = codexLiteRequest() as { input: Array<Record<string, unknown>> } & Record<string, unknown>;
+    request.input = [
+      request.input[0]!,
+      { type: "function_call", call_id: "call_old", name: "exec", arguments: "text('old')" },
+      { type: "function_call_output", call_id: "call_old", output: "old result" },
+      { type: "message", role: "assistant", content: "Done with the previous request." },
+      { type: "message", role: "user", content: "Start a new task." },
+    ];
+    const jev = fakeJev({ tool: { choice: "exec", confidence: 0.9 }, needs_tool: { noul: 0.9 } });
+    const upstream = fakeUpstream();
+    const app = createApp({ config: testConfig({ client: "codex", jevProvider: "laya" }), askJev: jev.askJev, fetch: upstream.fetchImpl });
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("forced");
+    expect(response.headers.get("x-jev-gateway-reason")).not.toBe("recent_tool_result");
+    expect(upstream.calls[0]!.body.tool_choice).toEqual({ type: "custom", name: "exec" });
+  });
+
   it.each(["gpt-codex", "codex-auto-review"])("leaves readable agent messages to %s", async (model) => {
     const { post, jev, upstream } = setup({ tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
     const request = codexRequest({ model });
