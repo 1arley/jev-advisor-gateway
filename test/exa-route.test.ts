@@ -123,6 +123,18 @@ describe("the exa route", () => {
       exaAdapter.encode = encode;
     }
   });
+
+  it("fails open to passthrough with untouched body when askJev throws", async () => {
+    const upstream = rawUpstream(reply);
+    const brokenJev = () => Promise.reject(new Error("Jev offline"));
+    const body = exaRequest(userMsg("run echo hi"), toolDef("exec", '{"type":"object","properties":{"command":{"type":"string"}}}'));
+    const res = await post(app(brokenJev, upstream.fetchImpl), PATH, body);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-jev-gateway-mode")).toBe("passthrough");
+    expect(res.headers.get("x-jev-gateway-reason")).toBe("jev_error");
+    expect(upstream.calls[0]?.url).toBe(`https://server.codeium.com${PATH}`);
+    expect(upstream.calls[0]?.body).toEqual(body);
+  });
 });
 
 describe("the catch-all forward", () => {

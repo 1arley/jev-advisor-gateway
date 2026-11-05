@@ -79,8 +79,9 @@ function validAnswer(question: Questions[string], value: unknown): boolean {
   if (!isRecord(distribution)) return false;
 
   const probabilities = Object.keys(distribution);
-  return Object.hasOwn(distribution, value.choice) && probabilities.every((option) =>
-    Object.hasOwn(question.criteria, option) && isProbability(distribution[option]),
+  return (
+    Object.hasOwn(distribution, value.choice) &&
+    probabilities.every((option) => Object.hasOwn(question.criteria, option) && isProbability(distribution[option]))
   );
 }
 
@@ -88,9 +89,7 @@ function validResult(result: unknown, questions: Questions): result is SystemOne
   if (!isRecord(result) || !isRecord(result.answers) || !isRecord(result.usage)) return false;
   if (!isTokenCount(result.usage.input_tokens) || !isTokenCount(result.usage.output_tokens)) return false;
   const answers = result.answers;
-  return Object.entries(questions).every(([key, question]) =>
-    Object.hasOwn(answers, key) && validAnswer(question, answers[key]),
-  );
+  return Object.entries(questions).every(([key, question]) => Object.hasOwn(answers, key) && validAnswer(question, answers[key]));
 }
 
 /**
@@ -112,6 +111,20 @@ function skipReason(input: RouterInput): string | undefined {
   if (input.tools.some((tool) => tool.name === NO_TOOL)) return "reserved_tool_name";
   if (input.toolChoice === "decided") return "tool_choice_already_decided";
   return undefined;
+}
+
+function recentToolResults(input: RouterInput): Set<string> {
+  const tools = new Set<string>();
+  let foundToolCall = false;
+  for (const turn of input.turns.toReversed()) {
+    if (turn.role === "assistant" && Array.isArray(turn.tool_calls)) {
+      foundToolCall = true;
+      break;
+    }
+    if (turn.role !== "tool_result") continue;
+    if (typeof turn.tool === "string") tools.add(turn.tool);
+  }
+  return foundToolCall ? tools : new Set();
 }
 
 /** Fill every argument from Jev's answers; the weakest judgement bounds the whole call. */
@@ -168,10 +181,12 @@ async function shortlist(
       .slice(0, SHORTLIST_PER_SHARD)
       .map(([name, confidence]) => ({ name, confidence }));
   });
-  const selected = new Set(ranked
-    .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, maxTools)
-    .map(({ name }) => name));
+  const selected = new Set(
+    ranked
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, maxTools)
+      .map(({ name }) => name),
+  );
   const kept = tools.filter((tool) => selected.has(tool.name));
   return { tools: kept, inputTokens: result.usage.input_tokens };
 }
@@ -239,6 +254,15 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     return config.onNone === "force_none" && input.steer !== "hint"
       ? { mode: "none", confidence: picked.confidence, jev }
       : { mode: "passthrough", reason: "no_tool_needed", jev };
+  }
+
+  // Let coding agents inspect a result when Laya picks the tool that just produced it.
+  if (
+    config.jevProvider === "laya" &&
+    (config.client === "opencode" || config.client === "codex") &&
+    recentToolResults(input).has(picked.choice)
+  ) {
+    return { mode: "passthrough", reason: "recent_tool_result", jev };
   }
 
   const toolIndex = plans.findIndex((plan) => plan.name === picked.choice);

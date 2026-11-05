@@ -4,6 +4,7 @@ import { type Adapter, sse } from "./adapter.js";
 
 export interface GeminiPart {
   text?: string;
+  thought?: boolean;
   functionCall?: {
     name: string;
     args?: Record<string, unknown>;
@@ -73,7 +74,7 @@ function toInput(req: GeminiRequest, maxMessageChars: number): RouterInput | { s
     const toolCalls: Array<{ tool: string; arguments: string }> = [];
 
     for (const part of content.parts ?? []) {
-      if (part.text) {
+      if (part.text && !part.thought) {
         textParts.push(part.text);
       } else if (part.functionCall) {
         toolCalls.push({

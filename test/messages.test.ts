@@ -125,7 +125,10 @@ describe("POST /v1/messages", () => {
     });
     const upstream = fakeUpstream();
     const app = createApp({ config: testConfig(), askJev: jev.askJev, fetch: upstream.fetchImpl });
-    const res = await app.request("/v1/messages", { method: "POST", body: JSON.stringify(claudeRequest({ ...asClaudeCode, tools: many })) });
+    const res = await app.request("/v1/messages", {
+      method: "POST",
+      body: JSON.stringify(claudeRequest({ ...asClaudeCode, tools: many })),
+    });
 
     expect(jev.requests).toHaveLength(2);
     expect(Object.keys(jev.requests[0]!.questions)).toEqual(["shard:0", "shard:1", "shard:2"]);
@@ -175,5 +178,66 @@ describe("POST /v1/messages", () => {
     const named = setup(bash);
     await named.post(claudeRequest({ tool_choice: { type: "tool", name: "Bash" } }));
     expect(named.jev.requests).toHaveLength(0);
+  });
+
+  it("skips thinking and redacted_thinking across multiple assistant turns and tool results", async () => {
+    const { post, jev } = setup(bash);
+    await post({
+      model: "claude-test",
+      max_tokens: 1024,
+      system: "You are a test assistant.",
+      messages: [
+        { role: "user", content: "first question" },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "first turn thinking", signature: "sig1" },
+            { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "t1", content: "file.txt" }],
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "second turn thinking", signature: "sig2" },
+            { type: "redacted_thinking", data: "encrypted" },
+            { type: "text", text: "Found file.txt, checking content." },
+            { type: "tool_use", id: "t2", name: "Bash", input: { command: "cat file.txt" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "t2", content: "hello world" }],
+        },
+        {
+          role: "user",
+          content: "what does it say?",
+        },
+      ],
+      tools: [
+        {
+          name: "Bash",
+          description: "Run a shell command.",
+          input_schema: { type: "object", properties: { command: { type: "string" } } },
+        },
+      ],
+    });
+
+    const { state } = jev.requests[0]!;
+    expect(state).toEqual({
+      assistant_instructions: "You are a test assistant.",
+      conversation: [
+        { role: "user", text: "first question" },
+        { role: "assistant", tool_calls: [{ tool: "Bash", arguments: '{"command":"ls"}' }] },
+        { role: "tool_result", tool: "Bash", content: "file.txt" },
+        { role: "assistant", text: "Found file.txt, checking content." },
+        { role: "assistant", tool_calls: [{ tool: "Bash", arguments: '{"command":"cat file.txt"}' }] },
+        { role: "tool_result", tool: "Bash", content: "hello world" },
+        { role: "user", text: "what does it say?" },
+      ],
+    });
   });
 });

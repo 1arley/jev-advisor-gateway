@@ -127,7 +127,7 @@ export function loadConfig(env: Env = process.env): Config {
       throw new Error("JEV_ADVISOR_URL must use HTTPS (or loopback HTTP) and have no credentials, query or fragment");
     }
   }
-  const onNone = str(env, "JEV_ON_NONE") ?? "force_none";
+  const onNone = str(env, "JEV_ON_NONE") ?? (jevProvider === "laya" ? "passthrough" : "force_none");
   if (onNone !== "force_none" && onNone !== "passthrough") {
     throw new Error(`JEV_ON_NONE must be "force_none" or "passthrough", got "${onNone}"`);
   }
@@ -186,7 +186,7 @@ export function loadConfig(env: Env = process.env): Config {
     jevApiKey: str(env, PROVIDERS[jevProvider].keyEnv),
     jevUrl: resolveUrl(jevProvider, env),
     jevModel,
-    jevTimeoutMs: jevProvider === "laya" ? num(env, "JEV_LAYA_TIMEOUT_MS", 8_000) : num(env, "JEV_TIMEOUT_MS", 4_000),
+    jevTimeoutMs: jevProvider === "laya" ? num(env, "JEV_LAYA_TIMEOUT_MS", 8_000) : num(env, "JEV_TIMEOUT_MS", 8_000),
     jevMaxLen: jevProvider === "laya" ? num(env, "JEV_LAYA_MAX_LEN", 2048) : undefined,
     minConfidence: num(env, "JEV_MIN_CONFIDENCE", 0.7),
     argMinCertainty: num(env, "JEV_ARG_MIN_CERTAINTY", 0.8),

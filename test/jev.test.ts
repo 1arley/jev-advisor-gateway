@@ -156,7 +156,10 @@ describe("asking Laya locally", () => {
       maxMessageChars: 1_500,
       jevMaxLen: 2_048,
       jevTimeoutMs: 8_000,
+      onNone: "passthrough",
     });
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_ON_NONE: "force_none" }).onNone).toBe("force_none");
+    expect(loadConfig({ TYPESAFE_API_KEY: "k" }).onNone).toBe("force_none");
     expect(loadConfig({ JEV_PROVIDER: "laya", JEV_TIMEOUT_MS: "4000" }).jevTimeoutMs).toBe(8_000);
     expect(loadConfig({ JEV_PROVIDER: "laya", JEV_LAYA_TIMEOUT_MS: "9000" }).jevTimeoutMs).toBe(9_000);
     const { calls, fetchImpl } = capture(() => Response.json(answer));
@@ -189,7 +192,7 @@ describe("asking Laya locally", () => {
     expect(otherCalls[0]!.body).toEqual(request);
     expect(otherCalls[0]!.body).not.toHaveProperty("max_len");
     expect(loadConfig({ TYPESAFE_API_KEY: "k" })).toMatchObject({ maxStateChars: 60_000, maxMessageChars: 4_000 });
-    expect(loadConfig({ TYPESAFE_API_KEY: "k", JEV_LAYA_TIMEOUT_MS: "9000" }).jevTimeoutMs).toBe(4_000);
+    expect(loadConfig({ TYPESAFE_API_KEY: "k", JEV_LAYA_TIMEOUT_MS: "9000" }).jevTimeoutMs).toBe(8_000);
   });
 
   it("keeps Laya and hosted-provider size limits independent", () => {

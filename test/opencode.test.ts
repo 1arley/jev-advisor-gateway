@@ -190,11 +190,7 @@ function chatSetup(canned: Parameters<typeof fakeJev>[0], config = testConfig())
   return { post, jev, upstream };
 }
 
-function responsesSetup(
-  canned: Parameters<typeof fakeJev>[0],
-  config = testConfig(),
-  reply?: (body: any) => Response,
-) {
+function responsesSetup(canned: Parameters<typeof fakeJev>[0], config = testConfig(), reply?: (body: any) => Response) {
   const jev = fakeJev(canned);
   const upstream = fakeUpstream();
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -226,10 +222,7 @@ describe("opencode chat completions (stable @ai-sdk/openai-compatible)", () => {
   });
 
   it("forces the native tool Jev picked and preserves provider fields", async () => {
-    const { post, upstream } = chatSetup(
-      { tool: { choice: "bash" }, needs_tool: { noul: 0.9 } },
-      testConfig({ argsModel: "cheap-model" }),
-    );
+    const { post, upstream } = chatSetup({ tool: { choice: "bash" }, needs_tool: { noul: 0.9 } }, testConfig({ argsModel: "cheap-model" }));
     const body = opencodeChatRequest();
     const res = await post(body);
 
@@ -244,6 +237,63 @@ describe("opencode chat completions (stable @ai-sdk/openai-compatible)", () => {
     expect(sent.stream).toBe(true);
     expect(sent.stream_options).toEqual({ include_usage: true });
     expect(sent.messages).toEqual(body.messages);
+  });
+
+  it("lets OpenCode inspect a tool result when Laya picks that same tool again", async () => {
+    const messages = [
+      ...opencodeChatRequest().messages,
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ id: "call_previous", type: "function", function: { name: "read", arguments: '{"filePath":"src/a.ts"}' } }],
+      },
+      { role: "tool", tool_call_id: "call_previous", content: "file contents" },
+    ];
+    const continuation = opencodeChatRequest({ messages });
+    const { post, upstream } = chatSetup(
+      { tool: { choice: "read" }, needs_tool: { noul: 0.95 } },
+      testConfig({ client: "opencode", jevProvider: "laya" }),
+    );
+
+    const response = await post(continuation);
+
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("passthrough");
+    expect(response.headers.get("x-jev-gateway-reason")).toBe("recent_tool_result");
+    expect(upstream.calls[0]!.body.tool_choice).toBe("auto");
+
+    const anotherTool = chatSetup(
+      { tool: { choice: "bash" }, needs_tool: { noul: 0.95 } },
+      testConfig({ client: "opencode", jevProvider: "laya" }),
+    );
+    const otherResponse = await anotherTool.post(continuation);
+
+    expect(otherResponse.headers.get("x-jev-gateway-mode")).toBe("forced");
+    expect(anotherTool.upstream.calls[0]!.body.tool_choice).toEqual({ type: "function", function: { name: "bash" } });
+  });
+
+  it("checks every result in a parallel tool batch before forcing another call", async () => {
+    const messages = [
+      ...opencodeChatRequest().messages,
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_read", type: "function", function: { name: "read", arguments: "{}" } },
+          { id: "call_bash", type: "function", function: { name: "bash", arguments: "{}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_read", content: "file contents" },
+      { role: "tool", tool_call_id: "call_bash", content: "command output" },
+    ];
+    const { post, upstream } = chatSetup(
+      { tool: { choice: "read" }, needs_tool: { noul: 0.95 } },
+      testConfig({ client: "opencode", jevProvider: "laya" }),
+    );
+
+    const response = await post(opencodeChatRequest({ messages }));
+
+    expect(response.headers.get("x-jev-gateway-reason")).toBe("recent_tool_result");
+    expect(upstream.calls[0]!.body.tool_choice).toBe("auto");
   });
 
   it("treats MCP-originated function tools like native ones", async () => {
@@ -307,7 +357,10 @@ describe("opencode chat completions (stable @ai-sdk/openai-compatible)", () => {
     const res = await post(body);
 
     expect(res.headers.get("content-type")).toContain("text/event-stream");
-    const events = (await res.text()).trim().split("\n\n").map((line) => line.replace(/^data: /, ""));
+    const events = (await res.text())
+      .trim()
+      .split("\n\n")
+      .map((line) => line.replace(/^data: /, ""));
     expect(events.at(-1)).toBe("[DONE]");
     const chunks = events.slice(0, -1).map((event) => JSON.parse(event));
     const args = chunks.map((chunk) => chunk.choices[0]?.delta.tool_calls?.[0]?.function?.arguments ?? "").join("");

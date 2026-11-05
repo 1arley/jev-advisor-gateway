@@ -475,6 +475,46 @@ describe("POST /v1/responses", () => {
     expect(upstream.calls).toHaveLength(1);
   });
 
+  it("passes Codex continuations through when Laya selects the tool that just returned output", async () => {
+    const jev = fakeJev({ tool: { choice: "exec", confidence: 0.9 }, needs_tool: { noul: 0.9 } });
+    const upstream = fakeUpstream();
+    const app = createApp({ config: testConfig({ client: "codex", jevProvider: "laya" }), askJev: jev.askJev, fetch: upstream.fetchImpl });
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(codexLiteRequest()),
+    });
+
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("passthrough");
+    expect(response.headers.get("x-jev-gateway-reason")).toBe("recent_tool_result");
+    expect(upstream.calls[0]!.body.tool_choice).toBe("auto");
+  });
+
+  it("finds earlier tool results across assistant messages in a Codex continuation", async () => {
+    const request = codexLiteRequest() as { input: Array<Record<string, unknown>> } & Record<string, unknown>;
+    request.input.splice(
+      1,
+      0,
+      { type: "function_call", call_id: "call_exec", name: "exec", arguments: "text('first')" },
+      { type: "function_call_output", call_id: "call_exec", output: "first result" },
+      { type: "message", role: "assistant", content: "Checking one more thing." },
+      { type: "function_call", call_id: "call_clock", name: "clock.sleep", arguments: "{}" },
+      { type: "function_call_output", call_id: "call_clock", output: "second result" },
+    );
+    const jev = fakeJev({ tool: { choice: "exec", confidence: 0.9 }, needs_tool: { noul: 0.9 } });
+    const upstream = fakeUpstream();
+    const app = createApp({ config: testConfig({ client: "codex", jevProvider: "laya" }), askJev: jev.askJev, fetch: upstream.fetchImpl });
+
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    });
+
+    expect(response.headers.get("x-jev-gateway-reason")).toBe("recent_tool_result");
+    expect(upstream.calls[0]!.body.tool_choice).toBe("auto");
+  });
+
   it.each(["gpt-codex", "codex-auto-review"])("leaves readable agent messages to %s", async (model) => {
     const { post, jev, upstream } = setup({ tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
     const request = codexRequest({ model });

@@ -234,26 +234,26 @@ representative request to `POST /router/decide`. The endpoint still asks Jev to 
 The launchers read settings from the shell or `~/.jev-gateway/.env`; a checkout can use its own
 `.env`. The complete, current list is in [`.env.example`](.env.example).
 
-| Setting                  | Default                  | Purpose                                                                           |
-| ------------------------ | ------------------------ | --------------------------------------------------------------------------------- |
-| `JEV_PROVIDER`           | inferred from key        | Jev provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya` |
-| `JEV_MIN_CONFIDENCE`     | `0.7`                    | Lower confidence passes the choice to the session model                           |
-| `JEV_ARG_MIN_CERTAINTY`  | `0.8`                    | Minimum certainty for each closed-set argument in a direct answer                 |
-| `JEV_ROUTING`            | `on`                     | Start in routing or baseline mode                                                 |
-| `JEV_TIMEOUT_MS`         | `4000`                   | Jev request deadline                                                              |
-| `JEV_LAYA_TIMEOUT_MS`    | `8000`                   | Laya request deadline; other providers ignore it                                  |
-| `JEV_LAYA_MAX_LEN`       | `2048`                   | `max_len` sent to Laya only                                                       |
-| `JEV_ADVISOR`            | on for advisor launchers | Enable read-only advisor consultations                                            |
-| `JEV_ADVISOR_MODEL`      | launcher-specific        | Model used for advisor replies                                                    |
-| `JEV_ADVISOR_PROVIDER`   | unset                    | Opt into `openai-compatible` or `anthropic`; requires an explicit URL and model   |
-| `JEV_ADVISOR_URL`        | unset                    | Separate advisor API base URL; HTTPS remotely, loopback only for HTTP             |
-| `JEV_ADVISOR_API_KEY`    | unset                    | Separate advisor key; never reuses the main upstream credential                   |
-| `JEV_ADVISOR_EFFORT`     | unset                    | `low`, `medium` or `high` for models documenting native effort support            |
-| `JEV_ADVISOR_TIMEOUT_MS` | `30000`                  | Advisor request deadline                                                          |
-| `ARGS_MODEL`             | unset                    | Optional model for open-ended tool arguments; not used for Codex                  |
-| `JEV_ON_NONE`            | `force_none`             | Send `tool_choice: none` or pass the request through when Jev selects no tool     |
-| `HOST`                   | `127.0.0.1`              | Bind address; configure `ROUTER_API_KEY` before exposing the gateway              |
-| `JEV_DEBUG_DUMP_DIR`     | unset                    | Opt-in request dumps; includes full conversation bodies, so use with care         |
+| Setting                  | Default                                   | Purpose                                                                                   |
+| ------------------------ | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `JEV_PROVIDER`           | inferred from key                         | Jev provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya`         |
+| `JEV_MIN_CONFIDENCE`     | `0.7`                                     | Lower confidence passes the choice to the session model                                   |
+| `JEV_ARG_MIN_CERTAINTY`  | `0.8`                                     | Minimum certainty for each closed-set argument in a direct answer                         |
+| `JEV_ROUTING`            | `on`                                      | Start in routing or baseline mode                                                         |
+| `JEV_TIMEOUT_MS`         | `8000` (non-Laya)                         | Jev request deadline; Laya uses `JEV_LAYA_TIMEOUT_MS`                                     |
+| `JEV_LAYA_TIMEOUT_MS`    | `8000` (Laya)                             | Laya request deadline; other providers ignore it                                          |
+| `JEV_LAYA_MAX_LEN`       | `2048`                                    | `max_len` sent to Laya only                                                               |
+| `JEV_ADVISOR`            | on for advisor launchers                  | Enable read-only advisor consultations                                                    |
+| `JEV_ADVISOR_MODEL`      | launcher-specific                         | Model used for advisor replies                                                            |
+| `JEV_ADVISOR_PROVIDER`   | unset                                     | Opt into `openai-compatible` or `anthropic`; requires an explicit URL and model           |
+| `JEV_ADVISOR_URL`        | unset                                     | Separate advisor API base URL; HTTPS remotely, loopback only for HTTP                     |
+| `JEV_ADVISOR_API_KEY`    | unset                                     | Separate advisor key; never reuses the main upstream credential                           |
+| `JEV_ADVISOR_EFFORT`     | unset                                     | `low`, `medium` or `high` for models documenting native effort support                    |
+| `JEV_ADVISOR_TIMEOUT_MS` | `30000`                                   | Advisor request deadline                                                                  |
+| `ARGS_MODEL`             | unset                                     | Optional model for open-ended tool arguments; not used for Codex                          |
+| `JEV_ON_NONE`            | Laya: `passthrough`; others: `force_none` | Send `tool_choice: none` or pass through when Jev selects no tool; an explicit value wins |
+| `HOST`                   | `127.0.0.1`                               | Bind address; configure `ROUTER_API_KEY` before exposing the gateway                      |
+| `JEV_DEBUG_DUMP_DIR`     | unset                                     | Opt-in request dumps; includes full conversation bodies, so use with care                 |
 
 Launcher-specific ports, upstreams and model options are also listed in [`.env.example`](.env.example).
 

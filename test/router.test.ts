@@ -4,6 +4,7 @@ import { createApp } from "../src/app.js";
 import { chatAdapter } from "../src/adapters/chat.js";
 import { responsesAdapter } from "../src/adapters/responses.js";
 import { createRouter } from "../src/router.js";
+import { loadConfig } from "../src/config.js";
 import { NO_TOOL, planTool } from "../src/questions.js";
 import { buildState } from "../src/state.js";
 import type { RouterInput, RouterTool } from "../src/types.js";
@@ -32,6 +33,28 @@ function setup(canned: Parameters<typeof fakeJev>[0], config = testConfig()) {
 }
 
 describe("router module", () => {
+  it("passes Laya's no-tool choice to the model instead of suppressing its tools", async () => {
+    const jev = fakeJev({ tool: { choice: NO_TOOL }, needs_tool: { noul: 0.05 } });
+    const upstream = fakeUpstream();
+    const app = createApp({
+      config: loadConfig({ JEV_PROVIDER: "laya", JEV_DIRECT_CALLS: "false" }),
+      askJev: jev.askJev,
+      fetch: upstream.fetchImpl,
+    });
+
+    const response = await app.request("/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(chat("Rename the typo in this file")),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-jev-gateway-mode")).toBe("passthrough");
+    expect(response.headers.get("x-jev-gateway-reason")).toBe("no_tool_needed");
+    expect(upstream.calls).toHaveLength(1);
+    expect(upstream.calls[0]!.body).not.toHaveProperty("tool_choice", "none");
+  });
+
   it("keeps Laya tool questions within its 100-option limit", async () => {
     const largeTools = Array.from({ length: 205 }, (_, index) => ({
       type: "function",

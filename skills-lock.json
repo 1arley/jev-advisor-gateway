@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "alethe": {
+      "source": "Kc1t/alethe-orchestrate-skill",
+      "sourceType": "github",
+      "skillPath": "skills/alethe/SKILL.md",
+      "computedHash": "13214553223ecf18452c97142abd5d7b3c811eb0500fa7b867cdf945b1838745"
+    },
+    "receiving-code-review": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "skillPath": "skills/receiving-code-review/SKILL.md",
+      "computedHash": "59361179fc9225173e0c145ffd9bafbf9fdbf8b43ce3dc308497a0b4f83a6063"
+    },
     "setup-pre-commit": {
       "source": "mattpocock/skills",
       "sourceType": "github",

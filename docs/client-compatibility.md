@@ -139,7 +139,11 @@ has its own provider and billing; `OPENJEV_KEY` is only a setup placeholder. See
 bounded request state. Laya uses its own `JEV_LAYA_MAX_STATE_CHARS=7000` and
 `JEV_LAYA_MAX_MESSAGE_CHARS=1500` limits. Hosted providers keep the generic
 `JEV_MAX_STATE_CHARS=60000` and `JEV_MAX_MESSAGE_CHARS=4000` limits; `--setup` switches these
-limits with the selected provider. Laya has its own `JEV_LAYA_TIMEOUT_MS=8000` deadline, independent
+limits with the selected provider. With Laya, `JEV_ON_NONE` defaults to `passthrough`, so a mistaken
+no-tool choice does not stop the main model from selecting a tool. An explicit
+`JEV_ON_NONE=force_none` still forces `tool_choice: none`; remove that override to use the Laya
+default. Other Jev providers keep the `force_none` default. Laya has its own
+`JEV_LAYA_TIMEOUT_MS=8000` deadline, independent
 of `JEV_TIMEOUT_MS`; timeout and abort errors are not retried because another Laya request would
 consume the same narrow deadline. Connection failures still get one retry. Increase the Laya window
 only when the server has `LAYA_MAX_TOKEN_BUDGET >= JEV_LAYA_MAX_LEN`: larger windows can increase

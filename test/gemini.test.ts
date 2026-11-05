@@ -187,7 +187,9 @@ describe("POST /v1beta/models/...:generateContent", () => {
   });
 
   it("reads the model and the choice to stream from the path", async () => {
-    const noArgs = { functionDeclarations: [{ name: "list_plans", description: "List saved plans.", parameters: { type: "object", properties: {} } }] };
+    const noArgs = {
+      functionDeclarations: [{ name: "list_plans", description: "List saved plans.", parameters: { type: "object", properties: {} } }],
+    };
     const canned = { tool: { choice: "list_plans" }, needs_tool: { noul: 0.9 } };
     const direct = async (path: string) => {
       const app = createApp({ config: testConfig(), askJev: fakeJev(canned).askJev, fetch: fakeUpstream().fetchImpl });
@@ -210,13 +212,20 @@ describe("POST /v1beta/models/...:generateContent", () => {
   });
 
   it("offers Google-run tools to Jev without forcing them, and respects allowedFunctionNames", async () => {
-    const two = { functionDeclarations: [{ name: "shell", description: "Runs a shell command." }, { name: "read_file", description: "Reads a file." }] };
+    const two = {
+      functionDeclarations: [
+        { name: "shell", description: "Runs a shell command." },
+        { name: "read_file", description: "Reads a file." },
+      ],
+    };
     const hosted = setup({ tool: { choice: "googleSearch" }, needs_tool: { noul: 0.9 } });
     const res = await hosted.post(geminiRequest({ tools: [two, { googleSearch: {} }] }));
     expect(res.headers.get("x-jev-gateway-reason")).toBe("hosted_tool_selected");
 
     const narrowed = setup({ tool: { choice: "read_file" }, needs_tool: { noul: 0.9 } });
-    await narrowed.post(geminiRequest({ tools: [two], toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: ["read_file"] } } }));
+    await narrowed.post(
+      geminiRequest({ tools: [two], toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: ["read_file"] } } }),
+    );
     const question = narrowed.jev.requests[0]!.questions.tool!;
     expect(question.type === "choice" && Object.keys(question.criteria)).toEqual(["read_file"]);
   });
@@ -224,5 +233,74 @@ describe("POST /v1beta/models/...:generateContent", () => {
   it("meters a streamed Gemini reply", async () => {
     const body = `data: ${JSON.stringify({ candidates: [], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, cachedContentTokenCount: 64 } })}\n\n`;
     expect(await readUsage(new Response(body))).toMatchObject({ input: 100, output: 20, cached: 64 });
+  });
+
+  it("ignores unrecognized part types, skips thought parts, and preserves valid text and function calls", async () => {
+    const { post, jev } = setup(shellDecision);
+    await post(
+      geminiRequest({
+        contents: [
+          {
+            role: "user",
+            parts: [{ inlineData: { mimeType: "image/png", data: "base64data" } }, { text: "look at this image and run ls" }],
+          },
+          {
+            role: "model",
+            parts: [
+              { text: "I should inspect the directory with shell.", thought: true },
+              { functionCall: { name: "shell", args: { command: "ls -la" } } },
+            ],
+          },
+          {
+            role: "user",
+            parts: [{ functionResponse: { name: "shell", response: { output: "file.txt" } } }],
+          },
+        ],
+      }),
+    );
+
+    const { state } = jev.requests[0]!;
+    expect(state).toEqual({
+      assistant_instructions: "You are a helpful coding assistant.",
+      conversation: [
+        { role: "user", text: "look at this image and run ls" },
+        {
+          role: "assistant",
+          tool_calls: [{ tool: "shell", arguments: '{"command":"ls -la"}' }],
+        },
+        { role: "tool_result", tool: "shell", content: '{"output":"file.txt"}' },
+      ],
+    });
+  });
+
+  it("omits empty turns when all parts in a turn are non-text / thought parts", async () => {
+    const { post, jev } = setup(shellDecision);
+    await post(
+      geminiRequest({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: "hello" }],
+          },
+          {
+            role: "model",
+            parts: [{ text: "internal reasoning only", thought: true }],
+          },
+          {
+            role: "user",
+            parts: [{ text: "are you there?" }],
+          },
+        ],
+      }),
+    );
+
+    const { state } = jev.requests[0]!;
+    expect(state).toEqual({
+      assistant_instructions: "You are a helpful coding assistant.",
+      conversation: [
+        { role: "user", text: "hello" },
+        { role: "user", text: "are you there?" },
+      ],
+    });
   });
 });
