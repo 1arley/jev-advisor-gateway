@@ -34,12 +34,7 @@ export interface ToolPlan {
   closedParams?: ClosedParam[];
 }
 
-function closedParam(
-  name: string,
-  schema: JsonSchema,
-  required: boolean,
-  maxChoiceOptions: number,
-): ClosedParam | undefined {
+function closedParam(name: string, schema: JsonSchema, required: boolean, maxChoiceOptions: number): ClosedParam | undefined {
   if ("const" in schema) return { name, required, kind: "const", value: schema.const as Json };
   if (Array.isArray(schema.enum) && schema.enum.length > 0) {
     if (schema.enum.length === 1) return { name, required, kind: "const", value: schema.enum[0]! };
@@ -93,10 +88,7 @@ export const shardKey = (index: number) => `shard:${index}`;
  * First pass over a roster too big for one question: every shard is ranked in the same Jev call,
  * and the best few of each go on to the real decision — ranking wide, then judging a shortlist.
  */
-export function buildShortlistQuestions(
-  tools: RouterTool[],
-  maxTools = MAX_TOOLS,
-): { questions: Questions; shards: RouterTool[][] } {
+export function buildShortlistQuestions(tools: RouterTool[], maxTools = MAX_TOOLS): { questions: Questions; shards: RouterTool[][] } {
   const shardCount = Math.ceil(tools.length / maxTools);
   const size = Math.ceil(tools.length / shardCount);
   const shards = Array.from({ length: shardCount }, (_, index) => tools.slice(index * size, (index + 1) * size));
@@ -105,8 +97,7 @@ export function buildShortlistQuestions(
     questions[shardKey(index)] = {
       type: "choice",
       instructions:
-        "Given the conversation, which of these tools would best advance the user's latest request " +
-        "if the assistant called it next?",
+        "Given the conversation, which of these tools would best advance the user's latest request " + "if the assistant called it next?",
       criteria: { ...toolCriteria(shard), [NONE_OF_THESE]: "None of the tools in this list fits the next step." },
     };
   });
@@ -120,7 +111,13 @@ export function buildShortlistQuestions(
  */
 export function buildQuestions(
   tools: RouterTool[],
-  options: { allowNone: boolean; withArgs: boolean; maxChoiceOptions?: number },
+  options: {
+    allowNone: boolean;
+    withArgs: boolean;
+    maxChoiceOptions?: number;
+    layaNative?: boolean;
+    layaGate?: "noul_refined" | "binary_choice";
+  },
 ): { questions: Questions; plans: ToolPlan[] } {
   const plans = tools.map((tool) => planTool(tool, options.maxChoiceOptions));
   const criteria = toolCriteria(tools);
@@ -140,10 +137,41 @@ export function buildQuestions(
     },
     [NEEDS_TOOL_KEY]: {
       type: "noul",
-      instructions:
-        "Does the assistant need to call one of its tools now, rather than reply to the user in plain text?",
+      instructions: "Does the assistant need to call one of its tools now, rather than reply to the user in plain text?",
     },
   };
+  if (options.layaNative) {
+    const descriptions = toolCriteria(tools);
+    questions[TOOL_KEY] = {
+      type: "choice",
+      instructions: "Which tool should be called to handle the user request?",
+      criteria: {
+        ...Object.fromEntries(tools.map((tool, index) => [`tool_${index}`, `${tool.name}: ${descriptions[tool.name] ?? tool.name}`])),
+        ...(options.allowNone ? { direct_answer: "Answer the user request directly without calling any tools." } : {}),
+      },
+    };
+    if (options.layaGate === "noul_refined") {
+      questions[NEEDS_TOOL_KEY] = {
+        type: "noul",
+        instructions: "What should the assistant do next?",
+        criteria: {
+          true: "An available tool is needed for the next action.",
+          false: "The assistant can respond or proceed without a tool call now.",
+        },
+        labels: { true: "A", false: "B" },
+      } as Questions[string];
+    } else if (options.layaGate === "binary_choice") {
+      questions[NEEDS_TOOL_KEY] = {
+        type: "choice",
+        instructions: "What should the assistant do next?",
+        criteria: {
+          A: "An available tool is needed for the next action.",
+          B: "The assistant can respond or proceed without a tool call now.",
+        },
+      };
+    } else delete questions[NEEDS_TOOL_KEY];
+    return { questions, plans };
+  }
   if (!options.withArgs) return { questions, plans };
 
   let argQuestions = 0;

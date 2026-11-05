@@ -3,6 +3,32 @@
 Use the launcher for your client. Launchers pass settings to that process and do not edit client
 configuration files. They forward client arguments unchanged.
 
+## Offline protocol checks
+
+Run the captured Codex Responses and OpenCode Chat Completions/Responses fixtures without API keys,
+network access, or client configuration changes:
+
+```bash
+node_modules/.bin/vitest run test/responses.test.ts test/codex-advisor.test.ts test/opencode.test.ts test/opencode-config.test.ts test/launcher.test.ts
+```
+
+To exercise the installed clients against the gateway and a local synthetic upstream, run:
+
+```bash
+node scripts/client-protocol-smoke.mjs [codex|opencode|both]
+```
+
+The default runs both. The harness uses temporary `HOME`, `CODEX_HOME` and XDG directories, sends
+only a synthetic prompt, and uses synthetic credentials. Routing is disabled, and the gateway
+forwards to a fake server bound to loopback; no Jev or model provider is called. It verifies each
+client prints `SMOKE_OK` and that the corresponding Responses or Chat Completions path reached the
+fake server. It does not cover the user-facing launchers or Jev routing decisions.
+
+The unit fixtures came from Codex 0.154 and OpenCode 1.18.31. They exercise recorded client request
+shapes against fake upstream responses. The loopback harness exercises whichever client versions
+are installed. Do not point a live client at a real provider for these checks: that can incur charges
+and does not make the capture reproducible.
+
 ## External advisor providers
 
 By default, the advisor uses the same upstream as the client. To send advisor context to a separate
@@ -173,3 +199,13 @@ curl -s http://127.0.0.1:8787/router/decide \
 
 The example asks Jev to choose from synthetic tool data. Do not paste private conversations or
 credentials into shared diagnostics.
+
+### Local Laya shadow comparison
+
+`JEV_LAYA_SHADOW_POLICY` compares a candidate routing policy while the configured active policy
+continues to control requests. It requires Laya at a loopback URL and adds no remote model calls.
+The default limit is one shadow evaluation at a time; excess evaluations are skipped without a queue. `JEV_LAYA_SHADOW_CONCURRENCY` accepts 1 to 4.
+Client responses never wait for the candidate. Dashboard rows report its policy, choice, confidence,
+latency and agreement with the active tool choice; agreement is not a measure of correctness.
+Shadow failures leave active routing unchanged. These paths are tested with synthetic transports;
+no live Laya checkpoint was validated.

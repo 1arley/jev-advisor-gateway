@@ -13,6 +13,7 @@ import type { Config } from "./config.js";
 import { redactHeaders, summarizeResponse, type Dump } from "./debug.js";
 import { decide, type AskJev, type Decision } from "./decide.js";
 import { compressToolOutput, type HeadroomMetric } from "./headroom.js";
+import { createAskJev } from "./jev.js";
 import { forward } from "./upstream.js";
 import { readReply } from "./usage.js";
 
@@ -122,6 +123,14 @@ export function createDecisionHandler(config: Config, askJev: AskJev) {
 
 export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, routing, advisorEnabled }: RouterDeps) {
   const sessions = createSessionStore();
+  const shadowConfig = config.layaShadowPolicy ? { ...config, layaRoutingPolicy: config.layaShadowPolicy, directCalls: false } : undefined;
+  const shadowDecide = shadowConfig
+    ? createDecider(
+        shadowConfig,
+        createAskJev(shadowConfig, (url, init) => fetchImpl(url, { ...init, redirect: "error" })),
+      )
+    : undefined;
+  let shadowBusy = 0;
   const decideFor = createDecider(config, askJev);
 
   const logWhenDone = (
@@ -129,15 +138,18 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
     response: Response,
     startedAt: number,
     onResponseId?: (id: string | undefined) => void,
+    shadow?: Promise<Record<string, unknown>>,
   ) => {
     const copy = response.clone();
     void readReply(copy)
-      .then((reply) => {
+      .then(async (reply) => {
         onResponseId?.(reply.responseId);
+        const durationMs = Math.round(performance.now() - startedAt);
         log({
           ...entry,
+          ...(shadow ? { shadow: await shadow } : {}),
           status: response.status,
-          durationMs: Math.round(performance.now() - startedAt),
+          durationMs,
           ...(reply.tool ? { actualTool: reply.tool } : {}),
           ...(reply.usage ? { usage: reply.usage } : {}),
         });
@@ -215,6 +227,36 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
         ({ decision, tools } = await decideFor(adapter, req));
       }
 
+      let shadow: Promise<Record<string, unknown>> | undefined;
+      const shadowEligible =
+        decision.jev ||
+        (decision.mode === "passthrough" &&
+          (["low_confidence", "jev_unexpected_answer", "jev_unknown_tool", "jev_error", "jev_timeout", "router_error"].includes(
+            decision.reason,
+          ) ||
+            decision.reason.startsWith("jev_http_")));
+      if (req && shadowEligible && shadowDecide) {
+        if (shadowBusy >= config.layaShadowConcurrency)
+          shadow = Promise.resolve({ policy: config.layaShadowPolicy, reason: "shadow_busy" });
+        else {
+          shadowBusy++;
+          const active = decision;
+          shadow = shadowDecide(adapter, req)
+            .then(({ decision: candidate }) => ({
+              policy: config.layaShadowPolicy,
+              mode: candidate.mode,
+              reason: candidate.mode === "passthrough" ? candidate.reason : undefined,
+              choice: candidate.jev?.choice,
+              confidence: candidate.jev?.confidence,
+              latencyMs: candidate.jev?.latencyMs,
+              agreement: candidate.jev && active.jev ? candidate.jev.choice === active.jev.choice : undefined,
+            }))
+            .catch(() => ({ policy: config.layaShadowPolicy, reason: "shadow_error" }))
+            .finally(() => {
+              shadowBusy--;
+            });
+        }
+      }
       let bodyOverride: string | undefined;
       // Why the advisor did or did not answer, recorded on every request the advisor covers. The
       // route log carries the tool decision alone, and a consult that silently produced nothing is
@@ -286,7 +328,7 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
           const headers = decisionHeaders(decision);
           const streamed = (fromUrl.stream ?? req.stream) ? adapter.directStream(req, call, url) : undefined;
           const json = streamed === undefined ? adapter.directJson(req, call) : undefined;
-          log({ ...entry, ...decision });
+          void Promise.resolve(shadow).then((result) => log({ ...entry, ...decision, ...(result ? { shadow: result } : {}) }));
           if (streamed === undefined) return c.json(json, 200, headers);
           if (typeof streamed !== "string") return c.body(streamed.body, 200, { ...headers, "content-type": streamed.contentType });
           return c.body(streamed, 200, { ...headers, "content-type": "text/event-stream", "cache-control": "no-cache" });
@@ -357,6 +399,7 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
             response,
             startedAt,
             session && response.ok && adapter === responsesAdapter ? (id) => sessions.remember(id, session!) : undefined,
+            shadow,
           );
           return response;
         }
@@ -376,6 +419,7 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
         response,
         startedAt,
         session && response.ok && adapter === responsesAdapter ? (id) => sessions.remember(id, session!) : undefined,
+        shadow,
       );
       dumpResponse("upstream-error", response);
       return response;

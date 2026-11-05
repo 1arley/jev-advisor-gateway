@@ -495,6 +495,8 @@
                 <th>Mode</th>
                 <th>Tool</th>
                 <th class="num">Conf.</th>
+                <th>Policy / metric</th>
+                <th>Shadow</th>
                 <th>Reason</th>
                 <th class="num">Status</th>
                 <th class="num">Jev ms</th>
@@ -824,6 +826,45 @@
                 h("div", { class: "state" }, h("span", { class: "icon", "aria-hidden": "true" }, icon), title),
                 h("div", { class: "why" }, why),
                 router && source.up && routingSwitch(source),
+                router?.laya &&
+                  h(
+                    "div",
+                    { class: "meta" },
+                    `Laya active policy ${router.layaPolicy} · shadow ${router.layaShadowPolicy ?? "off"} · requested checkpoint ${router.jevModel} · effective checkpoint ${router.laya.effectiveCheckpoint ?? "not reported"} · observed ${router.laya.state}${router.laya.observedAt ? " at " + router.laya.observedAt : ""}`,
+                    h(
+                      "div",
+                      {},
+                      `${int(router.laya.retained)} retained requests · ${int(router.laya.applied)} applied · ${int(router.laya.abstentions)} abstentions · ${int(router.laya.divergences)} divergences / ${int(router.laya.comparisons)} comparable shadow answers`,
+                    ),
+                    h(
+                      "div",
+                      {},
+                      `Fallbacks by reason: ${
+                        Object.entries(router.laya.fallbacks)
+                          .map(([reason, count]) => reason + ": " + int(count))
+                          .join(" · ") || "none"
+                      }`,
+                    ),
+                    h(
+                      "div",
+                      {},
+                      `Errors by reason: ${
+                        Object.entries(router.laya.errors)
+                          .map(([reason, count]) => reason + ": " + int(count))
+                          .join(" · ") || "none"
+                      } · shadow errors ${int(router.laya.shadowErrors)} · shadow busy ${int(router.laya.shadowBusy)}`,
+                    ),
+                    h(
+                      "div",
+                      {},
+                      `Answered-call latency: mean ${router.laya.latencyMeanMs === undefined ? "–" : int(router.laya.latencyMeanMs) + " ms"} · p95 ${router.laya.latencyP95Ms === undefined ? "–" : int(router.laya.latencyP95Ms) + " ms"} · truncated ${int(router.laya.truncated)} / ${int(router.laya.truncationReported)} reported`,
+                    ),
+                    h(
+                      "div",
+                      {},
+                      `Retained history across policies; observations do not prove current service health or accuracy. Local labeled evaluation: ${router.layaEvaluation ? router.layaEvaluation.split + " · " + int(router.layaEvaluation.scenarios) + " scenarios" + (router.layaEvaluation.limited ? " · limited" : "") + (router.layaEvaluation.choiceAccuracy ? " · labeled choices " + int(router.layaEvaluation.choiceAccuracy.correct) + "/" + int(router.layaEvaluation.choiceAccuracy.total) : "") : "not configured or unavailable"}.`,
+                    ),
+                  ),
                 router &&
                   h(
                     "div",
@@ -1006,15 +1047,27 @@
               : "no calls yet",
           ),
           tile("Jev confidence", avgConfidence === undefined ? "–" : avgConfidence.toFixed(2), "average of its tool picks"),
+          ...(events.some((event) => event.shadow)
+            ? [
+                tile(
+                  "Shadow comparisons",
+                  int(events.filter((event) => event.shadow).length),
+                  `${int(events.filter((event) => event.shadow?.agreement === false).length)} disagreements`,
+                ),
+              ]
+            : []),
+          ...(asked.some((event) => event.jev.truncated !== undefined)
+            ? [tile("Laya truncation", int(asked.filter((event) => event.jev.truncated).length), "reported by Laya")]
+            : []),
           (() => {
             const checked = events.filter(verified);
             const hits = checked.filter(routingHit).length;
             return tile(
-              "Routing accuracy",
+              "Reply agreement",
               checked.length ? pct(hits, checked.length) : "–",
               checked.length
-                ? `${int(hits)} of ${int(checked.length)} verified picks: the reply called the pick${hits === checked.length ? "" : ", or called nothing after a no-tool pick"}`
-                : "replies compared with Jev's pick whenever both are on record",
+                ? `${int(hits)} of ${int(checked.length)} replies agreed; operational agreement, not labeled accuracy`
+                : "operational agreement, not labeled accuracy",
             );
           })(),
           tile(
@@ -1173,6 +1226,30 @@
                   event.tool ?? (event.jev && event.mode === "passthrough" ? `(${event.jev.choice})` : "–"),
                 ),
                 h("td", { class: "num" }, (event.confidence ?? event.jev?.confidence)?.toFixed(2) ?? "–"),
+                h(
+                  "td",
+                  {},
+                  [
+                    event.jev?.policy,
+                    event.jev?.confidenceMetric,
+                    event.jev?.effectiveCheckpoint ?? event.jev?.requestedCheckpoint,
+                    event.jev?.optionCount != null ? `${event.jev.optionCount} options` : undefined,
+                    event.jev?.truncated ? "truncated" : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" / ") || "–",
+                ),
+                h(
+                  "td",
+                  {
+                    title: event.shadow
+                      ? `${event.shadow.choice ?? event.shadow.reason ?? ""} · ${event.shadow.confidence ?? "–"} · ${event.shadow.latencyMs ?? "–"} ms`
+                      : undefined,
+                  },
+                  event.shadow
+                    ? `${event.shadow.policy}: ${event.shadow.agreement === undefined ? (event.shadow.reason ?? event.shadow.mode) : event.shadow.agreement ? "agree" : "disagree"}`
+                    : "–",
+                ),
                 h("td", { class: "reason-cell", title: event.reason }, event.reason ?? ""),
                 h("td", { class: "num" }, event.status === undefined ? "–" : String(event.status)),
                 h("td", { class: "num" }, event.jev ? int(event.jev.latencyMs) : "–"),

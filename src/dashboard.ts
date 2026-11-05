@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { Hono } from "hono";
 import type { Config } from "./config.js";
-import type { EventLog } from "./events.js";
+import { summarizeRouting, type EventLog } from "./events.js";
 
 // A real .html file rather than a string in a module, so it stays editable as HTML; `pnpm build`
 // copies it next to the compiled output.
@@ -24,6 +24,40 @@ export interface AdvisorSwitch {
   set(enabled: boolean): void;
 }
 
+function localEvaluation(path: string | undefined) {
+  if (!path) return undefined;
+  try {
+    const stat = statSync(path);
+    if (!stat.isFile() || stat.size > 1_000_000) return undefined;
+    const report: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!report || typeof report !== "object" || Array.isArray(report)) return undefined;
+    const data = report as Record<string, unknown>;
+    if (!["dev", "calibration", "test"].includes(String(data.split)) || !Number.isSafeInteger(data.evaluatedScenarios)) return undefined;
+    const summaries = Array.isArray(data.summaries) ? data.summaries : [];
+    const overall = summaries.find(
+      (item: unknown) => item && typeof item === "object" && !Array.isArray(item) && (item as Record<string, unknown>).scope === "overall",
+    ) as Record<string, unknown> | undefined;
+    const accuracy = overall?.choiceAccuracy;
+    const score = accuracy && typeof accuracy === "object" && !Array.isArray(accuracy) ? (accuracy as Record<string, unknown>) : undefined;
+    const correct =
+      score &&
+      Number.isSafeInteger(score.numerator) &&
+      Number.isSafeInteger(score.denominator) &&
+      Number(score.numerator) >= 0 &&
+      Number(score.numerator) <= Number(score.denominator)
+        ? { correct: score.numerator, total: score.denominator }
+        : undefined;
+    return {
+      split: data.split,
+      scenarios: data.evaluatedScenarios,
+      limited: data.limited === true,
+      ...(correct ? { choiceAccuracy: correct } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function dashboardRoutes(config: Config, events: EventLog, routing: RoutingSwitch, advisor?: AdvisorSwitch) {
   const startedAt = new Date().toISOString();
   const routes = new Hono();
@@ -44,6 +78,14 @@ export function dashboardRoutes(config: Config, events: EventLog, routing: Routi
         upstream: config.upstreamBaseUrl,
         jevModel: config.jevModel,
         jevProvider: config.jevProvider,
+        ...(config.jevProvider === "laya"
+          ? {
+              layaPolicy: config.layaRoutingPolicy,
+              layaShadowPolicy: config.layaShadowPolicy,
+              laya: summarizeRouting(events.since(0)),
+              layaEvaluation: localEvaluation(config.layaEvaluationReport),
+            }
+          : {}),
         advisorModel: config.advisorModel,
         minConfidence: config.minConfidence,
         routing: routing.get(),

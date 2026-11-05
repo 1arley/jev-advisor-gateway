@@ -83,7 +83,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Some gateways return choice answers without a confidence; the winning probability stands in. */
-function normalize(result: unknown): SystemOneResult<Questions> {
+function normalize(result: unknown, layaNative = false): SystemOneResult<Questions> {
   if (!isRecord(result)) return result as SystemOneResult<Questions>;
   const sourceAnswers = isRecord(result.answers) ? result.answers : {};
   const usage = isRecord(result.usage) ? result.usage : {};
@@ -91,6 +91,10 @@ function normalize(result: unknown): SystemOneResult<Questions> {
   for (const [name, answer] of Object.entries(sourceAnswers)) {
     if (!isRecord(answer)) {
       answers[name] = answer;
+      continue;
+    }
+    if (layaNative && answer.type === "choice") {
+      answers[name] = { ...answer, confidence: answer.answer_confidence };
       continue;
     }
     const probabilities = isRecord(answer.probabilities)
@@ -110,13 +114,14 @@ function normalize(result: unknown): SystemOneResult<Questions> {
   return {
     model: result.model,
     answers,
-    usage: { input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0 },
-  } as SystemOneResult<Questions>;
+    routing: result.routing,
+    usage: { ...usage, input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0 },
+  } as unknown as SystemOneResult<Questions>;
 }
 
 /** The one call the gateway makes to Jev, for whichever provider is configured. */
 export function createAskJev(
-  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs"> & Partial<Pick<Config, "jevMaxLen">>,
+  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs"> & Partial<Pick<Config, "jevMaxLen" | "layaRoutingPolicy">>,
   fetchImpl: typeof fetch = fetch,
 ): AskJev {
   const provider = providers[config.jevProvider];
@@ -149,7 +154,10 @@ export function createAskJev(
           : "";
       throw Object.assign(new Error(`${response.status} from ${provider.label}: ${paidHint}${detail}`), { status: response.status });
     }
-    return normalize(await response.json());
+    return normalize(
+      await response.json(),
+      config.jevProvider === "laya" && config.layaRoutingPolicy !== undefined && config.layaRoutingPolicy !== "legacy",
+    );
   };
   // One fast retry only: past that, failing open to the LLM is quicker.
   return async (request) => {

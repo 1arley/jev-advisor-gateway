@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import type { AskJev } from "../src/decide.js";
-import { createEventLog, type RouteEvent } from "../src/events.js";
+import { createEventLog, summarizeRouting, type RouteEvent } from "../src/events.js";
 import { NO_TOOL } from "../src/questions.js";
 import { chat, fakeJev, fakeUpstream, testConfig, settled } from "./helpers.js";
 
@@ -37,6 +37,24 @@ function setup(askJev: AskJev, config = testConfig()) {
 }
 
 describe("GET /dashboard/events", () => {
+  it("reports configured Laya policies separately from observed service state", async () => {
+    const { feed } = setup(
+      fakeJev({}).askJev,
+      testConfig({
+        jevProvider: "laya",
+        jevModel: "english",
+        layaRoutingPolicy: "native",
+        layaShadowPolicy: "binary_choice",
+      }),
+    );
+    expect((await feed()).router).toMatchObject({
+      jevModel: "english",
+      layaPolicy: "native",
+      layaShadowPolicy: "binary_choice",
+      laya: { retained: 0, state: "unobserved" },
+    });
+  });
+
   it("records one event per routed request, whatever the mode", async () => {
     const answers = [
       lights,
@@ -57,7 +75,13 @@ describe("GET /dashboard/events", () => {
       max_tokens: 64,
       thinking: { type: "adaptive" },
       messages: [{ role: "user", content: SECRET }],
-      tools: [{ name: "Bash", description: "Run a shell command.", input_schema: { type: "object", properties: { command: { type: "string" } } } }],
+      tools: [
+        {
+          name: "Bash",
+          description: "Run a shell command.",
+          input_schema: { type: "object", properties: { command: { type: "string" } } },
+        },
+      ],
     });
 
     const { events, router } = await feed();
@@ -85,17 +109,35 @@ describe("GET /dashboard/events", () => {
       max_tokens: 64,
       thinking: { type: "adaptive" },
       messages: [{ role: "user", content: "list the files" }],
-      tools: [{ name: "Bash", description: "Run a shell command.", input_schema: { type: "object", properties: { command: { type: "string" } } } }],
+      tools: [
+        {
+          name: "Bash",
+          description: "Run a shell command.",
+          input_schema: { type: "object", properties: { command: { type: "string" } } },
+        },
+      ],
     });
     expect((await feed()).events[0]).toMatchObject({ mode: "hint", tool: "Bash", path: "/v1/messages" });
   });
 
   it("says which tool the reply actually called, beside the one Jev picked", async () => {
     const reply = {
-      choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "get_weather", arguments: "{}" } }] } }],
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "c1", type: "function", function: { name: "get_weather", arguments: "{}" } }],
+          },
+        },
+      ],
       usage: { prompt_tokens: 5, completion_tokens: 3 },
     };
-    const app = createApp({ config: testConfig(), askJev: fakeJev({ ...lights, tool: { choice: "get_weather" } }).askJev, fetch: fakeUpstream(reply).fetchImpl });
+    const app = createApp({
+      config: testConfig(),
+      askJev: fakeJev({ ...lights, tool: { choice: "get_weather" } }).askJev,
+      fetch: fakeUpstream(reply).fetchImpl,
+    });
     await app.request("/v1/chat/completions", { method: "POST", body: JSON.stringify(chat("weather?")) });
     await settled();
     const { events } = (await (await app.request("/dashboard/events")).json()) as Feed;
@@ -131,10 +173,63 @@ describe("GET /dashboard/events", () => {
 describe("createEventLog", () => {
   const entry = (n: number) => ({ event: "route", path: "/v1/responses", tools: n, mode: "passthrough", reason: "no_tools" });
 
+  it("summarizes retained observations without treating shadow skips as comparisons", () => {
+    const log = createEventLog();
+    const jev = {
+      choice: "synthetic_tool",
+      confidence: 0.8,
+      latencyMs: 10,
+      inputTokens: 2,
+      effectiveCheckpoint: "english",
+      truncated: false,
+    };
+    log.record({ ...entry(1), mode: "forced", jev, shadow: { agreement: true } });
+    log.record({ ...entry(1), reason: "low_confidence", jev: { ...jev, latencyMs: 30, truncated: true }, shadow: { agreement: false } });
+    log.record({ ...entry(1), reason: "jev_timeout", shadow: { reason: "shadow_busy" } });
+    log.record({ ...entry(1), shadow: { reason: "shadow_error" } });
+    expect(summarizeRouting(log.since(0))).toMatchObject({
+      retained: 4,
+      applied: 1,
+      abstentions: 1,
+      fallbacks: { low_confidence: 1, jev_timeout: 1, no_tools: 1 },
+      errors: { jev_timeout: 1 },
+      state: "error",
+      effectiveCheckpoint: "english",
+      comparisons: 2,
+      divergences: 1,
+      shadowErrors: 1,
+      shadowBusy: 1,
+      truncationReported: 2,
+      truncated: 1,
+      latencyMeanMs: 20,
+      latencyP95Ms: 30,
+    });
+    expect(summarizeRouting([])).toMatchObject({ retained: 0, state: "unobserved", comparisons: 0 });
+    expect(summarizeRouting([]).latencyMeanMs).toBeUndefined();
+  });
+
+  it("allowlists Laya and shadow metadata without exposing arbitrary provider fields", () => {
+    const log = createEventLog();
+    log.record({
+      ...entry(1),
+      jev: { policy: "native", requestedCheckpoint: "english", effectiveCheckpoint: "english", truncated: true, secret: SECRET },
+      shadow: { policy: "binary_choice", agreement: false, body: SECRET },
+    });
+    expect(log.since(0)[0]).toMatchObject({
+      jev: { policy: "native", effectiveCheckpoint: "english", truncated: true },
+      shadow: { policy: "binary_choice", agreement: false },
+    });
+    expect(JSON.stringify(log.since(0))).not.toContain(SECRET);
+  });
+
   it("keeps the newest events up to its capacity, numbering every one", () => {
     const log = createEventLog({ capacity: 3 });
     for (let n = 1; n <= 5; n++) log.record(entry(n));
-    expect(log.since(0).map((event) => [event.seq, event.tools])).toEqual([[3, 3], [4, 4], [5, 5]]);
+    expect(log.since(0).map((event) => [event.seq, event.tools])).toEqual([
+      [3, 3],
+      [4, 4],
+      [5, 5],
+    ]);
     expect(log.last).toBe(5);
   });
 
@@ -146,12 +241,30 @@ describe("createEventLog", () => {
         "jev-gateway listening on http://localhost:8790 → https://llm.test/v1 (jev: jev-latest)",
         JSON.stringify({ time: "2026-01-01T10:00:00.000Z", ...entry(4), model: "gpt-test", status: 200 }),
         '{"time":"2026-01-01T10:00:01.000Z","event":"route","mo',
-        JSON.stringify({ time: "2026-01-01T10:00:02.000Z", event: "route", path: "/v1/responses", tools: 2, mode: "direct", tool: "set_lights", args: { room: "kitchen" }, confidence: 0.9 }),
+        JSON.stringify({
+          time: "2026-01-01T10:00:02.000Z",
+          event: "route",
+          path: "/v1/responses",
+          tools: 2,
+          mode: "direct",
+          tool: "set_lights",
+          args: { room: "kitchen" },
+          confidence: 0.9,
+        }),
       ].join("\n") + "\n",
     );
     const log = createEventLog({ historyFile: file });
     expect(log.since(0)).toEqual([
-      { seq: 1, time: "2026-01-01T10:00:00.000Z", path: "/v1/responses", model: "gpt-test", tools: 4, mode: "passthrough", reason: "no_tools", status: 200 },
+      {
+        seq: 1,
+        time: "2026-01-01T10:00:00.000Z",
+        path: "/v1/responses",
+        model: "gpt-test",
+        tools: 4,
+        mode: "passthrough",
+        reason: "no_tools",
+        status: 200,
+      },
       { seq: 2, time: "2026-01-01T10:00:02.000Z", path: "/v1/responses", tools: 2, mode: "direct", tool: "set_lights", confidence: 0.9 },
     ]);
     expect(createEventLog({ historyFile: join(tmpdir(), "jev-events-missing.log") }).since(0)).toEqual([]);
@@ -182,4 +295,22 @@ describe("GET /dashboard", () => {
     // The query form is for the dashboard alone.
     expect((await app.request("/v1/models?key=gateway-key")).status).toBe(401);
   });
+});
+
+it("exposes only labeled evaluation metadata from the configured local report", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "laya-report-")), "report.json");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      split: "test",
+      evaluatedScenarios: 32,
+      limited: false,
+      summaries: [{ scope: "overall", choiceAccuracy: { numerator: 20, denominator: 32 } }],
+      rows: [{ prompt: SECRET }],
+    }),
+  );
+  const { feed } = setup(fakeJev({}).askJev, testConfig({ jevProvider: "laya", layaEvaluationReport: path }));
+  const data = await feed();
+  expect(data.router.layaEvaluation).toEqual({ split: "test", scenarios: 32, limited: false, choiceAccuracy: { correct: 20, total: 32 } });
+  expect(JSON.stringify(data)).not.toContain(SECRET);
 });

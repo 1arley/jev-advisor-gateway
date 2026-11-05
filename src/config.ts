@@ -1,5 +1,7 @@
 import { isIP } from "node:net";
+import { parseLayaCalibration, type LayaCalibration } from "./laya-calibration.js";
 import { PROVIDERS, resolveModel, resolveProvider, resolveUrl, type ProviderId } from "./jev.js";
+export type LayaPolicy = "legacy" | "native" | "noul_refined" | "binary_choice";
 export type AdvisorProvider = "openai-compatible" | "anthropic";
 export type AdvisorEffort = "low" | "medium" | "high";
 
@@ -39,6 +41,12 @@ export interface Config {
   jevTimeoutMs: number;
   /** max_len tells laya-serve how much state to read from its default 1,024-token window. */
   jevMaxLen?: number;
+  layaRoutingPolicy: LayaPolicy;
+  layaShadowPolicy?: LayaPolicy;
+  layaShadowConcurrency: number;
+  layaMinConfidence: number;
+  layaEvaluationReport?: string;
+  layaCalibration?: LayaCalibration;
   /** Below this, Jev's tool decision is ignored and the LLM decides. */
   minConfidence: number;
   /** Per-argument certainty needed to answer without calling the LLM. */
@@ -127,6 +135,30 @@ export function loadConfig(env: Env = process.env): Config {
       throw new Error("JEV_ADVISOR_URL must use HTTPS (or loopback HTTP) and have no credentials, query or fragment");
     }
   }
+  const layaRoutingPolicy = str(env, "JEV_LAYA_ROUTING_POLICY") ?? "legacy";
+  if (!["legacy", "native", "noul_refined", "binary_choice"].includes(layaRoutingPolicy)) {
+    throw new Error(`Invalid JEV_LAYA_ROUTING_POLICY: "${layaRoutingPolicy}"`);
+  }
+  const layaShadowPolicy = str(env, "JEV_LAYA_SHADOW_POLICY");
+  if (layaShadowPolicy && !["legacy", "native", "noul_refined", "binary_choice"].includes(layaShadowPolicy))
+    throw new Error(`Invalid JEV_LAYA_SHADOW_POLICY: "${layaShadowPolicy}"`);
+  if (layaShadowPolicy) {
+    const endpoint = new URL(resolveUrl(jevProvider, env));
+    const host = endpoint.hostname.replace(/^\[|\]$/g, "");
+    if (
+      jevProvider !== "laya" ||
+      !(host === "localhost" || host === "::1" || (isIP(host) === 4 && host.split(".")[0] === "127")) ||
+      !["http:", "https:"].includes(endpoint.protocol) ||
+      endpoint.username ||
+      endpoint.password
+    )
+      throw new Error("JEV_LAYA_SHADOW_POLICY requires a loopback Laya endpoint");
+  }
+  const layaShadowConcurrency = num(env, "JEV_LAYA_SHADOW_CONCURRENCY", 1);
+  if (!Number.isInteger(layaShadowConcurrency) || layaShadowConcurrency < 1 || layaShadowConcurrency > 4)
+    throw new Error("JEV_LAYA_SHADOW_CONCURRENCY must be an integer from 1 to 4");
+  const layaMinConfidence = num(env, "JEV_LAYA_MIN_CONFIDENCE", 0.7);
+  if (layaMinConfidence < 0 || layaMinConfidence > 1) throw new Error("JEV_LAYA_MIN_CONFIDENCE must be between 0 and 1");
   const onNone = str(env, "JEV_ON_NONE") ?? (jevProvider === "laya" ? "passthrough" : "force_none");
   if (onNone !== "force_none" && onNone !== "passthrough") {
     throw new Error(`JEV_ON_NONE must be "force_none" or "passthrough", got "${onNone}"`);
@@ -188,6 +220,12 @@ export function loadConfig(env: Env = process.env): Config {
     jevModel,
     jevTimeoutMs: jevProvider === "laya" ? num(env, "JEV_LAYA_TIMEOUT_MS", 8_000) : num(env, "JEV_TIMEOUT_MS", 8_000),
     jevMaxLen: jevProvider === "laya" ? num(env, "JEV_LAYA_MAX_LEN", 2048) : undefined,
+    layaRoutingPolicy: layaRoutingPolicy as LayaPolicy,
+    layaShadowPolicy: layaShadowPolicy as LayaPolicy | undefined,
+    layaShadowConcurrency,
+    layaMinConfidence,
+    layaEvaluationReport: str(env, "JEV_LAYA_EVALUATION_REPORT"),
+    layaCalibration: str(env, "JEV_LAYA_CALIBRATION") ? parseLayaCalibration(str(env, "JEV_LAYA_CALIBRATION")!) : undefined,
     minConfidence: num(env, "JEV_MIN_CONFIDENCE", 0.7),
     argMinCertainty: num(env, "JEV_ARG_MIN_CERTAINTY", 0.8),
     onNone,
