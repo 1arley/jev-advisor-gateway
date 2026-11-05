@@ -20,3 +20,15 @@ production accuracy. External validation is listed separately.
 External validation: real Laya answers do not establish statistical accuracy. Real clients must be
 run separately in an isolated environment with synthetic upstreams; mocked protocol tests do not
 prove that the installed client was exercised.
+
+Latest local verification: the structural validator reports 96 scenarios, 12 declared families,
+and 32 scenarios per split. Structural validation does not prove semantic independence. On
+2026-11-05, `pnpm typecheck`, `pnpm test` (424 tests), `pnpm build`, and `git diff --check`
+passed. `pnpm laya:acceptance` ran 130 focused tests successfully and exited nonzero because the
+items above remain open.
+
+`node scripts/client-protocol-smoke.mjs both` exercised installed Codex and OpenCode with routing
+active, a deterministic local System One and a synthetic upstream. Both forced the selected tool,
+streamed two requests, and preserved tool-call identifiers and outputs. The installed Codex did
+not send `previous_response_id`; a separate synthetic Responses protocol probe covered that field.
+The real Laya server was not reachable at `127.0.0.1:8000` during this verification.
