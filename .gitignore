@@ -12,3 +12,7 @@ graphify-out
 # local tool caches
 .serena
 .vitest
+
+# local agent tooling
+.agents/
+.claude/
