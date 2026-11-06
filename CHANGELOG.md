@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.15.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.14.0...v0.15.0) (2026-11-06)
+
+
+### Added
+
+* **laya:** add calibration, corpus tooling, and acceptance docs ([1d81a84](https://github.com/1arley/jev-advisor-gateway/commit/1d81a84dba1e795cc9e355c6b94555ef6f0ccb7e))
+* **laya:** add Laya dashboard, decision and event support ([6af8e18](https://github.com/1arley/jev-advisor-gateway/commit/6af8e18c2456855bd721d0913b1f619d37d0a769))
+
+
+### Fixed
+
+* **config:** validate Laya JEV_URL is loopback without credentials, query or fragment ([a821980](https://github.com/1arley/jev-advisor-gateway/commit/a821980c59546b13165cc7b70fbf1761cfdf1698))
+* default jev timeout to 8s and passthrough on recent tool result ([74f4e9b](https://github.com/1arley/jev-advisor-gateway/commit/74f4e9bb5c3310d6716bed3448453ce03c49be9f))
+* don't treat prior turn tool result as recent in new user request ([a778a94](https://github.com/1arley/jev-advisor-gateway/commit/a778a94dfcad8839331081b771885d4e81175c5e))
+
+
+### Maintenance
+
+* **laya:** add laya:acceptance script and verification note ([de1934b](https://github.com/1arley/jev-advisor-gateway/commit/de1934b835422be77247a4f411783b93bc088a8e))
+
 ## [0.14.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.13.0...v0.14.0) (2026-11-04)
 
 
