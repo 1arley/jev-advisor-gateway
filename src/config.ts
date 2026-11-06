@@ -1,6 +1,6 @@
 import { isIP } from "node:net";
 import { parseLayaCalibration, type LayaCalibration } from "./laya-calibration.js";
-import { PROVIDERS, resolveModel, resolveProvider, resolveUrl, type ProviderId } from "./jev.js";
+import { isProvider, PROVIDERS, resolveModel, resolveProvider, resolveUrl, type ProviderId } from "./jev.js";
 export type LayaPolicy = "legacy" | "native" | "noul_refined" | "binary_choice";
 export type AdvisorProvider = "openai-compatible" | "anthropic";
 export type AdvisorEffort = "low" | "medium" | "high";
@@ -41,6 +41,8 @@ export interface Config {
   jevTimeoutMs: number;
   /** max_len tells laya-serve how much state to read from its default 1,024-token window. */
   jevMaxLen?: number;
+  /** Maximum sanitized state sent to a local Jiwo service. */
+  jiwoMaxStateChars: number;
   layaRoutingPolicy: LayaPolicy;
   layaShadowPolicy?: LayaPolicy;
   layaShadowConcurrency: number;
@@ -86,19 +88,27 @@ const bool = (env: Env, key: string, fallback: boolean): boolean => {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 };
 
-function validateLayaUrl(url: string): void {
+function validateLocalDecisionUrl(url: string, provider: "laya" | "jiwo"): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error(`JEV_URL must be a loopback Laya URL with no credentials, query or fragment, got "${url}"`);
+    throw new Error(`JEV_URL must be a loopback ${provider} URL with no credentials, query or fragment, got "${url}"`);
   }
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
   const ipv4 = hostname.split(".").map(Number);
   const loopback = hostname === "localhost" || hostname === "::1" || (isIP(hostname) === 4 && ipv4[0] === 127);
   if (!loopback || !["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new Error(`JEV_URL must be a loopback Laya URL with no credentials, query or fragment, got "${url}"`);
+    throw new Error(`JEV_URL must be a loopback ${provider} URL with no credentials, query or fragment, got "${url}"`);
   }
+}
+
+function validateLayaUrl(url: string): void {
+  validateLocalDecisionUrl(url, "laya");
+}
+
+function validateJiwoUrl(url: string): void {
+  validateLocalDecisionUrl(url, "jiwo");
 }
 
 export function loadConfig(env: Env = process.env): Config {
@@ -106,6 +116,8 @@ export function loadConfig(env: Env = process.env): Config {
   const jevProvider = resolveProvider(env);
   const jevUrl = resolveUrl(jevProvider, env);
   if (jevProvider === "laya") validateLayaUrl(jevUrl);
+  if (jevProvider === "jiwo") validateJiwoUrl(jevUrl);
+  if (!isProvider(jevProvider)) throw new Error(`Unsupported JEV provider "${jevProvider}"`);
   const jevModel = resolveModel(jevProvider, str(env, "JEV_MODEL"));
   const advisorProviderValue = str(env, "JEV_ADVISOR_PROVIDER")?.toLowerCase();
   let advisorProvider: AdvisorProvider | undefined;
@@ -237,6 +249,7 @@ export function loadConfig(env: Env = process.env): Config {
     jevModel,
     jevTimeoutMs: jevProvider === "laya" ? num(env, "JEV_LAYA_TIMEOUT_MS", 8_000) : num(env, "JEV_TIMEOUT_MS", 8_000),
     jevMaxLen: jevProvider === "laya" ? num(env, "JEV_LAYA_MAX_LEN", 2048) : undefined,
+    jiwoMaxStateChars: num(env, "JEV_JIWO_MAX_STATE_CHARS", 7_000),
     layaRoutingPolicy: layaRoutingPolicy as LayaPolicy,
     layaShadowPolicy: layaShadowPolicy as LayaPolicy | undefined,
     layaShadowConcurrency,
@@ -255,6 +268,9 @@ export function loadConfig(env: Env = process.env): Config {
     client,
     logFile: str(env, "JEV_LOG_FILE"),
   };
+  if (config.jiwoMaxStateChars < 1 || config.jiwoMaxStateChars > 60_000) {
+    throw new Error(`JEV_JIWO_MAX_STATE_CHARS must be between 1 and 60000, got "${config.jiwoMaxStateChars}"`);
+  }
   if (config.headroomTimeoutMs <= 0 || config.headroomTimeoutMs > 5_000) {
     throw new Error(`JEV_HEADROOM_TIMEOUT_MS must be between 1 and 5000, got "${config.headroomTimeoutMs}"`);
   }

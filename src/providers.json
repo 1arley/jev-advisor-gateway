@@ -51,5 +51,16 @@
     "model": "multilingual",
     "models": ["english", "multilingual", "typed-decisions"],
     "keyless": true
+  },
+  "jiwo": {
+    "label": "Jiwo (local)",
+    "note": "a local Jiwo decision model: offline, choice routing only",
+    "keyEnv": "JIWO_API_KEY",
+    "keyUrl": "https://github.com/jiwidi/jiwo",
+    "url": "http://127.0.0.1:8765/v1/systemone",
+    "healthUrl": "http://127.0.0.1:8765/health",
+    "model": "jiwo-0.8b",
+    "askModel": true,
+    "keyless": true
   }
 }

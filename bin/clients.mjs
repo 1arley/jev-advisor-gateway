@@ -93,7 +93,7 @@ export const claude = {
   configHelp: (origin) => claudeConfigHelp("jev-claude", origin),
 };
 
-/** Claude Code with an advisor: Opus reviews, Haiku codes. Both are overridable. */
+/** Claude Code with an advisor: Haiku codes; the advisor model follows JEV_ADVISOR_MODEL. */
 export const claudeAdvisor = {
   ...claude,
   name: "jev-claude-advisor",
@@ -102,8 +102,11 @@ export const claudeAdvisor = {
   // Separate log/pid from jev-claude: two launchers, one client.
   state: "claude-advisor",
   configHelp: (origin) => claudeConfigHelp("jev-claude-advisor", origin),
-  // Override the advisor with JEV_ADVISOR_MODEL, the coder with a `--model` after the launcher's.
-  gatewayEnv: { JEV_ADVISOR: "on", JEV_ADVISOR_MODEL: "claude-opus-5-5" },
+  // The coder model is fixed by the launcher; JEV_ADVISOR_MODEL independently selects the advisor.
+  gatewayEnv: () => ({
+    JEV_ADVISOR: "on",
+    ...(process.env.JEV_ADVISOR_MODEL ? { JEV_ADVISOR_MODEL: process.env.JEV_ADVISOR_MODEL } : {}),
+  }),
   args: () => ["--model", "claude-haiku-5-5"],
 };
 

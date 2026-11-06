@@ -202,7 +202,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   const startedAt = performance.now();
   const state = buildState(input, config);
   // Laya rejects any single choice question with more than 100 options, including the optional no-tool label.
-  const maxTools = config.jevProvider === "laya" ? 99 : MAX_TOOLS;
+  const maxTools = config.jevProvider === "laya" || config.jevProvider === "jiwo" ? 99 : MAX_TOOLS;
   const native = config.jevProvider === "laya" && config.layaRoutingPolicy !== "legacy";
   let tools = input.tools;
   let shortlistTokens = 0;
@@ -221,7 +221,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
       layaNative: native,
       layaGate:
         native && config.layaRoutingPolicy !== "native" && config.layaRoutingPolicy !== "legacy" ? config.layaRoutingPolicy : undefined,
-      maxChoiceOptions: config.jevProvider === "laya" ? 100 : undefined,
+      maxChoiceOptions: config.jevProvider === "laya" || config.jevProvider === "jiwo" ? 64 : undefined,
     });
     plans = built.plans;
     result = await askJev({ state, questions: built.questions, model: config.jevModel });

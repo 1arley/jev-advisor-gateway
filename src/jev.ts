@@ -1,6 +1,7 @@
 import type { Questions, SystemOneRequest, SystemOneResult } from "@typesafe-ai/sdk";
 import type { Config } from "./config.js";
 import type { AskJev } from "./decide.js";
+import { fromJiwoResult, sanitizeJiwoState, toJiwoRequest } from "./jiwo.js";
 import table from "./providers.json" with { type: "json" };
 
 /** One row of the provider table: where Jev runs, which key gets there, and what to call it. */
@@ -17,6 +18,8 @@ interface Provider {
   paidModel?: string;
   /** Setup asks which model the upstream serves instead of assuming the table's default. */
   askModel?: boolean;
+  /** Local setup can probe this endpoint without sending a model request. */
+  healthUrl?: string;
   /** The upstream ignores Authorization, so the saved "key" is only a placeholder. */
   keyIgnored?: boolean;
   /** A local service that answers without a key (Laya): setup asks for none, and none is sent. */
@@ -57,9 +60,9 @@ export function resolveModel(provider: ProviderId, requested: string | undefined
   const { model, models } = providers[provider];
   if (!requested) return model;
   if (models) return models.includes(requested) ? requested : model;
-  // openjev passes the id straight to its own backend (groq/decider/…), whose
-  // namespaces vary: groq's real ids ("openai/gpt-oss-20b") carry a slash.
-  if (provider === "openjev") return requested.trim() ? requested : model;
+  // Local decision servers own their checkpoint names and may use either shape.
+  // OpenJev's backend and Jiwo's configured checkpoint are not gateway model namespaces.
+  if (provider === "openjev" || provider === "jiwo") return requested.trim() ? requested : model;
   const fits = requested.includes("/") === (provider !== "typesafe") && !providers.opencode.models?.includes(requested);
   return fits ? requested : model;
 }
@@ -121,28 +124,37 @@ function normalize(result: unknown, layaNative = false): SystemOneResult<Questio
 
 /** The one call the gateway makes to Jev, for whichever provider is configured. */
 export function createAskJev(
-  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs"> & Partial<Pick<Config, "jevMaxLen" | "layaRoutingPolicy">>,
+  config: Pick<Config, "jevProvider" | "jevApiKey" | "jevUrl" | "jevTimeoutMs"> &
+    Partial<Pick<Config, "jevMaxLen" | "jiwoMaxStateChars" | "layaRoutingPolicy">>,
   fetchImpl: typeof fetch = fetch,
 ): AskJev {
   const provider = providers[config.jevProvider];
+  const jiwo = config.jevProvider === "jiwo";
   if (!config.jevApiKey && !provider.keyless) {
     throw new Error(`No API key for Jev: set ${provider.keyEnv} (${provider.label}), or run jev-codex --setup.`);
   }
   const once = async (request: SystemOneRequest<Questions>) => {
+    const outbound = jiwo
+      ? (toJiwoRequest({
+          ...request,
+          state: JSON.stringify(sanitizeJiwoState(request.state, config.jiwoMaxStateChars ?? 7_000)),
+        }) as SystemOneRequest<Questions>)
+      : request;
     const response = await fetchImpl(config.jevUrl, {
       method: "POST",
       headers: {
-        // A keyless provider answers with no Authorization header; a configured key is still sent,
-        // because laya-serve accepts an optional bearer key of its own.
         ...(config.jevApiKey ? { authorization: `Bearer ${config.jevApiKey}` } : {}),
         "content-type": "application/json",
-        // OpenRouter attributes traffic by these; the others ignore them.
-        "http-referer": "https://github.com/1arley/jev-advisor-gateway",
-        "x-title": "jev-advisor-gateway",
+        ...(jiwo
+          ? {}
+          : {
+              "http-referer": "https://github.com/1arley/jev-advisor-gateway",
+              "x-title": "jev-advisor-gateway",
+            }),
       },
       // Laya may otherwise trim state to its default 1,024-token window.
       body: JSON.stringify(
-        config.jevProvider === "laya" && config.jevMaxLen !== undefined ? { ...request, max_len: config.jevMaxLen } : request,
+        config.jevProvider === "laya" && config.jevMaxLen !== undefined ? { ...outbound, max_len: config.jevMaxLen } : outbound,
       ),
       signal: AbortSignal.timeout(config.jevTimeoutMs),
     });
@@ -154,8 +166,10 @@ export function createAskJev(
           : "";
       throw Object.assign(new Error(`${response.status} from ${provider.label}: ${paidHint}${detail}`), { status: response.status });
     }
+    const payload = await response.json();
+    if (jiwo) return fromJiwoResult(payload, request, outbound);
     return normalize(
-      await response.json(),
+      payload,
       config.jevProvider === "laya" && config.layaRoutingPolicy !== undefined && config.layaRoutingPolicy !== "legacy",
     );
   };
@@ -165,7 +179,8 @@ export function createAskJev(
       return await once(request);
     } catch (error) {
       const name = (error as { name?: string }).name;
-      if (config.jevProvider === "laya" && (name === "TimeoutError" || name === "AbortError")) throw error;
+      if (config.jevProvider === "jiwo" || (config.jevProvider === "laya" && (name === "TimeoutError" || name === "AbortError")))
+        throw error;
       const status = (error as { status?: number }).status;
       if (status !== undefined && !RETRYABLE.has(status)) throw error;
       await new Promise((done) => setTimeout(done, 100));

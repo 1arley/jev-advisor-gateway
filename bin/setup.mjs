@@ -44,6 +44,15 @@ export function saveEnv(file, values) {
 /** One real question to Jev: the only way to know a key works before an agent depends on it. */
 export async function validateKey(provider, key, fetchImpl = fetch) {
   const startedAt = Date.now();
+  if (provider.healthUrl) {
+    try {
+      const health = await fetchImpl(provider.healthUrl, { signal: AbortSignal.timeout(5_000), redirect: "error" });
+      if (!health.ok) return { ok: false, refused: false, reason: `${health.status} health check failed` };
+      return { ok: true, ms: Date.now() - startedAt };
+    } catch (error) {
+      return { ok: false, refused: false, reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
   const ask = (model) =>
     fetchImpl(provider.url, {
       method: "POST",
@@ -75,8 +84,8 @@ export async function validateKey(provider, key, fetchImpl = fetch) {
  */
 export async function runSetup({ name, providers, envFile, io, validate = validateKey, save = saveEnv }) {
   const ids = Object.keys(providers);
-  io.print(`\n${name} needs an API key for Jev, the model that picks the tool.`);
-  io.print(`You are asked once. The key is saved to ${envFile}, readable only by you.\n`);
+  io.print(`\n${name} needs a Jev provider, the model that picks the tool.`);
+  io.print(`You are asked once. Provider keys are saved to ${envFile}, readable only by you.\n`);
   io.print("Where do you want to reach Jev?");
   ids.forEach((id, index) => io.print(`  ${index + 1}) ${providers[id].label}: ${providers[id].note}`));
 
@@ -94,12 +103,13 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
 
   // A keyless provider runs where the user started it: Enter takes the served default, and a custom
   // one gets JEV_URL. A base URL is completed, because the gateway's JEV_URL is the full endpoint.
-  let layaUrl;
+  let localUrl;
   if (keyless) {
-    const answer = (await io.ask(`Laya URL [${provider.url}]: `)).trim().replace(/\/+$/, "");
+    const answer = (await io.ask(`${provider.label} URL [${provider.url}]: `)).trim().replace(/\/+$/, "");
     if (answer) {
-      layaUrl = answer.endsWith("/v1/systemone") ? answer : `${answer}/v1/systemone`;
-      provider = { ...provider, url: layaUrl };
+      localUrl = answer.endsWith("/v1/systemone") ? answer : `${answer}/v1/systemone`;
+      const healthUrl = provider.healthUrl ? new URL("/health", localUrl).toString() : undefined;
+      provider = { ...provider, url: localUrl, ...(healthUrl ? { healthUrl } : {}) };
     }
   }
 
@@ -109,18 +119,22 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
     if (answered) model = answered;
   }
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const keyPrompt = provider.keyIgnored ? "Paste anything as the key (input is hidden; it is ignored): " : `Paste your ${provider.label} API key (input is hidden): `;
+    const keyPrompt = provider.keyIgnored
+      ? "Paste anything as the key (input is hidden; it is ignored): "
+      : `Paste your ${provider.label} API key (input is hidden): `;
     let key = keyless ? "" : (await io.askSecret(keyPrompt)).trim();
     if (!key && !keyless) {
       io.print("Nothing entered. Run this again whenever you have a key.");
       return undefined;
     }
-    io.print(keyless ? "Checking that Laya answers…" : "Checking the key with Jev…");
+    io.print(keyless ? `Checking that ${provider.label} answers…` : "Checking the key with Jev…");
     let result = await validate({ ...provider, model }, key);
-    if (keyless && result.refused) {
+    if (keyless && id === "laya" && result.refused) {
       // The serve was started with LAYA_API_KEY, so it wants the bearer key this wizard never asked for.
-      key = (await io.askSecret(`laya-serve asks for a bearer key (it was started with LAYA_API_KEY). Paste it (input is hidden): `)).trim();
-      io.print("Checking that Laya answers…");
+      key = (
+        await io.askSecret(`laya-serve asks for a bearer key (it was started with LAYA_API_KEY). Paste it (input is hidden): `)
+      ).trim();
+      io.print(`Checking that ${provider.label} answers…`);
       result = await validate({ ...provider, model }, key);
     }
     if (result.freeUnavailable && provider.paidModel) {
@@ -138,19 +152,21 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
       continue;
     }
     if (!result.ok) {
-      io.print(keyless
-        ? `Laya did not answer: ${result.reason}. Start it with: pip install "laya[serve]" && laya-serve`
-        : `Could not check the key: ${result.reason}`);
+      io.print(
+        keyless
+          ? `${provider.label} did not answer: ${result.reason}. Start the local service, then run ${name} --setup again.`
+          : `Could not check the key: ${result.reason}`,
+      );
       const keep = (await io.ask("Save it anyway? [y/N]: ")).trim().toLowerCase();
       if (keep !== "y" && keep !== "yes") return undefined;
     } else if (result.paidModel) {
       io.print(`The key works with paid ${result.paidModel}; the free model is unavailable.`);
     } else {
-      io.print(keyless ? `Laya answered in ${result.ms} ms.` : `The key works (Jev answered in ${result.ms} ms).`);
+      io.print(keyless ? `${provider.label} answered in ${result.ms} ms.` : `The key works (Jev answered in ${result.ms} ms).`);
     }
     const values = { JEV_PROVIDER: id };
     if (key) values[provider.keyEnv] = key;
-    if (layaUrl) values.JEV_URL = layaUrl;
+    if (localUrl) values.JEV_URL = localUrl;
     if (provider.paidModel || provider.askModel) values.JEV_MODEL = model;
     save(envFile, values);
     io.print(`Saved to ${envFile}. Change it any time with \`${name} --setup\`.\n`);

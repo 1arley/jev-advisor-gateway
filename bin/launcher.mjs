@@ -95,7 +95,7 @@ export async function runLauncher(spec) {
   ${spec.name} --gateway-help     this text (\`--help\` shows ${spec.client}'s own help)
 
 Environment (or ${ENV_FILES.at(-1)}):
-  A key for Jev is required, except for Laya (a local checkpoint; no key). ${spec.name} asks for
+  A key for Jev is required, except for Laya or Jiwo (local decision services; no key). ${spec.name} asks for
   it the first time and saves it; it can be
   ${keysList} (JEV_PROVIDER picks when several are set)
   ${spec.portEnv}   router port for ${spec.client} (default ${spec.defaultPort})
@@ -147,7 +147,7 @@ Environment (or ${ENV_FILES.at(-1)}):
       .map((provider) => provider.keyEnv)
       .join(", ");
     console.error(
-      `${spec.name}: no API key for Jev. Run \`${spec.name} --setup\` in a terminal, or set one of ${names} — or JEV_PROVIDER=laya for a local checkpoint (environment or ${envFile}).`,
+      `${spec.name}: no Jev provider configured. Run \`${spec.name} --setup\` in a terminal, or set one of ${names} — or JEV_PROVIDER=laya/jiwo for a local decision service (environment or ${envFile}).`,
     );
     process.exit(1);
   };

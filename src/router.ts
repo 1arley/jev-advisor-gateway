@@ -66,6 +66,18 @@ function decisionHeaders(decision: Decision): Record<string, string> {
   return headers;
 }
 
+const CLAUDE_ADVISOR_REASONS = new Set(["low_confidence", "jev_answers_disagree"]);
+const CLAUDE_FAILURE_MARKERS = /\b(?:error|fail(?:ed|ure)?|invalid|rejected|denied|timeout|exception|boom)\b/i;
+
+function shouldReviewClaude(decision: Decision, session: SessionState): boolean {
+  if (decision.mode === "passthrough" && CLAUDE_ADVISOR_REASONS.has(decision.reason)) return true;
+  return session.recent.some((event) => event.startsWith("tool result") && CLAUDE_FAILURE_MARKERS.test(event));
+}
+
+function shouldRunClaudePolicy(input: import("./types.js").RouterInput): boolean {
+  return input.turns.some((turn) => turn.role === "tool_result" || (turn.role === "assistant" && Array.isArray(turn.tool_calls)));
+}
+
 function createDecider(config: Config, askJev: AskJev) {
   return async function decideFor<Req extends AnyRequest>(
     adapter: Adapter<Req>,
@@ -208,23 +220,31 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
         // The session policy needs a conversation the router can read. Codex continues one by
         // `previous_response_id`; Claude resends the whole conversation every turn, so its session
         // is per-request (the advisor budget then caps calls within a turn, not across the chat).
+        let sessionInput: import("./types.js").RouterInput | undefined;
         if (advisorImpl && advisorEnabled.enabled && req.model !== "codex-auto-review") {
           try {
             const input = adapter.toInput(req, config.maxMessageChars);
             if (!("skip" in input)) {
+              sessionInput = input;
               session = sessions.resume((req as ResponsesRequest).previous_response_id);
               addRecent(session, input);
-              try {
+              // Claude normally needs only the routing call. Defer its second Jev call until the
+              // routing result or a recent failed tool result gives the advisor a concrete reason.
+              if (config.client !== "claude" || shouldRunClaudePolicy(input))
                 sessionAction = await decideSessionAction(input, session, config, askJev);
-              } catch {
-                sessionAction = undefined;
-              }
             }
           } catch {
             // The session policy is advisory; tool routing and the original request can still proceed.
           }
         }
         ({ decision, tools } = await decideFor(adapter, req));
+        if (config.client === "claude" && session && sessionInput && shouldReviewClaude(decision, session)) {
+          try {
+            sessionAction = await decideSessionAction(sessionInput, session, config, askJev);
+          } catch {
+            sessionAction = undefined;
+          }
+        }
       }
 
       let shadow: Promise<Record<string, unknown>> | undefined;
