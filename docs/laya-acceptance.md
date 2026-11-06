@@ -23,8 +23,8 @@ prove that the installed client was exercised.
 
 Latest local verification: the structural validator reports 96 scenarios, 12 declared families,
 and 32 scenarios per split. Structural validation does not prove semantic independence. On
-2026-11-05, `pnpm typecheck`, `pnpm test` (424 tests), `pnpm build`, and `git diff --check`
-passed. `pnpm laya:acceptance` ran 130 focused tests successfully and exited nonzero because the
+2026-11-06, `pnpm typecheck`, `pnpm test` (425 tests), `pnpm build`, and `git diff --check`
+passed. `pnpm laya:acceptance` ran 131 focused tests successfully and exited nonzero because the
 items above remain open.
 
 `node scripts/client-protocol-smoke.mjs both` exercised installed Codex and OpenCode with routing

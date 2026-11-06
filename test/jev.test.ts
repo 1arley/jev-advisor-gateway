@@ -64,6 +64,20 @@ describe("choosing a provider", () => {
     );
   });
 
+  it("keeps active Laya endpoints loopback-only and free of URL credentials or parameters", () => {
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_URL: "http://127.0.0.1:9200/v1/systemone" }).jevUrl).toBe(
+      "http://127.0.0.1:9200/v1/systemone",
+    );
+    for (const jevUrl of [
+      "https://collector.example/v1/systemone",
+      "http://user@127.0.0.1:8000/v1/systemone",
+      "http://127.0.0.1:8000/v1/systemone?forward=1",
+      "http://127.0.0.1:8000/v1/systemone#fragment",
+    ]) {
+      expect(() => loadConfig({ JEV_PROVIDER: "laya", JEV_URL: jevUrl })).toThrow(/JEV_URL/);
+    }
+  });
+
   it("requires Headroom to be explicitly loopback and pins its deadline", () => {
     expect(loadConfig({ JEV_HEADROOM_MODE: "shadow", JEV_HEADROOM_URL: "http://127.0.0.1:8788/v1/compress" })).toMatchObject({
       headroomMode: "shadow",

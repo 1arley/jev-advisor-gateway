@@ -86,9 +86,26 @@ const bool = (env: Env, key: string, fallback: boolean): boolean => {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 };
 
+function validateLayaUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`JEV_URL must be a loopback Laya URL with no credentials, query or fragment, got "${url}"`);
+  }
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+  const ipv4 = hostname.split(".").map(Number);
+  const loopback = hostname === "localhost" || hostname === "::1" || (isIP(hostname) === 4 && ipv4[0] === 127);
+  if (!loopback || !["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error(`JEV_URL must be a loopback Laya URL with no credentials, query or fragment, got "${url}"`);
+  }
+}
+
 export function loadConfig(env: Env = process.env): Config {
   const client = str(env, "JEV_CLIENT") ?? "standalone";
   const jevProvider = resolveProvider(env);
+  const jevUrl = resolveUrl(jevProvider, env);
+  if (jevProvider === "laya") validateLayaUrl(jevUrl);
   const jevModel = resolveModel(jevProvider, str(env, "JEV_MODEL"));
   const advisorProviderValue = str(env, "JEV_ADVISOR_PROVIDER")?.toLowerCase();
   let advisorProvider: AdvisorProvider | undefined;
