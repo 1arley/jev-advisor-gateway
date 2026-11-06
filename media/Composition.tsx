@@ -303,7 +303,7 @@ const FlowVideo: React.FC = () => {
           opacity: fade,
         }}
       >
-        CODEX · CLAUDE CODE · OPENCODE · KILO · GEMINI · DEVIN
+        CODEX · CLAUDE CODE · OPENCODE · KILO · GEMINI · AGY · DEVIN · JIWO
       </div>
       <div
         style={{

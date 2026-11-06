@@ -56,6 +56,7 @@
     "scripts/laya-evaluate-corpus.mjs",
     "scripts/laya-evaluate.mjs",
     "scripts/laya-validate-corpus.mjs",
+    "scripts/jiwo-laya-benchmark.mjs",
     "docs",
     "media",
     "decision-record.md",
@@ -82,7 +83,8 @@
     "devin": "node bin/jev-devin.mjs",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
     "prepare": "husky",
-    "laya:acceptance": "node scripts/laya-validate-corpus.mjs && vitest run test/laya-corpus.test.ts test/laya-evaluate.test.ts test/laya-calibration.test.ts test/laya-policies.test.ts test/laya-native.test.ts test/laya-shadow.test.ts test/dashboard.test.ts test/jev.test.ts test/opencode.test.ts test/responses.test.ts && node scripts/laya-acceptance.mjs"
+    "laya:acceptance": "node scripts/laya-validate-corpus.mjs && vitest run test/laya-corpus.test.ts test/laya-evaluate.test.ts test/laya-calibration.test.ts test/laya-policies.test.ts test/laya-native.test.ts test/laya-shadow.test.ts test/dashboard.test.ts test/jev.test.ts test/opencode.test.ts test/responses.test.ts && node scripts/laya-acceptance.mjs",
+    "jiwo:laya:benchmark": "node scripts/jiwo-laya-benchmark.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",

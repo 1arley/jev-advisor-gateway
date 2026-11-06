@@ -291,3 +291,54 @@ Status: implementação local concluída; validação sintética pendente; integ
 
 - Os testes sintéticos cobrem JSONC, preservação do modelo e dos demais blocos, repoint/restauração condicional, porta pertencente a outro gateway, probe sem contexto real e precedência dos overlays de ambiente.
 - Não houve probe real, chamada ao 9router nem experimento de reload no OpenCode instalado. A queda do gateway durante uma sessão pode interromper a requisição atual.
+
+## Integração opcional do Jiwo
+
+Data: 2026-11-06
+Status: concluído para o escopo suportado; promoção de novas revisões continua condicionada aos gates abaixo.
+
+### Decisão
+
+Adicionar Jiwo como um provider local opcional para o caminho estruturado de roteamento por `choice`, atrás de um adapter pequeno e injetável. Jiwo acelera decisões locais de baixa latência; o caminho JEV existente continua disponível quando Jiwo estiver desabilitado, indisponível, fora do contrato ou abaixo do limiar de confiança. O comportamento fail-open permanece obrigatório.
+
+### Decisões aprovadas
+
+| Tema           | Decisão                                                                                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fronteira      | O adapter traduz e valida o protocolo Jiwo; o router continua dono do fluxo e não conhece campos específicos do Jiwo.                                                                                   |
+| Ativação       | Usar `JEV_PROVIDER=jiwo` ou uma política explicitamente equivalente. Jiwo fica desligado por padrão.                                                                                                    |
+| Endpoint       | Exigir URL loopback explícita, sem credenciais, query ou fragmento. O gateway não inicia o serviço Jiwo.                                                                                                |
+| Contrato       | Reutilizar `POST /v1/systemone` somente quando a compatibilidade for comprovada. Validar respostas completas, tipos, escolhas, scores e confiança no adapter; respostas inválidas seguem para fallback. |
+| Escopo inicial | Implementar somente o caminho `choice` usado no roteamento atual. `score` e `noul` ficam adiados até existir evidência de uso que justifique a extensão.                                                |
+| Fallback       | Usar o JEV existente em baixa confiança, necessidade de justificativa textual, incompatibilidade, erro, timeout ou indisponibilidade. Falha de Jiwo nunca falha a requisição do cliente.                |
+| Estado         | Enviar apenas estado estruturado, sanitizado e limitado por tamanho. Excluir credenciais, mídia, resultados de ferramentas, payload bruto e texto desnecessário.                                        |
+| Operação       | Jiwo é instalado e supervisionado separadamente. Não baixar Python, checkpoints ou modelos automaticamente. Usar timeout curto e sem retry.                                                             |
+| Telemetria     | Registrar somente modo, latência, resultado e contagem de tokens. Nunca registrar prompts, credenciais, respostas ou conteúdo privado.                                                                  |
+| Distribuição   | Não adicionar runtime ou dependência JavaScript do Jiwo ao gateway. Documentar instalação, execução e health check separadamente.                                                                       |
+| Validação      | Adicionar testes offline do contrato, transformação, rejeição e fallback, incluindo preservação do corpo upstream quando Jiwo falhar. Usar apenas fixtures sintéticas e serviço local controlado.       |
+| Expansão       | Exigir evidência de latência, decisões válidas, taxa de fallback e ausência de exposição indevida antes de ampliar tipos ou escopo.                                                                     |
+
+### Proveniência
+
+A pesquisa host identificou Jiwo como um modelo local não generativo com `POST /v1/systemone`, perguntas tipadas e os tipos nativos `choice`, `score` e `noul`; setup separado via Python/`uv`; e health/model endpoints. Fonte: `https://github.com/jiwidi/jiwo`, consultada em 2026-11-06.
+
+As decisões Q1–Q14 foram avaliadas pelo fallback `jev-subagent`, porque a chamada ao Laya foi bloqueada antes do request pelo limite local de sessão de 20.000 tokens. Nenhuma resposta desta rodada veio do Laya ou de um provider JEV remoto. Q8 foi amendada para deixar explícito que Jiwo tem precedência apenas quando habilitado e não substitui globalmente o JEV. Não houve aprovação humana do conteúdo deste registro até a confirmação solicitada após sua escrita.
+
+### Premissas e riscos abertos
+
+- A interface de decisão existente poderá receber um provider local sem alterar o contrato público dos adapters.
+- Jiwo fornecerá confiança ou um sinal equivalente que permita fallback conservador; a semântica precisa ser confirmada no primeiro teste local.
+- A transformação entre o contrato atual e Jiwo será lossless para o subconjunto `choice`; campos incompatíveis devem ser rejeitados, não aproximados.
+- O endpoint Jiwo permanecerá loopback e o operador controlará instalação, checkpoints, recursos e logs do serviço.
+- Não há integração live, medição operacional, validação semântica ou comprovação de ganho de latência nesta decisão.
+- O MVP não deve enviar conversas reais até a allowlist de estado, limites e comportamento de fallback estarem cobertos por testes.
+
+### Próxima execução proposta
+
+1. Mapear a interface de decisão existente e criar o adapter Jiwo sem alterar o router.
+2. Adicionar configuração `jiwo`, validação loopback e setup/health check sem inicialização automática.
+3. Implementar apenas `choice`, fallback fail-open e métricas allowlisted.
+4. Adicionar testes offline e uma aceitação local com fixture Jiwo sintética.
+5. Atualizar `.env.example`, README e `docs/client-compatibility.md` em conjunto.
+
+A implementação requer confirmação explícita deste registro.
