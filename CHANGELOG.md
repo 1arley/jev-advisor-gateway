@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.16.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.15.0...v0.16.0) (2026-11-06)
+
+
+### Added
+
+* **config:** update config, launcher, clients and env for Jiwo/Laya ([da15c69](https://github.com/1arley/jev-advisor-gateway/commit/da15c69c6565aea08ac32584bbcb2739bcc98f07))
+* **jiwo:** add Jiwo integration, tests, docs and benchmark tooling ([8df98ef](https://github.com/1arley/jev-advisor-gateway/commit/8df98efbeb646096a3d27a464f961eabcddee8f4))
+* **laya:** add Laya acceptance doc, decision record and media updates ([7784c3a](https://github.com/1arley/jev-advisor-gateway/commit/7784c3afa561a8c641ec0ab770a2a8f04423f2cb))
+
+
+### Maintenance
+
+* add Jiwo/Laya coverage and update docs ([a879ecd](https://github.com/1arley/jev-advisor-gateway/commit/a879ecd90ec0554b6e5cfe1ca0189b142447019e))
+* ignore local .agents and .claude tooling directories ([1695d2d](https://github.com/1arley/jev-advisor-gateway/commit/1695d2d17ace2f485df544b70bcec4e329ff610e))
+
 ## [0.15.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.14.0...v0.15.0) (2026-11-06)
 
 
