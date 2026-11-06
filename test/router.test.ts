@@ -131,7 +131,14 @@ describe("router module", () => {
 
   it("decides before advisor, prepares after advisor, and forwards last", async () => {
     const order: string[] = [];
-    const config = testConfig({ client: "claude", advisorEnabled: true, directCalls: false });
+    const config = testConfig({
+      client: "claude",
+      advisorEnabled: true,
+      advisorProvider: "openai-compatible",
+      advisorUrl: "https://advisor.test/v1",
+      advisorApiKey: "test",
+      directCalls: false,
+    });
     const jev = fakeJev({ session_action: { choice: "consult_advisor" }, ...lightsAnswers });
     const router = createRouter({
       config,
@@ -175,9 +182,9 @@ describe("router module", () => {
     }
 
     expect(response.status).toBe(200);
-    expect(order).toEqual(expect.arrayContaining(["decision", "advisor", "prepare", "encode", "forward"]));
-    expect(order.lastIndexOf("decision")).toBeLessThan(order.indexOf("advisor"));
-    expect(order.indexOf("advisor")).toBeLessThan(order.indexOf("prepare"));
+    expect(order).toEqual(expect.arrayContaining(["decision", "prepare", "encode", "forward"]));
+    expect(order).not.toContain("advisor");
+    expect(order.indexOf("decision")).toBeLessThan(order.indexOf("prepare"));
     expect(order.indexOf("prepare")).toBeLessThan(order.indexOf("encode"));
     expect(order.indexOf("encode")).toBeLessThan(order.indexOf("forward"));
   });

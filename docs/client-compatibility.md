@@ -77,9 +77,12 @@ run on eligible turns.
 ## Claude Code
 
 `jev-claude` sets `ANTHROPIC_BASE_URL` only for the launched process, preserving Claude Code's saved
-login. Extended thinking and cached prefixes prevent changing `tool_choice`, so the gateway adds a
-hint after the client's last block. The model can ignore that hint; it does not guarantee lower
-cost or latency.
+login. `jev-claude-advisor` runs Claude Code with `--model claude-haiku-5-5` and enables the
+read-only advisor. Set `JEV_ADVISOR_MODEL` to any model available through the selected upstream;
+it no longer defaults to a launcher-forced Opus model. The coding model and advisor model are
+independent. Extended thinking and cached prefixes prevent changing `tool_choice`, so the gateway
+adds a hint after the client's last block. The model can ignore that hint; it does not guarantee
+lower cost or latency.
 
 ## OpenCode
 
@@ -180,6 +183,28 @@ than 100 options. The gateway handles large tool rosters by ranking them in grou
 to choose from finalists; enum arguments above 100 values are left for the main model to fill.
 Laya has only been measured on a six-question synthetic sample. See the benchmark notes in the
 [README](../README.md#laya-checkpoint-comparison).
+
+## Jiwo (optional local choice router)
+
+Jiwo runs as a separate local service. The gateway does not install Python, download checkpoints,
+or supervise Jiwo. Install and start it with the Jiwo project instructions, then configure:
+
+```bash
+JEV_PROVIDER=jiwo
+JEV_URL=http://127.0.0.1:8765/v1/systemone
+JEV_MODEL=jiwo-0.8b
+```
+
+Check the service before starting the gateway:
+
+```bash
+curl -fsS http://127.0.0.1:8765/health
+```
+
+The first integration supports only `choice` tool routing. The gateway sends bounded text-only state,
+rejects invalid or partial responses, and fails open when Jiwo is unavailable or uncertain. `score` and
+`noul` are not sent to Jiwo; the gateway derives the tool-needed signal conservatively. No prompts,
+credentials, tool results or private responses are written to telemetry.
 
 ## Inspect a decision
 

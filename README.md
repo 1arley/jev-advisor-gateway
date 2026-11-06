@@ -4,212 +4,218 @@
 [![CI](https://github.com/1arley/jev-advisor-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/1arley/jev-advisor-gateway/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A local gateway that lets Jev choose a coding agent's next tool. The session model handles
-open-ended arguments and writes the final answer. When Jev is uncertain or a session reaches a
-planning checkpoint, an optional read-only advisor can add a note for the agent to consider.
+A local gateway that lets Jev choose a coding agent's next tool. The session model keeps control of
+open-ended arguments and final answers. When Jev is uncertain, the request passes through unchanged.
+An optional read-only advisor can add a bounded note for the agent to consider.
 
 [![14-second overview](media/overview.gif)](media/jev-advisor-gateway-overview.mp4)
 
-The gateway supports Codex, Claude Code, OpenCode, Kilo, Gemini CLI and Devin. It is an independent
-project, not affiliated with or endorsed by TypeSafe. “Jev” is TypeSafe's model; this gateway calls
-its public API or a compatible provider.
+The gateway supports Codex, Claude Code, OpenCode, Kilo, Gemini CLI, Antigravity CLI and Devin. It
+supports hosted Jev providers and local OpenJev, Laya and Jiwo services. It is an independent
+project, not affiliated with or endorsed by TypeSafe.
 
 ## Quick start
 
-Requirements: Node.js 22.15 or newer, a configured Jev provider and a supported coding agent.
-Hosted Jev providers require an API key; local endpoints do not require a hosted Jev key. Laya can
-require a local bearer key if its server is configured to use one.
+Requirements: Node.js 22.15 or newer and a supported coding agent.
 
 ```bash
 npm install -g jev-advisor-gateway
 jev-codex-advisor --yolo
 ```
 
-Use the matching launcher for your client:
+On first run, the launcher asks where to reach Jev. Hosted providers require a provider key. The
+launcher verifies the key with one small request and saves it in `~/.jev-gateway/.env`, readable only
+by the current account. Local providers need a separately installed service. The Jiwo setup check
+uses `/health` and does not send a decision request.
 
-| Launcher               | Client          | Default behavior                                        |
-| ---------------------- | --------------- | ------------------------------------------------------- |
-| `jev-codex-advisor`    | Codex           | GPT-6 Luna session with Jev and a GPT advisor           |
-| `jev-codex`            | Codex           | Your Codex default model with Jev; no advisor           |
-| `jev-claude-advisor`   | Claude Code     | Haiku session with Jev and an Opus advisor              |
-| `jev-claude`           | Claude Code     | Your existing Claude model with Jev; no advisor         |
-| `jev-opencode-advisor` | OpenCode        | OpenAI-compatible model with Jev and an advisor         |
-| `jev-opencode`         | OpenCode        | Your configured OpenCode model with Jev; no advisor     |
-| `jev-kilo`             | Kilo CLI        | Kilo Gateway model with Jev                             |
-| `jev-gemini`           | Gemini CLI      | Gemini API-key traffic with Jev                         |
-| `jev-agy`              | Antigravity CLI | Your default Gemini model with Jev; no advisor          |
-| `jev-agy-advisor`      | Antigravity CLI | Your default Gemini model with Jev and a Gemini advisor |
-| `jev-devin`            | Devin CLI       | Devin traffic with Jev                                  |
+Use the launcher that matches the client:
 
-`jev-codex-advisor` also has the alias `codex-jev-advisor`. Launchers pass settings to each process;
-the OpenCode launchers also back up and temporarily repoint matching provider URLs, then restore
-them when the gateway stops. They do not edit Codex, Claude or other client configuration. Use the
-launcher like the client command; its arguments are forwarded. `jev-agy` requires `agy` and
-`GEMINI_API_KEY`; it keeps the selected Gemini model and accepts `--settings` JSON or a compatible
-settings file. The advisor launcher defaults to `gemini-3.1-pro-preview`; set `JEV_ADVISOR_MODEL`
-to choose another advisor model.
+| Launcher               | Client          | Default behavior                                    |
+| ---------------------- | --------------- | --------------------------------------------------- |
+| `jev-codex-advisor`    | Codex           | GPT-6 Luna session with Jev and a GPT advisor       |
+| `codex-jev-advisor`    | Codex           | Alias for `jev-codex-advisor`                       |
+| `jev-codex`            | Codex           | Existing Codex model with Jev and no advisor        |
+| `jev-claude-advisor`   | Claude Code     | Haiku session with Jev and a configurable advisor   |
+| `jev-claude`           | Claude Code     | Existing Claude model with Jev and no advisor       |
+| `jev-opencode-advisor` | OpenCode        | Configured model with Jev and a read-only advisor   |
+| `jev-opencode`         | OpenCode        | Configured OpenCode model with Jev and no advisor   |
+| `jev-kilo`             | Kilo CLI        | Kilo Gateway model through the gateway              |
+| `jev-gemini`           | Gemini CLI      | Gemini API-key traffic through the gateway          |
+| `jev-agy`              | Antigravity CLI | Selected Gemini model with Jev and no advisor       |
+| `jev-agy-advisor`      | Antigravity CLI | Selected Gemini model with Jev and a Gemini advisor |
+| `jev-devin`            | Devin CLI       | Devin traffic through the gateway                   |
 
-On first run, choose where Jev runs. For a hosted provider, enter its key; the launcher checks it
-with one real request and saves it in `~/.jev-gateway/.env`, readable only by your account. Local
-providers need their own service setup, and OpenJev's model backend may have separate credentials.
-Codex and Claude reuse their saved logins. OpenCode uses its configured upstream credential, and
-Gemini requires a Gemini API key. Kilo's gateway provider uses Kilo Gateway credentials. See
-[client compatibility](docs/client-compatibility.md).
+Launcher arguments are forwarded to the client. Common gateway commands are:
+
+```bash
+jev-codex-advisor --setup        # choose or change the Jev provider
+jev-codex-advisor --start        # start only the local gateway
+jev-codex-advisor --status       # show health and upstream information
+jev-codex-advisor --dashboard    # open the local dashboard
+jev-codex-advisor --routing off  # baseline: forward without asking Jev
+jev-codex-advisor --advisor off  # disable read-only advisor calls
+jev-codex-advisor --logs         # follow routing decisions
+jev-codex-advisor --stop         # stop the gateway
+```
+
+Use `--gateway-help` for launcher-specific help. `jev-opencode` and `jev-opencode-advisor` support
+`--probe-upstream`, which sends one synthetic one-token request to the selected model and may incur a
+small provider charge. `jev-kilo --print-config` prints a provider block for manual Kilo setup.
+`jev-agy` accepts one `--settings` JSON object or a settings file that already declares
+`modelProvider: "gemini"`.
 
 ## What happens to a request
 
 ```text
-coding agent → loopback gateway → Jev selects a tool or passes
-             ← session model answers, calls tools and owns the result
+coding agent -> loopback gateway -> Jev selects a tool or passes
+             <- session model answers, calls tools and owns the result
 ```
 
-Jev handles supported requests that include tools. It selects one tool and can fill closed-set
-arguments such as enums and booleans. The session model fills open-ended arguments and writes the
-answer. If confidence is low, Jev fails, or the request is unsupported, the gateway normally
-forwards it unchanged. A selected tool can be enforced, suggested as a hint, or answered directly
-when its arguments are fully determined. Direct answers are disabled for Codex to preserve its
-Responses history. The gateway leaves Codex's `wait` tool out of Jev's choices, so `wait` does not
-crowd out tools Jev can route.
+For supported requests containing tools, Jev selects one tool and can fill closed-set arguments such
+as enums and booleans. The session model fills open-ended arguments and writes the final answer. A
+selected tool can be enforced, suggested with a hint, or answered directly when all arguments are
+safe to determine. Direct answers are disabled for Codex so its Responses history remains valid.
+Codex's `wait` tool is kept out of Jev's choice list.
 
-The advisor is optional. On selected turns it receives a read-only request without tools and adds
-a bounded note to the main agent's context. The main agent decides whether to use the note; the
-advisor cannot call tools or change the response chain.
+If Jev is slow, unavailable, uncertain or unable to parse a request, the gateway forwards the
+prepared request unchanged. Optional advisor and Headroom failures also fail open. The gateway never
+requires the decision service for the client request to succeed.
 
-By default, the advisor uses the configured upstream. Setting `JEV_ADVISOR_PROVIDER` opts into a
-separate OpenAI-compatible or Anthropic endpoint with its own model and key. The external advisor
-receives at most six recent text messages, up to 4,000 characters each; tool results and media are
-excluded. This can incur provider charges. See [client compatibility](docs/client-compatibility.md)
-for setup and privacy details.
+The advisor is read-only. On selected turns it receives at most six recent plain-text user and
+assistant messages, up to 4,000 characters per message, and adds a bounded note. It receives no
+system instructions, reasoning, tool results, media or credentials. The main agent decides whether
+to use the note; the advisor cannot call tools or change the response chain.
 
-The gateway listens on `127.0.0.1` by default. Its default failure policy is fail-open: Jev,
-advisor, parsing and optional compression failures leave the client request on its normal path.
-Devin's Connect stream reports some upstream errors after HTTP 200, so a rejected hint cannot be
-replayed; see [client compatibility](docs/client-compatibility.md).
+By default, the advisor uses the client's upstream. Setting `JEV_ADVISOR_PROVIDER` opts into a
+separate OpenAI-compatible or Anthropic endpoint with its own model and key. This can incur provider
+charges. See [client compatibility](docs/client-compatibility.md) for provider and privacy details.
 
-## Dashboard and measuring your own work
+## Dashboard and decision preview
 
 ```bash
 jev-codex-advisor --dashboard
 ```
 
 The dashboard at `http://localhost:8790/dashboard` shows request counts, routing decisions,
-confidence, latency, reported token use, estimated cost, advisor calls and recent requests. It
-shows request metadata only: no prompts, tool arguments, credentials or conversation text.
+confidence, latency, reported token use, estimated cost, advisor calls and recent request metadata.
+It does not show prompts, tool arguments, credentials or conversation text.
 
-To compare routing with a baseline, do similar work in both modes:
+A standalone gateway exposes a dry-run decision endpoint. It asks Jev but does not forward to the
+session-model upstream:
 
 ```bash
-jev-codex --routing off   # forward and meter without asking Jev
-jev-codex --routing on    # route tool choices through Jev
+curl -s http://127.0.0.1:8787/router/decide \
+  -H 'content-type: application/json' \
+  -d '{
+    "model":"gpt-5",
+    "messages":[{"role":"user","content":"turn the kitchen lights on"}],
+    "tools":[{"type":"function","function":{"name":"set_lights","description":"Set a room light","parameters":{"type":"object"}}}]
+  }'
 ```
 
-The dashboard compares tokens, cache share, reasoning tokens and request time. It does not
-attribute a difference to routing by itself; task, model, cache state and provider load also affect
-the result. Accuracy counts whether the model's reply called the tool Jev selected.
+Use synthetic data for diagnostics. Do not paste private conversations or credentials into shared
+diagnostics.
 
-## Benchmarks
+## Local Jev providers
 
-The public [jev-gateway-bench](https://github.com/vinilana/jev-gateway-bench) runs real agents on the
-same coding task with routing on and off, meters token usage and checks the result with a hidden
-verifier. These are controlled benchmark runs, not a promise of savings on other tasks.
+Choose the provider that receives decision requests. This is separate from the LLM provider used by
+the coding session.
 
-The series ran on 2026-09-18 and 19 with six models and two chess-engine tasks, for 120 session
-attempts. One GPT-5.6 Luna bug-fix run was excluded after it accessed another run's workspace, so
-that comparison uses four routed runs. The other cells use five runs per mode. Values below are
-the change in median with routing, compared with the same model without routing;
-negative values mean fewer tokens or less time.
+| Provider          | `JEV_PROVIDER` | Key                     | Default model       |
+| ----------------- | -------------- | ----------------------- | ------------------- |
+| TypeSafe          | `typesafe`     | `TYPESAFE_API_KEY`      | `jev-latest`        |
+| OpenRouter        | `openrouter`   | `OPENROUTER_API_KEY`    | `typesafe/jev-1.13` |
+| Vercel AI Gateway | `vercel`       | `AI_GATEWAY_API_KEY`    | `typesafe-ai/jev`   |
+| OpenCode Zen      | `opencode`     | `OPENCODE_API_KEY`      | `jev-1.13-free`     |
+| OpenJev, local    | `openjev`      | placeholder only        | local server model  |
+| Laya, local       | `laya`         | optional `LAYA_API_KEY` | `multilingual`      |
+| Jiwo, local       | `jiwo`         | none                    | `jiwo-0.8b`         |
 
-| Model                   | Bug fix: output / input / time | Feature: output / input / time |
-| ----------------------- | -----------------------------: | -----------------------------: |
-| GPT-6 Astra (Codex)     |              −57% / −7% / −39% |                 0% / +2% / +8% |
-| GPT-5.6 Sol (Codex)     |             −57% / −40% / −36% |              −9% / −39% / −16% |
-| GPT-5.6 Luna (Codex)    |             −12% / −10% / +10% |             −14% / −51% / −14% |
-| Fable 5.1 (Claude Code) |              −13% / −19% / +6% |             −24% / −27% / −26% |
-| Opus 5 (Claude Code)    |               −7% / −22% / +2% |             +22% / +61% / +83% |
-| Sonnet 5 (Claude Code)  |             −41% / −48% / −25% |              +9% / +16% / +37% |
+Without an explicit `JEV_PROVIDER`, the gateway chooses the first configured hosted provider key.
+OpenJev and Laya can run the System One endpoint locally. OpenJev's backend may still call its own
+provider, so check that backend's privacy and billing terms.
 
-Routing reduced median output tokens on the bug-fix task for all six models. Feature results varied:
-it increased time for Astra, Opus 5 and Sonnet 5; Luna solved 3/5 routed runs versus 5/5 baseline
-runs. Five runs per cell is a small sample. The benchmark repository has the raw runs, charts,
-method and limitations.
+### Jiwo setup
 
-A separate 20-run OpenCode series from 2026-09-23 reports 62% less output and 79% less time on the bug fix, and
-29% less output and 31% less time on the feature. All runs passed the hidden checks. Its CLI Proxy
-and Chat Completions setup differs from Claude Code's Anthropic Messages setup, so the two series
-do not isolate the gateway as the cause.
+Jiwo is an optional local choice router. Install it outside this repository with `uv`, keep it on
+loopback, and supervise it separately. The gateway does not install Python, download checkpoints or
+start Jiwo:
 
-### Laya checkpoint comparison
+```bash
+install_dir="$HOME/.local/share/jev/jiwo"
+mkdir -p "$install_dir/tools" "$install_dir/bin"
+UV_TOOL_DIR="$install_dir/tools" UV_TOOL_BIN_DIR="$install_dir/bin" \
+  uv tool install --python 3.12 \
+  --from 'git+https://github.com/jiwidi/jiwo.git@e64d36227e02a36c0ea1bc3ec669003eb5a30c29' jiwo
+JIWO_CHECKPOINT=eljiwo/jiwo-0.8b \
+JIWO_HOST=127.0.0.1 JIWO_PORT=8765 \
+  "$install_dir/bin/jiwo" serve
+curl -fsS http://127.0.0.1:8765/health
+```
 
-The local Laya checkpoint comparison on 2026-10-22 is smaller and synthetic: on six labeled
-tool-routing questions, `typed-decisions` scored 3/6 and `multilingual` 2/6. `typed-decisions` took about 1,323 ms
-versus 553 ms (2.4× slower), and its confidence stayed below the default routing threshold. The
-default remains `multilingual`; the sample is too small to claim general accuracy. The reproducible
-script is [`scripts/laya-checkpoints.mjs`](scripts/laya-checkpoints.mjs).
-Use `node scripts/laya-checkpoints.mjs --codex-roster` for a separate synthetic comparison
-with the `exec` and `clock.sleep` tools, confidence and `needs_tool` output, `max_len=2048`, and
-both tool orders. It does not include Codex's full live tool roster or measure real-session accuracy.
+Pin the Git revision and keep the installation outside the checkout. For supervision, health checks,
+rollback and the full benchmark command, use the [Jiwo production runbook](docs/jiwo-production.md).
+The expected health response includes `status: "ok"` and `model: "jiwo-0.8b"`.
 
-## Jev providers
+Run `jev-codex-advisor --setup`, select `Jiwo (local)`, and keep the default URL and model unless
+Jiwo uses another loopback port. Equivalent environment settings are:
 
-Choose the provider that should receive Jev requests. This is separate from the LLM provider used
-by your coding session.
+```bash
+JEV_PROVIDER=jiwo
+JEV_URL=http://127.0.0.1:8765/v1/systemone
+JEV_MODEL=jiwo-0.8b
+JEV_JIWO_MAX_STATE_CHARS=7000
+```
 
-| Provider          | `JEV_PROVIDER` | Key                        | Default model              |
-| ----------------- | -------------- | -------------------------- | -------------------------- |
-| TypeSafe          | `typesafe`     | `TYPESAFE_API_KEY`         | `jev-latest`               |
-| OpenRouter        | `openrouter`   | `OPENROUTER_API_KEY`       | `typesafe/jev-1.13`        |
-| Vercel AI Gateway | `vercel`       | `AI_GATEWAY_API_KEY`       | `typesafe-ai/jev`          |
-| OpenCode Zen      | `opencode`     | `OPENCODE_API_KEY`         | `jev-1.13-free`            |
-| OpenJev, local    | `openjev`      | none; placeholder accepted | configured by local server |
-| Laya, local       | `laya`         | optional `LAYA_API_KEY`    | `multilingual`             |
+The current Jiwo integration sends bounded text-only state and `choice` questions for tool routing.
+It does not send credentials, media, raw request bodies or tool results. `score` and `noul` are not
+sent to Jiwo; the gateway derives the tool-needed signal conservatively. Invalid, partial,
+unavailable or low-confidence responses fail open to the normal session-model path.
 
-Without an explicit `JEV_PROVIDER`, the launcher uses the first configured Jev key. OpenJev and
-Laya can run the Jev endpoint locally. OpenJev may still send requests to its configured model
-backend, so check that backend's privacy and billing terms. See [`.env.example`](.env.example) and
-the [local Jev notes](docs/client-compatibility.md#local-jev-options).
+A synthetic local-gateway calibration covered 32/32 decisions across weather, files, calendar and
+code suites, including 24 explicit tool selections. This is a small synthetic calibration, not a
+claim of general accuracy, semantic fidelity or live-provider behavior.
+
+See the [local provider details](docs/client-compatibility.md#local-jev-options) for Laya, OpenJev
+and Jiwo limits.
 
 ## Client compatibility
 
-| Client          | Status and caveat                                                                                                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Codex           | Uses your existing login and Responses API. Direct tool answers are disabled to preserve upstream response history.                                                      |
-| Claude Code     | Uses your existing login. Cached prefixes and extended thinking mean Jev adds a hint; the model still reasons about the tool.                                            |
-| OpenCode        | The launcher temporarily repoints configured providers that use its upstream. Model choice stays in OpenCode; a backup restores the original URL when the gateway stops. |
-| Kilo            | Adds a gateway provider for Kilo Gateway; Kilo's own sign-in is not reused by that provider.                                                                             |
-| Gemini CLI      | The Gemini API-key path is supported. Google-account sign-in uses another service and bypasses this gateway.                                                             |
-| Antigravity CLI | `jev-agy` and `jev-agy-advisor` use the Gemini API key and preserve the CLI's selected model.                                                                            |
-| Devin           | Uses the Connect RPC path and hint mode. Stream errors returned inside HTTP 200 cannot be replayed by the gateway.                                                       |
+- **Codex:** `jev-codex` uses Responses and the existing Codex login. `jev-codex-advisor` pins GPT-6
+  Luna and enables the read-only advisor. Direct tool answers are disabled for Responses history.
+- **Claude Code:** `jev-claude` keeps the advisor off. `jev-claude-advisor` runs a Haiku coding
+  session and enables a read-only advisor; set `JEV_ADVISOR_MODEL` to any model available through
+  the selected upstream. The coding model (`--model`) and advisor model are independent. The
+  launcher sets `ANTHROPIC_BASE_URL` only for the launched process and preserves the saved login.
+  Cached prefixes and extended thinking use hint mode where required.
+- **OpenCode:** the launcher can back up and temporarily repoint providers whose `baseURL` matches
+  `JEV_OPENCODE_UPSTREAM_BASE_URL`; it restores changed values conditionally on stop. Other providers,
+  project overrides and model IDs remain unchanged. Use `--probe-upstream` only when a probe charge is
+  acceptable.
+- **Kilo:** the launcher supplies a gateway provider through `KILO_CONFIG_CONTENT` and does not reuse
+  Kilo's saved sign-in. `--print-config` prints a manual provider block.
+- **Gemini CLI:** the API-key path is supported. Google-account sign-in uses another service and
+  bypasses this gateway.
+- **Antigravity CLI:** `jev-agy` and `jev-agy-advisor` use `GOOGLE_GEMINI_BASE_URL`, preserve the
+  selected model and pass `modelProvider: "gemini"` without editing persistent client settings.
+- **Devin:** Connect RPC uses hint mode because its wire format has no `tool_choice`. Stream errors
+  returned inside HTTP 200 cannot be replayed.
 
-See [client setup and compatibility](docs/client-compatibility.md) for exact versions tested,
-OpenCode v2 setup, routing boundaries, and provider details. A supported protocol does not mean
-every CLI version or account mode has been tested against its live service.
+See [client setup and compatibility](docs/client-compatibility.md) for exact versions, setup details,
+wire-format limits and synthetic verification.
 
-## Install from a checkout
+## Run as a server
 
-```bash
-git clone https://github.com/1arley/jev-advisor-gateway
-cd jev-advisor-gateway
-pnpm install
-pnpm build
-npm link
-```
-
-Installing directly from the Git URL with `npm install -g github:1arley/jev-advisor-gateway` does
-not build `dist/` and is not supported. The published npm package includes the built gateway and
-all launchers; installing the upstream `jev-gateway` package alongside it is unnecessary.
-
-## Run it as a server
-
-For your own OpenAI-compatible client, use a checkout and configure Jev in `.env`:
+For an OpenAI-compatible client, configure Jev in `.env` and run a checkout:
 
 ```bash
 pnpm install
-cp .env.example .env   # add a Jev provider key
-pnpm dev               # http://127.0.0.1:8787
+cp .env.example .env
+pnpm dev                 # http://127.0.0.1:8787
 ```
 
-Point the client at `http://127.0.0.1:8787/v1`. The gateway routes these endpoints and proxies
-other paths unchanged:
+Point the client at `http://127.0.0.1:8787/v1`. The gateway routes these known paths and proxies
+other compatible paths unchanged:
 
 | Endpoint                                                  | Protocol                                             |
 | --------------------------------------------------------- | ---------------------------------------------------- |
@@ -219,90 +225,117 @@ other paths unchanged:
 | `POST /v1beta/models/*`                                   | Gemini `generateContent` and `streamGenerateContent` |
 | `POST /exa.api_server_pb.ApiServerService/GetChatMessage` | Devin Connect RPC                                    |
 
-By default the client's Authorization header is forwarded to the LLM provider. `UPSTREAM_API_KEY`
-lets the gateway hold that provider key; `ROUTER_API_KEY` then requires clients to authenticate.
-Keep `HOST=127.0.0.1` unless remote access is necessary. To bypass Jev for a single request, send
-`x-jev-gateway: off`.
-
-To inspect a decision without forwarding a request to the session-model upstream, send a
-representative request to `POST /router/decide`. The endpoint still asks Jev to decide. See
-[the example](docs/client-compatibility.md#inspect-a-decision) and
-[architecture overview](docs/architecture.md).
-
-See [Laya policies and calibration](docs/laya-policies.md) for experimental routing and profile details.
+By default, the client's `Authorization` header is forwarded to the LLM provider. Set
+`UPSTREAM_API_KEY` for the gateway-held upstream credential. If `ROUTER_API_KEY` is set, clients must
+also authenticate to the gateway. Keep `HOST=127.0.0.1` unless remote access is necessary and an
+access key is configured. Send `x-jev-gateway: off` to bypass Jev for one request.
 
 ## Settings
 
-The launchers read settings from the shell or `~/.jev-gateway/.env`; a checkout can use its own
-`.env`. The complete, current list is in [`.env.example`](.env.example).
+Launchers read settings from the shell or `~/.jev-gateway/.env`. A checkout can use its own `.env`.
+The complete list, including launcher-specific settings, is in [`.env.example`](.env.example).
 
-| Setting                       | Default                                   | Purpose                                                                                                                         |
-| ----------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `JEV_PROVIDER`                | inferred from key                         | Jev provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev` or `laya`                                               |
-| `JEV_MIN_CONFIDENCE`          | `0.7`                                     | Lower confidence passes the choice to the session model                                                                         |
-| `JEV_ARG_MIN_CERTAINTY`       | `0.8`                                     | Minimum certainty for each closed-set argument in a direct answer                                                               |
-| `JEV_ROUTING`                 | `on`                                      | Start in routing or baseline mode                                                                                               |
-| `JEV_TIMEOUT_MS`              | `8000` (non-Laya)                         | Jev request deadline; Laya uses `JEV_LAYA_TIMEOUT_MS`                                                                           |
-| `JEV_LAYA_ROUTING_POLICY`     | `legacy`                                  | `legacy` is the default; `native`, `noul_refined` and `binary_choice` are experimental                                          |
-| `JEV_LAYA_SHADOW_POLICY`      | unset                                     | Optional background candidate policy; local Laya only, bounded concurrency without a queue; never changes the forwarded request |
-| `JEV_LAYA_SHADOW_CONCURRENCY` | `1`                                       | Maximum concurrent shadow calls (1–4); excess calls are skipped                                                                 |
-| `JEV_LAYA_EVALUATION_REPORT`  | unset                                     | Local evaluator JSON to display labeled evaluation metadata on the dashboard                                                    |
-| `JEV_LAYA_MIN_CONFIDENCE`     | `0.7`                                     | Native policy threshold for Laya `answer_confidence`; calibrate separately for each checkpoint and tool roster                  |
-| `JEV_LAYA_CALIBRATION`        | unset                                     | JSON profile scoped to one checkpoint and option-count bucket; missing buckets fall back to `JEV_LAYA_MIN_CONFIDENCE`           |
-| `JEV_LAYA_TIMEOUT_MS`         | `8000` (Laya)                             | Laya request deadline; other providers ignore it                                                                                |
-| `JEV_LAYA_MAX_LEN`            | `2048`                                    | `max_len` sent to Laya only                                                                                                     |
-| `JEV_ADVISOR`                 | on for advisor launchers                  | Enable read-only advisor consultations                                                                                          |
-| `JEV_ADVISOR_MODEL`           | launcher-specific                         | Model used for advisor replies                                                                                                  |
-| `JEV_ADVISOR_PROVIDER`        | unset                                     | Opt into `openai-compatible` or `anthropic`; requires an explicit URL and model                                                 |
-| `JEV_ADVISOR_URL`             | unset                                     | Separate advisor API base URL; HTTPS remotely, loopback only for HTTP                                                           |
-| `JEV_ADVISOR_API_KEY`         | unset                                     | Separate advisor key; never reuses the main upstream credential                                                                 |
-| `JEV_ADVISOR_EFFORT`          | unset                                     | `low`, `medium` or `high` for models documenting native effort support                                                          |
-| `JEV_ADVISOR_TIMEOUT_MS`      | `30000`                                   | Advisor request deadline                                                                                                        |
-| `ARGS_MODEL`                  | unset                                     | Optional model for open-ended tool arguments; not used for Codex                                                                |
-| `JEV_ON_NONE`                 | Laya: `passthrough`; others: `force_none` | Send `tool_choice: none` or pass through when Jev selects no tool; an explicit value wins                                       |
-| `HOST`                        | `127.0.0.1`                               | Bind address; configure `ROUTER_API_KEY` before exposing the gateway                                                            |
-| `JEV_DEBUG_DUMP_DIR`          | unset                                     | Opt-in request dumps; includes full conversation bodies, so use with care                                                       |
+| Setting                             | Default           | Purpose                                                                                        |
+| ----------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
+| `JEV_PROVIDER`                      | inferred from key | Decision provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev`, `laya` or `jiwo` |
+| `JEV_MODEL`                         | provider default  | Decision model/checkpoint                                                                      |
+| `JEV_URL`                           | provider default  | Override decision endpoint; Laya and Jiwo must be loopback                                     |
+| `JEV_MIN_CONFIDENCE`                | `0.7`             | Below this confidence, pass through to the session model                                       |
+| `JEV_ARG_MIN_CERTAINTY`             | `0.8`             | Certainty required for closed-set direct arguments                                             |
+| `JEV_ROUTING`                       | `on`              | Start in routing or baseline metering mode                                                     |
+| `JEV_TIMEOUT_MS`                    | `8000`            | Hosted decision deadline; Laya uses its own timeout                                            |
+| `JEV_JIWO_MAX_STATE_CHARS`          | `7000`            | Maximum sanitized state sent to Jiwo                                                           |
+| `JEV_LAYA_ROUTING_POLICY`           | `legacy`          | Laya policy: `legacy`, `native`, `noul_refined` or `binary_choice`                             |
+| `JEV_LAYA_SHADOW_POLICY`            | unset             | Optional local Laya comparison policy                                                          |
+| `JEV_LAYA_SHADOW_CONCURRENCY`       | `1`               | Maximum concurrent Laya shadow calls, from 1 to 4                                              |
+| `JEV_LAYA_MIN_CONFIDENCE`           | `0.7`             | Laya native-policy threshold                                                                   |
+| `JEV_LAYA_CALIBRATION`              | unset             | Laya confidence profile for a checkpoint and option-count bucket                               |
+| `JEV_LAYA_TIMEOUT_MS`               | `8000`            | Laya deadline                                                                                  |
+| `JEV_LAYA_MAX_LEN`                  | `2048`            | `max_len` sent to Laya                                                                         |
+| `JEV_ADVISOR`                       | launcher-specific | Enable read-only advisor consultations                                                         |
+| `JEV_ADVISOR_MODEL`                 | launcher-specific | Advisor model                                                                                  |
+| `JEV_ADVISOR_PROVIDER`              | unset             | Explicit `openai-compatible` or `anthropic` advisor provider                                   |
+| `JEV_ADVISOR_URL`                   | unset             | Separate advisor base URL; HTTPS remotely, loopback HTTP only                                  |
+| `JEV_ADVISOR_API_KEY`               | unset             | Separate advisor key; never reused upstream                                                    |
+| `JEV_ADVISOR_EFFORT`                | unset             | `low`, `medium` or `high` when supported by the model                                          |
+| `JEV_ADVISOR_TIMEOUT_MS`            | `30000`           | Advisor deadline                                                                               |
+| `JEV_ADVISOR_MAX_OUTPUT_TOKENS`     | `700`             | Advisor response bound                                                                         |
+| `JEV_ADVISOR_MAX_CALLS_PER_SESSION` | `6`               | Advisor call limit per session                                                                 |
+| `ARGS_MODEL`                        | unset             | Optional model for open-ended tool arguments; not used for Codex                               |
+| `JEV_ON_NONE`                       | provider-specific | `force_none` or `passthrough` when Jev selects no tool                                         |
+| `JEV_DIRECT_CALLS`                  | `true`            | Answer directly when all arguments are closed-set                                              |
+| `HOST`                              | `127.0.0.1`       | Bind address                                                                                   |
+| `PORT`                              | `8787`            | Gateway port                                                                                   |
+| `UPSTREAM_BASE_URL`                 | OpenAI API        | LLM upstream base URL                                                                          |
+| `UPSTREAM_API_KEY`                  | unset             | Replace the client credential upstream                                                         |
+| `ROUTER_API_KEY`                    | unset             | Require a gateway credential; requires `UPSTREAM_API_KEY`                                      |
+| `JEV_HEADROOM_MODE`                 | `off`             | Codex continuation compression: `off`, `shadow` or `compress`                                  |
+| `JEV_HEADROOM_URL`                  | unset             | Explicit loopback `/v1/compress` endpoint                                                      |
+| `JEV_HEADROOM_TIMEOUT_MS`           | `500`             | Headroom deadline                                                                              |
+| `JEV_DEBUG_DUMP_DIR`                | unset             | Opt-in dumps containing full request bodies; use with care                                     |
 
-Launcher-specific ports, upstreams and model options are also listed in [`.env.example`](.env.example).
+## Headroom compression
 
-### Headroom compression
+Headroom is off by default and applies only to eligible Codex Responses continuations containing one
+new textual tool result. `shadow` sends the result to the configured loopback `/v1/compress` service
+but leaves the upstream body unchanged. `compress` applies only a validated shorter response. Both
+modes preserve the prepared body on timeout, error or invalid output. The pinned service returned the
+complete JSON tool result unchanged in the gateway-shaped case, so no reduction was observed there.
+Read [`decision-record.md`](decision-record.md) before enabling it. Synthetic structural tests do not
+prove semantic fidelity.
 
-Headroom is off by default and applies only to eligible Codex continuations containing exactly one
-textual tool result. Enabling `shadow` or `compress` sends that result to the explicitly configured
-loopback `/v1/compress` service. In `shadow`, the upstream request is unchanged; `compress` applies
-only a validated shorter response. Both modes fall back to the prepared request on error. The
-pinned v0.41.0 service returned the gateway's complete JSON result unchanged, so no reduction was
-observed for this use case. See [`decision-record.md`](decision-record.md) before enabling it;
-synthetic tests do not prove semantic fidelity.
+## Benchmarks and evidence
+
+The public [jev-gateway-bench](https://github.com/vinilana/jev-gateway-bench) compares real agents on
+controlled coding tasks with routing on and off, meters token usage and checks hidden verifiers. Its
+results are controlled observations, not a promise of savings on other tasks. Local decision services
+are compared with the same 32-case synthetic corpus:
+
+| Provider               |      Accuracy |   Mean |    p50 |    p95 | Errors |
+| ---------------------- | ------------: | -----: | -----: | -----: | -----: |
+| Jiwo `jiwo-0.8b`       |  32/32 (100%) | 661 ms | 655 ms | 739 ms |      0 |
+| Laya `multilingual`    | 31/32 (96.9%) | 100 ms |  98 ms | 114 ms |      0 |
+| Laya `english`         | 27/32 (84.4%) | 290 ms | 283 ms | 379 ms |      0 |
+| Laya `typed-decisions` |  32/32 (100%) | 291 ms | 284 ms | 369 ms |      0 |
+
+Measured on 2026-11-06 with 32 sequential warm requests per provider, CPU-local services and
+synthetic weather, files, calendar and coding prompts. The multilingual error was a file-read
+request classified as no-tool. This is a routing diagnostic, not general accuracy, semantic fidelity
+or a latency SLO. Reproduce it with
+[`pnpm jiwo:laya:benchmark`](docs/jiwo-production.md#synthetic-benchmark); pass
+`--laya-models multilingual,english,typed-decisions` to compare all checkpoints exposed by
+`laya-serve`. The complete Jiwo scope is declared in the [production runbook](docs/jiwo-production.md);
+new Jiwo revisions still require the documented gates. Do not treat these results as a quality guarantee.
 
 ## Limits and privacy
 
-- Jev adds a network call to supported tool requests; measured latency is commonly around half a
-  second to a second, but depends on provider and load.
-- Jev chooses one tool per turn. In `forced` mode, the session model can still call that tool more
-  than once in parallel, but cannot mix different tools in that turn.
-- `hint` asks the model to consider a tool; it does not force the choice or guarantee lower cost.
-- Jev reads text, not images, and has a 32k-token context window. Long conversations are reduced
-  to recent context; English is its strongest language.
-- Your logs contain request metadata. Opt-in debug dumps contain conversation bodies. Neither
-  should be shared without reviewing it first.
-- A launcher gateway is local and has no gateway key by default. Other local processes can use it
-  with credentials they provide, or make Jev requests on your configured Jev account. A standalone
-  server can require `ROUTER_API_KEY`.
+- Jev adds a decision call to supported tool requests. Latency depends on the provider and local
+  service load.
+- Jev chooses one tool per turn. The session model can still call tools in parallel when the client
+  requests that behavior.
+- Hint mode asks the model to consider a tool; it does not guarantee the model will use it.
+- The gateway sends bounded text to the configured decision and advisor services. It does not send
+  client credentials to Jiwo, and does not send tool results or media to the advisor.
+- Dashboard fields are allowlisted metadata. Prompts, conversation text, tool arguments and
+  credentials are not written there.
+- `JEV_DEBUG_DUMP_DIR` is an explicit exception: wire dumps contain full decoded request bodies and
+  redacted headers. Keep it disabled unless those files are protected.
+- Keep the gateway on loopback by default. If it must be reachable from another machine, configure
+  `ROUTER_API_KEY` and `UPSTREAM_API_KEY`, and review the deployment boundary.
 
-## Development
+## Development and verification
 
 ```bash
 pnpm install
 pnpm typecheck
 pnpm test
 pnpm build
+npm pack --dry-run
 ```
 
-Tests use fake providers and synthetic requests; they require no keys or network. See
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for project structure and contribution guidance. Releases are
-managed by release-please; merging its release pull request publishes the npm package. See
-[`docs/releasing.md`](docs/releasing.md).
+Tests use fake transports, synthetic requests and no API keys or network. See
+[`docs/client-compatibility.md`](docs/client-compatibility.md), [`decision-record.md`](decision-record.md)
+and [`.env.example`](.env.example) for detailed constraints and configuration.
 
 ## Acknowledgements
 
@@ -312,8 +345,3 @@ Lana, licensed under MIT. The advisor and dashboard cost view are additions in t
 ## License
 
 [MIT](LICENSE)
-
-The synthetic routing corpus and evaluation commands are documented in
-[`docs/laya-evaluation.md`](docs/laya-evaluation.md). It compares four policies against the same
-English and Portuguese scenarios in original and reversed tool order. Results are diagnostic and
-do not establish live accuracy or confidence calibration.

@@ -36,6 +36,7 @@ describe("configuredProvider", () => {
 
   it("counts a named keyless provider with no key, because it answers without one", () => {
     expect(configuredProvider({ JEV_PROVIDER: "laya" }, providers)).toBe("laya");
+    expect(configuredProvider({ JEV_PROVIDER: "jiwo" }, providers)).toBe("jiwo");
     expect(configuredProvider({}, providers)).toBeUndefined();
   });
 });
@@ -48,7 +49,10 @@ describe("runSetup", () => {
     const saved: unknown[] = [];
     const checked: unknown[] = [];
     const values = await runSetup({
-      name: "jev-codex", providers, envFile, io: user.io,
+      name: "jev-codex",
+      providers,
+      envFile,
+      io: user.io,
       validate: async (provider: { label: string }, key: string) => (checked.push([provider.label, key]), { ok: true, ms: 12 }),
       save: (file: string, entries: unknown) => saved.push([file, entries]),
     });
@@ -65,8 +69,14 @@ describe("runSetup", () => {
     const saved: unknown[] = [];
     const checked: unknown[] = [];
     const values = await runSetup({
-      name: "jev-codex", providers, envFile, io: user.io,
-      validate: async (provider: { label: string; model: string }, key: string) => (checked.push([provider.label, provider.model, key]), { ok: true, ms: 5 }),
+      name: "jev-codex",
+      providers,
+      envFile,
+      io: user.io,
+      validate: async (provider: { label: string; model: string }, key: string) => (
+        checked.push([provider.label, provider.model, key]),
+        { ok: true, ms: 5 }
+      ),
       save: (file: string, entries: unknown) => saved.push([file, entries]),
     });
     expect(values).toEqual({ JEV_PROVIDER: "openjev", OPENJEV_KEY: "local", JEV_MODEL: "llama-3.1-8b-instant" });
@@ -79,14 +89,17 @@ describe("runSetup", () => {
     const user = script(["laya", ""]);
     const checked: unknown[] = [];
     const values = await runSetup({
-      name: "jev-codex", providers, envFile, io: user.io,
+      name: "jev-codex",
+      providers,
+      envFile,
+      io: user.io,
       validate: async (provider: { label: string }, key: string) => (checked.push([provider.label, key]), { ok: true, ms: 33 }),
       save: () => {},
     });
     expect(values).toEqual({ JEV_PROVIDER: "laya" });
     expect(checked).toEqual([["Laya (local)", ""]]);
     expect(user.printed.join("\n")).toContain("needs no key");
-    expect(user.printed.join("\n")).toContain("Laya answered");
+    expect(user.printed.join("\n")).toContain("Laya (local) answered");
     // No secret was ever asked for.
     expect(user.printed.join("\n")).not.toContain("(input is hidden)");
   });
@@ -94,7 +107,10 @@ describe("runSetup", () => {
   it("completes a base URL into the systemone endpoint and saves it as JEV_URL", async () => {
     const seen: string[] = [];
     const values = await runSetup({
-      name: "x", providers, envFile, io: script(["laya", "http://127.0.0.1:9200"]).io,
+      name: "x",
+      providers,
+      envFile,
+      io: script(["laya", "http://127.0.0.1:9200"]).io,
       validate: async (provider: { url: string }) => (seen.push(provider.url), { ok: true, ms: 1 }),
       save: () => {},
     });
@@ -102,12 +118,68 @@ describe("runSetup", () => {
     expect(values).toEqual({ JEV_PROVIDER: "laya", JEV_URL: "http://127.0.0.1:9200/v1/systemone" });
   });
 
+  it("health-checks Jiwo without sending a decision request", async () => {
+    const seen: string[] = [];
+    const provider = {
+      label: "Jiwo",
+      url: "http://127.0.0.1:8765/v1/systemone",
+      healthUrl: "http://127.0.0.1:8765/health",
+      model: "jiwo-0.8b",
+      keyEnv: "JIWO_API_KEY",
+      keyless: true,
+    };
+    const result = await validateKey(provider, "", async (url: string) => {
+      seen.push(url);
+      return Response.json({ status: "ok" });
+    });
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual([provider.healthUrl]);
+  });
+
+  it("uses the selected local provider name throughout Jiwo setup", async () => {
+    const user = script(["jiwo", ""]);
+    const values = await runSetup({
+      name: "jev-codex",
+      providers,
+      envFile,
+      io: user.io,
+      validate: async () => ({ ok: true, ms: 7 }),
+      save: () => {},
+    });
+    expect(values).toMatchObject({ JEV_PROVIDER: "jiwo", JEV_MODEL: "jiwo-0.8b" });
+    expect(user.printed.join("\n")).toContain("Checking that Jiwo (local) answers");
+    expect(user.printed.join("\n")).toContain("Jiwo (local) answered in 7 ms.");
+    expect(user.printed.join("\n")).not.toContain("laya-serve");
+  });
+
+  it("does not ask Jiwo for a bearer key after a health-check failure", async () => {
+    const user = script(["jiwo", "", "", "", "n"]);
+    const checked: string[] = [];
+    const values = await runSetup({
+      name: "jev-codex",
+      providers,
+      envFile,
+      io: user.io,
+      validate: async (_provider: unknown, key: string) => (checked.push(key), { ok: false, refused: true, reason: "401" }),
+      save: () => {},
+    });
+    expect(values).toBeUndefined();
+    expect(checked).toEqual(["", "", ""]);
+    expect(user.printed.join("\n")).not.toContain("bearer key");
+  });
+
   it("asks for the serve's bearer key only when laya-serve refuses the keyless check", async () => {
     const user = script(["laya", "", "serve-key"]);
     const checked: unknown[] = [];
     const values = await runSetup({
-      name: "x", providers, envFile, io: user.io,
-      validate: async (_provider: unknown, key: string) => (checked.push(key), key === "serve-key" ? { ok: true, ms: 4 } : { ok: false, refused: true, reason: "401" }),
+      name: "x",
+      providers,
+      envFile,
+      io: user.io,
+      validate: async (_provider: unknown, key: string) => (
+        checked.push(key),
+        key === "serve-key" ? { ok: true, ms: 4 } : { ok: false, refused: true, reason: "401" }
+      ),
       save: () => {},
     });
     expect(checked).toEqual(["", "serve-key"]);
@@ -117,8 +189,13 @@ describe("runSetup", () => {
   it("defaults to TypeSafe and lets a refused key be retried", async () => {
     const user = script(["", "wrong", "right"]);
     const values = await runSetup({
-      name: "jev-claude", providers, envFile, io: user.io, save: () => {},
-      validate: async (_provider: unknown, key: string) => (key === "right" ? { ok: true, ms: 5 } : { ok: false, refused: true, reason: "401" }),
+      name: "jev-claude",
+      providers,
+      envFile,
+      io: user.io,
+      save: () => {},
+      validate: async (_provider: unknown, key: string) =>
+        key === "right" ? { ok: true, ms: 5 } : { ok: false, refused: true, reason: "401" },
     });
     expect(values).toEqual({ JEV_PROVIDER: "typesafe", TYPESAFE_API_KEY: "right" });
   });
@@ -147,7 +224,9 @@ describe("runSetup", () => {
         : { ok: true, ms: 9 };
     };
     expect(await runSetup({ name: "x", providers, envFile, io: yes.io, validate, save: () => {} })).toEqual({
-      JEV_PROVIDER: "opencode", OPENCODE_API_KEY: "key", JEV_MODEL: "jev-1.13",
+      JEV_PROVIDER: "opencode",
+      OPENCODE_API_KEY: "key",
+      JEV_MODEL: "jev-1.13",
     });
     expect(checked).toEqual(["jev-1.13-free", "jev-1.13"]);
     expect(yes.printed.findIndex((line) => line.includes("key check may be billed"))).toBeLessThan(yes.printed.indexOf("checked jev-1.13"));
@@ -158,7 +237,9 @@ describe("runSetup", () => {
       return { ok: false, freeUnavailable: true, refused: false, reason: "404 free model unavailable" };
     };
     expect(await runSetup({ name: "x", providers, envFile, io: no.io, validate: freeOnly, save: () => {} })).toEqual({
-      JEV_PROVIDER: "opencode", OPENCODE_API_KEY: "key", JEV_MODEL: "jev-1.13-free",
+      JEV_PROVIDER: "opencode",
+      OPENCODE_API_KEY: "key",
+      JEV_MODEL: "jev-1.13-free",
     });
     expect(no.printed.join("\n")).toContain("pass requests to the LLM");
   });
@@ -173,7 +254,11 @@ describe("validateKey", () => {
         return new Response("{}", { status });
       }) as unknown as typeof fetch;
     expect(await validateKey(providers.vercel, "k", reply(200))).toMatchObject({ ok: true });
-    expect(seen[0]).toMatchObject({ url: "https://ai-gateway.vercel.sh/typesafe/v1/systemone", auth: "Bearer k", body: { model: "typesafe-ai/jev" } });
+    expect(seen[0]).toMatchObject({
+      url: "https://ai-gateway.vercel.sh/typesafe/v1/systemone",
+      auth: "Bearer k",
+      body: { model: "typesafe-ai/jev" },
+    });
     expect(await validateKey(providers.typesafe, "k", reply(403))).toMatchObject({ ok: false, refused: true });
     expect(await validateKey(providers.typesafe, "k", reply(503))).toMatchObject({ ok: false, refused: false });
     const down = (async () => Promise.reject(new Error("fetch failed"))) as unknown as typeof fetch;
@@ -189,7 +274,9 @@ describe("validateKey", () => {
     }) as unknown as typeof fetch;
     expect(await validateKey(providers.opencode, "k", fetchImpl)).toMatchObject({ ok: false, freeUnavailable: true });
     expect(seen).toEqual(["jev-1.13-free"]);
-    expect(await validateKey({ ...providers.opencode, model: "jev-1.13", paidModel: undefined }, "k", fetchImpl)).toMatchObject({ ok: true });
+    expect(await validateKey({ ...providers.opencode, model: "jev-1.13", paidModel: undefined }, "k", fetchImpl)).toMatchObject({
+      ok: true,
+    });
     expect(seen).toEqual(["jev-1.13-free", "jev-1.13"]);
 
     const refused = (async (_url: string, init: RequestInit) => {
@@ -226,11 +313,17 @@ describe("saving and launching", () => {
     const env = { PATH: process.env.PATH, HOME: home, JEV_CODEX_PORT: "8999", JEV_SKIP_PROJECT_ENV: "1" };
     let output = "";
     try {
-      execFileSync(process.execPath, [join(ROOT, "bin/jev-codex.mjs"), "--start"], { env, cwd: home, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 });
+      execFileSync(process.execPath, [join(ROOT, "bin/jev-codex.mjs"), "--start"], {
+        env,
+        cwd: home,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 30_000,
+      });
     } catch (error) {
       output = String((error as { stderr?: string }).stderr);
     }
-    expect(output).toContain("no API key for Jev");
+    expect(output).toContain("no Jev provider configured");
     expect(output).toContain("--setup");
     expect(output).toContain("OPENROUTER_API_KEY");
   });

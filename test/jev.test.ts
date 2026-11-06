@@ -228,6 +228,78 @@ describe("asking Laya locally", () => {
     });
   });
 
+  it("keeps Jiwo model names and validates its loopback URL", () => {
+    expect(resolveModel("jiwo", undefined)).toBe("jiwo-0.8b");
+    expect(resolveModel("jiwo", "jiwo-4b")).toBe("jiwo-4b");
+    expect(loadConfig({ JEV_PROVIDER: "jiwo" })).toMatchObject({
+      jevProvider: "jiwo",
+      jevUrl: "http://127.0.0.1:8765/v1/systemone",
+      jiwoMaxStateChars: 7_000,
+    });
+    expect(() => loadConfig({ JEV_PROVIDER: "jiwo", JEV_URL: "https://remote.example/v1/systemone" })).toThrow(/JEV_URL/);
+  });
+
+  it("sends Jiwo bounded text-only state and no provider attribution headers", async () => {
+    const config = loadConfig({ JEV_PROVIDER: "jiwo" });
+    const jiwoRequest = {
+      model: config.jevModel,
+      state: {
+        assistant_instructions: "synthetic rules",
+        conversation: [
+          { role: "user", content: "choose a" },
+          { role: "tool_result", content: "private tool output" },
+          { role: "assistant", content: "synthetic reply" },
+        ],
+      },
+      questions: {
+        tool: { type: "choice" as const, instructions: "pick", criteria: { a: null, b: null } },
+        needs_tool: { type: "noul" as const, instructions: "need one" },
+      },
+    };
+    const { calls, fetchImpl } = capture(() =>
+      Response.json({
+        model: "jiwo-0.8b",
+        answers: { tool: { type: "choice", choice: "a", confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } } },
+        usage: { input_tokens: 12, output_tokens: 0 },
+      }),
+    );
+
+    const result = await createAskJev(config, fetchImpl)(jiwoRequest);
+    const body = calls[0]!.body;
+    expect(body.questions).toEqual({ tool: jiwoRequest.questions.tool });
+    expect(JSON.parse(body.state)).toEqual({
+      assistant_instructions: "synthetic rules",
+      conversation: [
+        { role: "user", content: "choose a" },
+        { role: "assistant", content: "synthetic reply" },
+      ],
+    });
+    expect(calls[0]!.headers.get("authorization")).toBeNull();
+    expect(calls[0]!.headers.get("http-referer")).toBeNull();
+    expect(result.answers.needs_tool).toEqual({ type: "noul", noul: 1 });
+  });
+
+  it("does not retry an invalid Jiwo response", async () => {
+    const config = loadConfig({ JEV_PROVIDER: "jiwo" });
+    const { calls, fetchImpl } = capture(() => Response.json({ answers: {}, usage: { input_tokens: 1, output_tokens: 0 } }));
+    await expect(createAskJev(config, fetchImpl)({ ...request, state: { conversation: [] } })).rejects.toThrow("jiwo_partial_response");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("accepts a valid Jiwo response through the configured endpoint", async () => {
+    const config = loadConfig({ JEV_PROVIDER: "jiwo" });
+    const jiwoAnswer = {
+      model: "jiwo-0.8b",
+      answers: { tool: { type: "choice", choice: "a", confidence: 0.9, probabilities: { a: 0.9, b: 0.1 } } },
+      usage: { input_tokens: 10, output_tokens: 0 },
+    };
+    const { calls, fetchImpl } = capture(() => Response.json(jiwoAnswer));
+    const result = await createAskJev(config, fetchImpl)({ ...request, state: { conversation: [] } });
+
+    expect(calls[0]!.url).toBe(config.jevUrl);
+    expect(result.answers.tool).toMatchObject({ choice: "a", confidence: 0.9 });
+  });
+
   it("pins JEV_MODEL to a checkpoint Laya actually serves", () => {
     expect(resolveModel("laya", undefined)).toBe("multilingual");
     expect(resolveModel("laya", "english")).toBe("english");

@@ -59,6 +59,24 @@ describe("Claude advisor request", () => {
   });
 });
 
+describe("Claude advisor call budget", () => {
+  it("does not make a second Jev policy call on an ordinary Claude turn", async () => {
+    const jev = fakeJev({ tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
+    const app = createApp({
+      config: testConfig({ client: "claude", advisorEnabled: true }),
+      askJev: jev.askJev,
+      fetch: async () => Response.json({ id: "msg_main", content: [{ type: "text", text: "ok" }] }),
+    });
+    const res = await app.request("/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...request, messages: [{ role: "user", content: [{ type: "text", text: "explain this" }] }] }),
+    });
+    expect(res.status).toBe(200);
+    expect(jev.requests).toHaveLength(1);
+  });
+});
+
 describe("Claude advisor consult", () => {
   it("joins the note into the main request and meters the consult apart from the session", async () => {
     const jev = fakeJev({ session_action: { choice: "consult_advisor" }, tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
@@ -67,7 +85,9 @@ describe("Claude advisor consult", () => {
     const app = createApp({
       config: testConfig({ client: "claude", advisorEnabled: true, advisorModel: "claude-opus-5-5" }),
       askJev: jev.askJev,
-      log: (entry) => { logs.push(entry); },
+      log: (entry) => {
+        logs.push(entry);
+      },
       fetch: (async (_url: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
         sent.push(body);
@@ -91,7 +111,12 @@ describe("Claude advisor consult", () => {
 
     expect(res.status).toBe(200);
     await settled();
-    expect(logs[0]!.advisor).toMatchObject({ model: "claude-opus-5-5", action: "consult_advisor", consulted: true, usage: { input: 700, output: 1, cached: 600 } });
+    expect(logs[0]!.advisor).toMatchObject({
+      model: "claude-opus-5-5",
+      action: "consult_advisor",
+      consulted: true,
+      usage: { input: 700, output: 1, cached: 600 },
+    });
     // The main request still went up, with the note joined into its trailing user turn.
     const main = sent.find((body) => body.model === "claude-haiku-5-5");
     expect(JSON.stringify(main?.messages)).toContain("Untrusted read-only advisor note");

@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadConfig } from "../src/config.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // @ts-ignore: bin/ is plain JavaScript outside the tsconfig include; resolved at runtime.
@@ -28,11 +29,14 @@ const opencodeAdvisor = clients.opencodeAdvisor as LauncherSpec;
 const codex = clients.codex as LauncherSpec;
 const codexAdvisor = clients.codexAdvisor as LauncherSpec;
 const claude = clients.claude as LauncherSpec;
+const claudeAdvisor = clients.claudeAdvisor as LauncherSpec;
 const devin = clients.devin as LauncherSpec;
 const agy = clients.agy as LauncherSpec;
 const agyAdvisor = clients.agyAdvisor as LauncherSpec;
 
 const origin = "http://127.0.0.1:8791";
+const loadConfigForClient = (client: string, env: Record<string, string> = {}) =>
+  loadConfig({ JEV_CLIENT: client, TYPESAFE_API_KEY: "test", ...env });
 const launcherBin = fileURLToPath(new URL("../bin/jev-opencode.mjs", import.meta.url));
 const agyLauncherBin = fileURLToPath(new URL("../bin/jev-agy.mjs", import.meta.url));
 
@@ -263,6 +267,21 @@ describe("existing launchers", () => {
     expect(claude.defaultPort).toBe(8789);
     expect(claude.upstream()).toBe("https://api.anthropic.com/v1");
     expect(claude.env!(origin)).toEqual({ ANTHROPIC_BASE_URL: origin });
+
+    expect(claudeAdvisor.name).toBe("jev-claude-advisor");
+    expect(claudeAdvisor.client).toBe("claude");
+    expect(claudeAdvisor.defaultPort).toBe(8788);
+    const claudeAdvisorEnv = claudeAdvisor.gatewayEnv as () => Record<string, string>;
+    expect(claudeAdvisorEnv()).toEqual({ JEV_ADVISOR: "on" });
+    expect(claudeAdvisor.args!(origin)).toEqual(["--model", "claude-haiku-5-5"]);
+    process.env.JEV_ADVISOR_MODEL = "claude-sonnet-5-5";
+    expect(claudeAdvisorEnv()).toEqual({ JEV_ADVISOR: "on", JEV_ADVISOR_MODEL: "claude-sonnet-5-5" });
+    expect(claudeAdvisor.args!(origin)).toEqual(["--model", "claude-haiku-5-5"]);
+  });
+
+  it("uses the configured Claude advisor model without changing the coding model", () => {
+    expect(loadConfigForClient("claude").advisorModel).toBe("claude-opus-5-5");
+    expect(loadConfigForClient("claude", { JEV_ADVISOR_MODEL: "claude-haiku-5-5" }).advisorModel).toBe("claude-haiku-5-5");
   });
 });
 
