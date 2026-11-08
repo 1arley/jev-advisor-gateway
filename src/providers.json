@@ -38,6 +38,8 @@
     "note": "OpenJev local as System One (default http://localhost:6767); no remote key — its backend (groq/decider) does the billing",
     "keyEnv": "OPENJEV_KEY",
     "url": "http://localhost:6767/v1/systemone",
+    "localOnly": true,
+    "endpointPath": "/v1/systemone",
     "model": "llama-3.1-8b-instant",
     "askModel": true,
     "keyIgnored": true
@@ -48,8 +50,11 @@
     "keyEnv": "LAYA_API_KEY",
     "keyUrl": "https://nandhakishorm.github.io/laya/",
     "url": "http://127.0.0.1:8000/v1/systemone",
-    "model": "multilingual",
+    "localOnly": true,
+    "endpointPath": "/v1/systemone",
+    "model": "typed-decisions",
     "models": ["english", "multilingual", "typed-decisions"],
+    "layaRoutingPolicy": "native",
     "keyless": true
   },
   "jiwo": {
@@ -58,6 +63,8 @@
     "keyEnv": "JIWO_API_KEY",
     "keyUrl": "https://github.com/jiwidi/jiwo",
     "url": "http://127.0.0.1:8765/v1/systemone",
+    "localOnly": true,
+    "endpointPath": "/v1/systemone",
     "healthUrl": "http://127.0.0.1:8765/health",
     "model": "jiwo-0.8b",
     "askModel": true,
@@ -69,6 +76,8 @@
     "keyEnv": "KEV_API_KEY",
     "keyUrl": "https://github.com/jaredpalmer/kev",
     "url": "http://127.0.0.1:8009/v1/systemone",
+    "localOnly": true,
+    "endpointPath": "/v1/systemone",
     "model": "kev-latest",
     "keyless": true
   }

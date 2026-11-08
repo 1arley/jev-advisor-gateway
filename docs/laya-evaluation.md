@@ -37,20 +37,22 @@ held-out performance and do not change the profile. All prompt text and labels a
 Fit a profile from the full calibration split for one checkpoint and one non-legacy policy:
 
 ```bash
-pnpm exec tsx scripts/laya-evaluate.mjs --split calibration --models english --policies native \
-  --fit-profile /tmp/laya-calibration.json --source synthetic-corpus-v1
+pnpm exec tsx scripts/laya-evaluate.mjs --split calibration --models typed-decisions --policies native \
+  --fit-profile /tmp/laya-calibration.json --source "Laya 0.4.22; typed-decisions; corpus-v1; target-error-0.1"
 ```
 
 The profile uses original-order calibration scenarios only. For each distinct confidence value, tied cases
 are accepted together; the selected threshold is the lowest value whose smoothed error rate
-`(errors + 1) / (accepted + 1)` meets `--error-target` (default `0.1`). A bucket needs 20 valid
-scenarios. The current calibration split has eight cases per option band, so it does not produce
-thresholds; empty or insufficient buckets are reported instead of receiving fitted values.
+`(errors + 1) / (accepted + 1)` meets `--error-target` (default `0.1`). The fitter records a global
+`default` threshold when there are at least 20 scored calibration scenarios. An option-count bucket
+overrides it only when that bucket has at least 20 samples; insufficient buckets remain omitted.
+The current corpus therefore supports a global threshold, not separate thresholds for its four
+option-count bands.
 
 Apply a previously created profile only to the complete held-out split:
 
 ```bash
-pnpm exec tsx scripts/laya-evaluate.mjs --split test --models english --policies native \
+pnpm exec tsx scripts/laya-evaluate.mjs --split test --models typed-decisions --policies native \
   --apply-profile /tmp/laya-calibration.json
 ```
 

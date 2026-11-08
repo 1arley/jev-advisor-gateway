@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "source": "Laya 0.4.22 rev 7b928d828b7b0e022f929d9bd2e44165aa270148; synthetic gateway corpus; 2026-11-08; target error 0.1",
+  "checkpoint": "typed-decisions",
+  "policy": "native",
+  "buckets": {
+    "default": {
+      "threshold": 0.5118,
+      "samples": 32
+    }
+  }
+}

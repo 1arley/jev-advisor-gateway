@@ -65,7 +65,7 @@ describe("runSetup", () => {
   });
 
   it("openjev: asks the backend model, takes a placeholder key, and saves JEV_MODEL", async () => {
-    const user = script(["openjev", "", "local"]);
+    const user = script(["openjev", "", "", "local"]);
     const saved: unknown[] = [];
     const checked: unknown[] = [];
     const values = await runSetup({
@@ -93,12 +93,16 @@ describe("runSetup", () => {
       providers,
       envFile,
       io: user.io,
-      validate: async (provider: { label: string }, key: string) => (checked.push([provider.label, key]), { ok: true, ms: 33 }),
+      validate: async (provider: { label: string; model: string; layaRoutingPolicy: string }, key: string) => (
+        checked.push([provider.label, provider.model, provider.layaRoutingPolicy, key]),
+        { ok: true, ms: 33 }
+      ),
       save: () => {},
     });
     expect(values).toEqual({ JEV_PROVIDER: "laya" });
-    expect(checked).toEqual([["Laya (local)", ""]]);
+    expect(checked).toEqual([["Laya (local)", "typed-decisions", "native", ""]]);
     expect(user.printed.join("\n")).toContain("needs no key");
+    expect(user.printed.join("\n")).toContain("typed-decisions checkpoint with native policy and bundled calibration");
     expect(user.printed.join("\n")).toContain("Laya (local) answered");
     // No secret was ever asked for.
     expect(user.printed.join("\n")).not.toContain("(input is hidden)");
@@ -116,6 +120,43 @@ describe("runSetup", () => {
     });
     expect(seen).toEqual(["http://127.0.0.1:9200/v1/systemone"]);
     expect(values).toEqual({ JEV_PROVIDER: "laya", JEV_URL: "http://127.0.0.1:9200/v1/systemone" });
+  });
+
+  it("accepts a complete local endpoint without appending its path twice", async () => {
+    const seen: string[] = [];
+    const values = await runSetup({
+      name: "x",
+      providers,
+      envFile,
+      io: script(["kev", "http://localhost:9000/v1/systemone", ""]).io,
+      validate: async (provider: { url: string }) => (seen.push(provider.url), { ok: true, ms: 1 }),
+      save: () => {},
+    });
+    expect(seen).toEqual(["http://localhost:9000/v1/systemone"]);
+    expect(values).toEqual({ JEV_PROVIDER: "kev", JEV_URL: "http://localhost:9000/v1/systemone" });
+  });
+
+  it("rejects remote local-provider URLs before sending a setup request or key", async () => {
+    const user = script(["kev", "https://remote.example", "secret"]);
+    const validate = () => expect.unreachable("the URL must be rejected before validation");
+    const values = await runSetup({ name: "x", providers, envFile, io: user.io, validate, save: () => {} });
+    expect(values).toBeUndefined();
+    expect(user.printed.join("\n")).toContain("must use loopback");
+    expect(user.printed.join("\n")).not.toContain("secret");
+  });
+
+  it("asks OpenJev for a local base URL and applies its endpoint from the provider table", async () => {
+    const seen: string[] = [];
+    const values = await runSetup({
+      name: "x",
+      providers,
+      envFile,
+      io: script(["openjev", "http://127.0.0.1:7000", "", "key"]).io,
+      validate: async (provider: { url: string }) => (seen.push(provider.url), { ok: true, ms: 1 }),
+      save: () => {},
+    });
+    expect(seen).toEqual(["http://127.0.0.1:7000/v1/systemone"]);
+    expect(values).toMatchObject({ JEV_PROVIDER: "openjev", JEV_URL: seen[0] });
   });
 
   it("health-checks Jiwo without sending a decision request", async () => {

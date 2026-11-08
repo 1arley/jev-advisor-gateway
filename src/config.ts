@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-import { parseLayaCalibration, type LayaCalibration } from "./laya-calibration.js";
+import { DEFAULT_LAYA_CALIBRATION, parseLayaCalibration, type LayaCalibration } from "./laya-calibration.js";
 import { isProvider, PROVIDERS, resolveModel, resolveProvider, resolveUrl, type ProviderId } from "./jev.js";
 export type LayaPolicy = "legacy" | "native" | "noul_refined" | "binary_choice";
 export type AdvisorProvider = "openai-compatible" | "anthropic";
@@ -90,7 +90,9 @@ const bool = (env: Env, key: string, fallback: boolean): boolean => {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 };
 
-function validateLocalDecisionUrl(url: string, provider: "laya" | "jiwo" | "kev"): void {
+function validateProviderUrl(url: string, provider: ProviderId): void {
+  const metadata = PROVIDERS[provider];
+  if (!metadata.localOnly) return;
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -103,31 +105,16 @@ function validateLocalDecisionUrl(url: string, provider: "laya" | "jiwo" | "kev"
   if (!loopback || !["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error(`JEV_URL must be a loopback ${provider} URL with no credentials, query or fragment, got "${url}"`);
   }
-}
-
-function validateLayaUrl(url: string): void {
-  validateLocalDecisionUrl(url, "laya");
-}
-
-function validateJiwoUrl(url: string): void {
-  validateLocalDecisionUrl(url, "jiwo");
-  const pathname = new URL(url).pathname.replace(/\/+$/, "") || "/";
-  if (pathname !== "/v1/systemone") throw new Error("JEV_URL for Jiwo must end in /v1/systemone");
-}
-
-function validateKevUrl(url: string): void {
-  validateLocalDecisionUrl(url, "kev");
-  const pathname = new URL(url).pathname.replace(/\/+$/, "") || "/";
-  if (pathname !== "/v1/systemone") throw new Error("JEV_URL for Kev must end in /v1/systemone");
+  if (metadata.endpointPath && (parsed.pathname.replace(/\/+$/, "") || "/") !== metadata.endpointPath) {
+    throw new Error(`JEV_URL for ${metadata.label} must end in ${metadata.endpointPath}`);
+  }
 }
 
 export function loadConfig(env: Env = process.env): Config {
   const client = str(env, "JEV_CLIENT") ?? "standalone";
   const jevProvider = resolveProvider(env);
   const jevUrl = resolveUrl(jevProvider, env);
-  if (jevProvider === "laya") validateLayaUrl(jevUrl);
-  if (jevProvider === "jiwo") validateJiwoUrl(jevUrl);
-  if (jevProvider === "kev") validateKevUrl(jevUrl);
+  validateProviderUrl(jevUrl, jevProvider);
   if (!isProvider(jevProvider)) throw new Error(`Unsupported JEV provider "${jevProvider}"`);
   const jevModel = resolveModel(jevProvider, str(env, "JEV_MODEL"));
   const advisorProviderValue = str(env, "JEV_ADVISOR_PROVIDER")?.toLowerCase();
@@ -175,7 +162,7 @@ export function loadConfig(env: Env = process.env): Config {
       throw new Error("JEV_ADVISOR_URL must use HTTPS (or loopback HTTP) and have no credentials, query or fragment");
     }
   }
-  const layaRoutingPolicy = str(env, "JEV_LAYA_ROUTING_POLICY") ?? "legacy";
+  const layaRoutingPolicy = str(env, "JEV_LAYA_ROUTING_POLICY") ?? PROVIDERS[jevProvider].layaRoutingPolicy ?? "legacy";
   if (!["legacy", "native", "noul_refined", "binary_choice"].includes(layaRoutingPolicy)) {
     throw new Error(`Invalid JEV_LAYA_ROUTING_POLICY: "${layaRoutingPolicy}"`);
   }
@@ -267,7 +254,11 @@ export function loadConfig(env: Env = process.env): Config {
     layaShadowConcurrency,
     layaMinConfidence,
     layaEvaluationReport: str(env, "JEV_LAYA_EVALUATION_REPORT"),
-    layaCalibration: str(env, "JEV_LAYA_CALIBRATION") ? parseLayaCalibration(str(env, "JEV_LAYA_CALIBRATION")!) : undefined,
+    layaCalibration: str(env, "JEV_LAYA_CALIBRATION")
+      ? parseLayaCalibration(str(env, "JEV_LAYA_CALIBRATION")!)
+      : jevProvider === "laya"
+        ? DEFAULT_LAYA_CALIBRATION
+        : undefined,
     minConfidence: num(env, "JEV_MIN_CONFIDENCE", 0.7),
     argMinCertainty: num(env, "JEV_ARG_MIN_CERTAINTY", 0.8),
     onNone,

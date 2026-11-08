@@ -34,7 +34,7 @@ function setup(canned: Parameters<typeof fakeJev>[0], config = testConfig()) {
 
 describe("router module", () => {
   it("passes Laya's no-tool choice to the model instead of suppressing its tools", async () => {
-    const jev = fakeJev({ tool: { choice: NO_TOOL }, needs_tool: { noul: 0.05 } });
+    const jev = fakeJev({ tool: { choice: "direct_answer", confidence: 0.95 } });
     const upstream = fakeUpstream();
     const app = createApp({
       config: loadConfig({ JEV_PROVIDER: "laya", JEV_DIRECT_CALLS: "false" }),

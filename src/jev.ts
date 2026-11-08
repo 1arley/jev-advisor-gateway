@@ -11,6 +11,12 @@ interface Provider {
   keyEnv: string;
   keyUrl?: string;
   url: string;
+  /** Local providers must stay on loopback. */
+  localOnly?: boolean;
+  /** Fixed path required by local System One endpoints. */
+  endpointPath?: string;
+  /** Laya's default decision policy when no explicit policy is configured. */
+  layaRoutingPolicy?: "legacy" | "native" | "noul_refined" | "binary_choice";
   model: string;
   /** Only providers that must refuse unlisted ids have a list: the rest tell theirs apart by a slash. */
   models?: string[];
