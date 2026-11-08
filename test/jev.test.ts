@@ -239,6 +239,20 @@ describe("asking Laya locally", () => {
     expect(() => loadConfig({ JEV_PROVIDER: "jiwo", JEV_URL: "https://remote.example/v1/systemone" })).toThrow(/JEV_URL/);
   });
 
+  it("requires Kev's documented System One endpoint on loopback", () => {
+    expect(loadConfig({ JEV_PROVIDER: "kev" })).toMatchObject({
+      jevProvider: "kev",
+      jevUrl: "http://127.0.0.1:8009/v1/systemone",
+      jevModel: "kev-latest",
+    });
+    expect(loadConfig({ JEV_PROVIDER: "kev", JEV_URL: "http://localhost:8009/v1/systemone/" }).jevUrl).toBe(
+      "http://localhost:8009/v1/systemone/",
+    );
+    for (const jevUrl of ["http://127.0.0.1:8009/", "http://127.0.0.1:8009/v1/other"]) {
+      expect(() => loadConfig({ JEV_PROVIDER: "kev", JEV_URL: jevUrl })).toThrow(/JEV_URL for Kev/);
+    }
+  });
+
   it("sends Jiwo bounded text-only state and no provider attribution headers", async () => {
     const config = loadConfig({ JEV_PROVIDER: "jiwo" });
     const jiwoRequest = {

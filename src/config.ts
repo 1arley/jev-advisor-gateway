@@ -117,6 +117,8 @@ function validateJiwoUrl(url: string): void {
 
 function validateKevUrl(url: string): void {
   validateLocalDecisionUrl(url, "kev");
+  const pathname = new URL(url).pathname.replace(/\/+$/, "") || "/";
+  if (pathname !== "/v1/systemone") throw new Error("JEV_URL for Kev must end in /v1/systemone");
 }
 
 export function loadConfig(env: Env = process.env): Config {
