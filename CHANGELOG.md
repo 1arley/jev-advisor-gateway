@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.2](https://github.com/1arley/jev-advisor-gateway/compare/v0.16.1...v0.16.2) (2026-11-08)
+
+
+### Maintenance
+
+* relax bearer-key assertion to Jiwo-specific wording ([#18](https://github.com/1arley/jev-advisor-gateway/issues/18)) ([222eeb2](https://github.com/1arley/jev-advisor-gateway/commit/222eeb29ded8dbc50b601b1801a1d7631bd2c802))
+
 ## [0.16.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.16.0...v0.16.1) (2026-11-08)
 
 
