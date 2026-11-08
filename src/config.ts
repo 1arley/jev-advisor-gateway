@@ -49,8 +49,10 @@ export interface Config {
   layaMinConfidence: number;
   layaEvaluationReport?: string;
   layaCalibration?: LayaCalibration;
-  /** Below this, Jev's tool decision is ignored and the LLM decides. */
+  /** Below this, hosted Jev's tool decision is ignored and the LLM decides. */
   minConfidence: number;
+  /** Jiwo's calibrated choice threshold; its confidence scale depends on option count. */
+  jiwoMinConfidence: number;
   /** Per-argument certainty needed to answer without calling the LLM. */
   argMinCertainty: number;
   onNone: "force_none" | "passthrough";
@@ -109,6 +111,8 @@ function validateLayaUrl(url: string): void {
 
 function validateJiwoUrl(url: string): void {
   validateLocalDecisionUrl(url, "jiwo");
+  const pathname = new URL(url).pathname.replace(/\/+$/, "") || "/";
+  if (pathname !== "/v1/systemone") throw new Error("JEV_URL for Jiwo must end in /v1/systemone");
 }
 
 function validateKevUrl(url: string): void {
@@ -255,6 +259,7 @@ export function loadConfig(env: Env = process.env): Config {
     jevTimeoutMs: jevProvider === "laya" ? num(env, "JEV_LAYA_TIMEOUT_MS", 8_000) : num(env, "JEV_TIMEOUT_MS", 8_000),
     jevMaxLen: jevProvider === "laya" ? num(env, "JEV_LAYA_MAX_LEN", 2048) : undefined,
     jiwoMaxStateChars: num(env, "JEV_JIWO_MAX_STATE_CHARS", 7_000),
+    jiwoMinConfidence: num(env, "JEV_JIWO_MIN_CONFIDENCE", 0.7),
     layaRoutingPolicy: layaRoutingPolicy as LayaPolicy,
     layaShadowPolicy: layaShadowPolicy as LayaPolicy | undefined,
     layaShadowConcurrency,
@@ -275,6 +280,9 @@ export function loadConfig(env: Env = process.env): Config {
   };
   if (config.jiwoMaxStateChars < 1 || config.jiwoMaxStateChars > 60_000) {
     throw new Error(`JEV_JIWO_MAX_STATE_CHARS must be between 1 and 60000, got "${config.jiwoMaxStateChars}"`);
+  }
+  if (config.jiwoMinConfidence < 0 || config.jiwoMinConfidence > 1) {
+    throw new Error(`JEV_JIWO_MIN_CONFIDENCE must be between 0 and 1, got "${config.jiwoMinConfidence}"`);
   }
   if (config.headroomTimeoutMs <= 0 || config.headroomTimeoutMs > 5_000) {
     throw new Error(`JEV_HEADROOM_TIMEOUT_MS must be between 1 and 5000, got "${config.headroomTimeoutMs}"`);

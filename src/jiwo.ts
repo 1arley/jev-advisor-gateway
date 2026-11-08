@@ -17,22 +17,25 @@ function validProbability(value: unknown): value is number {
 /** Build Jiwo's bounded, text-only state without forwarding tool results or media. */
 export function buildJiwoState(input: Pick<RouterInput, "system" | "turns">, maxChars: number): Json {
   const conversation: { role: "user" | "assistant"; content: string }[] = [];
-  let remaining = Math.max(0, maxChars - 64);
   for (const turn of input.turns.toReversed()) {
     if (turn.role !== "user" && turn.role !== "assistant") continue;
     const text = textOf(turn.content);
-    if (!text) continue;
-    const content = truncate(text, Math.min(MAX_MESSAGE_CHARS, remaining));
-    const item: { role: "user" | "assistant"; content: string } = { role: turn.role, content };
-    const size = JSON.stringify(item).length;
-    if (size > remaining && conversation.length > 0) break;
-    conversation.unshift(item);
-    remaining -= size;
+    if (text) conversation.unshift({ role: turn.role, content: text.slice(0, MAX_MESSAGE_CHARS) });
   }
-  return {
-    ...(input.system ? { assistant_instructions: truncate(input.system, Math.min(MAX_MESSAGE_CHARS, Math.max(0, remaining))) } : {}),
-    conversation,
-  } as Json;
+  let system = input.system.slice(0, MAX_MESSAGE_CHARS);
+  const state = () => ({ ...(system ? { assistant_instructions: system } : {}), conversation });
+  if (JSON.stringify({ conversation: [] }).length > maxChars) throw new Error("jiwo_state_limit");
+  while (conversation.length && JSON.stringify(state()).length > maxChars) conversation.shift();
+  while (system && JSON.stringify(state()).length > maxChars)
+    system = system.slice(0, Math.max(0, system.length - (JSON.stringify(state()).length - maxChars)));
+  while (conversation.length && JSON.stringify(state()).length > maxChars) {
+    const latest = conversation.at(-1)!;
+    const excess = JSON.stringify(state()).length - maxChars;
+    if (latest.content.length <= excess) conversation.pop();
+    else latest.content = latest.content.slice(0, latest.content.length - excess);
+  }
+  if (JSON.stringify(state()).length > maxChars) throw new Error("jiwo_state_limit");
+  return state() as Json;
 }
 
 /** Remove tool-result and media turns from the already bounded common state. */
@@ -53,7 +56,7 @@ export function toJiwoRequest(request: SystemOneRequest<Questions>): SystemOneRe
   const questions = Object.fromEntries(
     Object.entries(request.questions).flatMap(([key, question]) => (question.type === "choice" ? [[key, question]] : [])),
   ) as Questions;
-  if (!Object.hasOwn(questions, TOOL_KEY) || Object.keys(questions).length > MAX_QUESTIONS) throw new Error("jiwo_question_limit");
+  if (Object.keys(questions).length === 0 || Object.keys(questions).length > MAX_QUESTIONS) throw new Error("jiwo_question_limit");
   return { ...request, questions };
 }
 
@@ -78,7 +81,8 @@ export function fromJiwoResult(
       !isRecord(answer.probabilities) ||
       Object.entries(answer.probabilities).some(
         ([key, probability]) => !Object.hasOwn(question.criteria, key) || !validProbability(probability),
-      )
+      ) ||
+      Math.abs(Object.values(answer.probabilities).reduce<number>((sum, probability) => sum + Number(probability), 0) - 1) >= 0.001
     )
       throw new Error("jiwo_invalid_probabilities");
   }

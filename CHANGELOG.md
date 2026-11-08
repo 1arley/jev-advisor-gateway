@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/1arley/jev-advisor-gateway/compare/v0.16.0...v0.16.1) (2026-11-08)
+
+
+### Fixed
+
+* **jiwo:** validate local provider decisions ([6eb37b9](https://github.com/1arley/jev-advisor-gateway/commit/6eb37b9a3eeef6687375605238592f87ea5b8974))
+
 ## [0.16.0](https://github.com/1arley/jev-advisor-gateway/compare/v0.15.0...v0.16.0) (2026-11-06)
 
 
