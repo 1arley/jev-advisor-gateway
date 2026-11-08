@@ -245,6 +245,7 @@ The complete list, including launcher-specific settings, is in [`.env.example`](
 | `JEV_ROUTING`                       | `on`              | Start in routing or baseline metering mode                                                     |
 | `JEV_TIMEOUT_MS`                    | `8000`            | Hosted decision deadline; Laya uses its own timeout                                            |
 | `JEV_JIWO_MAX_STATE_CHARS`          | `7000`            | Maximum sanitized state sent to Jiwo                                                           |
+| `JEV_JIWO_MIN_CONFIDENCE`           | `0.7`             | Below this Jiwo choice confidence, pass through to the session model                           |
 | `JEV_LAYA_ROUTING_POLICY`           | `legacy`          | Laya policy: `legacy`, `native`, `noul_refined` or `binary_choice`                             |
 | `JEV_LAYA_SHADOW_POLICY`            | unset             | Optional local Laya comparison policy                                                          |
 | `JEV_LAYA_SHADOW_CONCURRENCY`       | `1`               | Maximum concurrent Laya shadow calls, from 1 to 4                                              |

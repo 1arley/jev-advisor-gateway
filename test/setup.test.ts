@@ -130,10 +130,13 @@ describe("runSetup", () => {
     };
     const result = await validateKey(provider, "", async (url: string) => {
       seen.push(url);
-      return Response.json({ status: "ok" });
+      return Response.json({ status: "ok", model: provider.model });
     });
     expect(result.ok).toBe(true);
     expect(seen).toEqual([provider.healthUrl]);
+
+    const mismatchedModel = await validateKey(provider, "", async () => Response.json({ status: "ok", model: "other-model" }));
+    expect(mismatchedModel).toMatchObject({ ok: false, reason: "health check reported ok other-model" });
   });
 
   it("uses the selected local provider name throughout Jiwo setup", async () => {

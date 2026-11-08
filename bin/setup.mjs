@@ -48,6 +48,14 @@ export async function validateKey(provider, key, fetchImpl = fetch) {
     try {
       const health = await fetchImpl(provider.healthUrl, { signal: AbortSignal.timeout(5_000), redirect: "error" });
       if (!health.ok) return { ok: false, refused: false, reason: `${health.status} health check failed` };
+      const payload = await health.json().catch(() => undefined);
+      if (provider.model && (payload?.status !== "ok" || payload.model !== provider.model)) {
+        return {
+          ok: false,
+          refused: false,
+          reason: `health check reported ${payload?.status ?? "invalid"} ${payload?.model ?? "no model"}`,
+        };
+      }
       return { ok: true, ms: Date.now() - startedAt };
     } catch (error) {
       return { ok: false, refused: false, reason: error instanceof Error ? error.message : String(error) };

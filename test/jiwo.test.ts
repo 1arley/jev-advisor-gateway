@@ -65,5 +65,12 @@ describe("Jiwo adapter", () => {
     expect(() =>
       fromJiwoResult({ ...answer, answers: { tool: { ...answer.answers.tool, confidence: 2 } } }, request, toJiwoRequest(request)),
     ).toThrow("jiwo_invalid_choice");
+    expect(() =>
+      fromJiwoResult(
+        { ...answer, answers: { tool: { ...answer.answers.tool, probabilities: { lights: 0.8, no_tool_needed: 0.1 } } } },
+        request,
+        toJiwoRequest(request),
+      ),
+    ).toThrow("jiwo_invalid_probabilities");
   });
 });

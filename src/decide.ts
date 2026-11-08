@@ -204,6 +204,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   // Laya rejects any single choice question with more than 100 options, including the optional no-tool label.
   const maxTools = config.jevProvider === "laya" || config.jevProvider === "jiwo" ? 99 : MAX_TOOLS;
   const native = config.jevProvider === "laya" && config.layaRoutingPolicy !== "legacy";
+  const jiwo = config.jevProvider === "jiwo";
   let tools = input.tools;
   let shortlistTokens = 0;
   let result: SystemOneResult<Questions>;
@@ -217,7 +218,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     }
     const built = buildQuestions(tools, {
       allowNone: input.toolChoice !== "required",
-      withArgs: config.directCalls,
+      withArgs: config.directCalls && !jiwo,
       layaNative: native,
       layaGate:
         native && config.layaRoutingPolicy !== "native" && config.layaRoutingPolicy !== "legacy" ? config.layaRoutingPolicy : undefined,
@@ -300,7 +301,8 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     tools.length + Number(input.toolChoice !== "required"),
     config.layaMinConfidence,
   );
-  if (picked.confidence < (native ? threshold : config.minConfidence)) return { mode: "passthrough", reason: "low_confidence", jev };
+  if (picked.confidence < (native ? threshold : jiwo ? config.jiwoMinConfidence : config.minConfidence))
+    return { mode: "passthrough", reason: "low_confidence", jev };
   // The verification question must be confident and agree with the selected action.
   const wantsTool = selected !== NO_TOOL;
   if (native && config.layaRoutingPolicy === "noul_refined") {
