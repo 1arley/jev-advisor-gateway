@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { geminiAdapter, type GeminiRequest } from "../src/adapters/gemini.js";
-import {
-  advisorFor,
-  appendGeminiAdvisorNote,
-  buildGeminiAdvisorRequest,
-  extractGeminiAdvisorText,
-} from "../src/advisor/advisor.js";
+import { advisorFor, appendGeminiAdvisorNote, buildGeminiAdvisorRequest, extractGeminiAdvisorText } from "../src/advisor/advisor.js";
 import { NO_TOOL } from "../src/questions.js";
-import type { SessionState } from "../src/advisor/session-state.js";
+import type { SessionState } from "../src/advisor/session.js";
 import { fakeJev, settled, testConfig } from "./helpers.js";
 
 const session: SessionState = { recent: ["tool result: repeated failure"], lastAdvisorAt: 0, advisorCalls: 0 };
@@ -25,16 +20,20 @@ const request: GeminiRequest = {
 
 describe("Gemini advisor request", () => {
   it("asks without client system instructions or tools and caps output", () => {
-    const body = buildGeminiAdvisorRequest(request, testConfig({ advisorModel: "gemini-3.1-pro-preview", advisorMaxOutputTokens: 321 }), session);
+    const body = buildGeminiAdvisorRequest(
+      request,
+      testConfig({ advisorModel: "gemini-3.1-pro-preview", advisorMaxOutputTokens: 321 }),
+      session,
+    );
     expect(body).toMatchObject({
       systemInstruction: { parts: [{ text: expect.stringContaining("read-only advisor") }] },
       generationConfig: { maxOutputTokens: 321 },
     });
     expect(body.contents).toHaveLength(3);
-    expect(body.contents.at(-1)).toMatchObject({ role: "user", parts: [
-      { functionResponse: { name: "read_file" } },
-      { text: expect.stringContaining("Recent router state") },
-    ] });
+    expect(body.contents.at(-1)).toMatchObject({
+      role: "user",
+      parts: [{ functionResponse: { name: "read_file" } }, { text: expect.stringContaining("Recent router state") }],
+    });
     expect(body).not.toHaveProperty("tools");
     expect(body).not.toHaveProperty("toolConfig");
     expect(body).not.toHaveProperty("model");
@@ -52,7 +51,9 @@ describe("Gemini advisor request", () => {
   it("reads JSON, chunked SSE, and Gemini's JSON-array stream, while rejecting empty text", () => {
     const chunk = (text: string) => JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] });
     expect(extractGeminiAdvisorText(chunk("A concise note."))).toBe("A concise note.");
-    expect(extractGeminiAdvisorText(`data: ${chunk("Check ")}\n\ndata: ${chunk("the retry.")}\n\ndata: [DONE]\n\n`)).toBe("Check the retry.");
+    expect(extractGeminiAdvisorText(`data: ${chunk("Check ")}\n\ndata: ${chunk("the retry.")}\n\ndata: [DONE]\n\n`)).toBe(
+      "Check the retry.",
+    );
     expect(extractGeminiAdvisorText(`[${chunk("Array ")},${chunk("stream")}]`)).toBe("Array stream");
     expect(extractGeminiAdvisorText("data: not-json\n\n")).toBeUndefined();
   });
@@ -60,9 +61,7 @@ describe("Gemini advisor request", () => {
   it("registers the Gemini wire adapter for advisor consultations", () => {
     const advisor = advisorFor(geminiAdapter);
     expect(advisor).toBeDefined();
-    expect(advisor?.externalMessages(request, testConfig())).toEqual([
-      { role: "user", content: "Fix the test." },
-    ]);
+    expect(advisor?.externalMessages(request, testConfig())).toEqual([{ role: "user", content: "Fix the test." }]);
   });
 });
 
@@ -88,9 +87,15 @@ describe("Gemini advisor consult", () => {
         const sent = JSON.parse(String(init?.body)) as GeminiRequest;
         calls.push({ url, body: sent });
         if (url.includes("gemini-3.1-pro-preview:streamGenerateContent")) {
-          return new Response(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "Check the retry." }] } }], usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 4 } })}\n\n`, { status: 200 });
+          return new Response(
+            `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "Check the retry." }] } }], usageMetadata: { promptTokenCount: 40, candidatesTokenCount: 4 } })}\n\n`,
+            { status: 200 },
+          );
         }
-        return new Response(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "main answer" }] } }], usageMetadata: { promptTokenCount: 60, candidatesTokenCount: 6 } })}\n\n`, { status: 200 });
+        return new Response(
+          `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "main answer" }] } }], usageMetadata: { promptTokenCount: 60, candidatesTokenCount: 6 } })}\n\n`,
+          { status: 200 },
+        );
       }) as typeof fetch,
     });
 
@@ -120,13 +125,14 @@ describe("Gemini advisor consult", () => {
       },
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        const sent = typeof init?.body === "string"
-          ? init.body
-          : init?.body instanceof Uint8Array
-            ? Buffer.from(init.body).toString("utf8")
-            : init?.body instanceof ReadableStream
-              ? await new Response(init.body).text()
-              : String(init?.body);
+        const sent =
+          typeof init?.body === "string"
+            ? init.body
+            : init?.body instanceof Uint8Array
+              ? Buffer.from(init.body).toString("utf8")
+              : init?.body instanceof ReadableStream
+                ? await new Response(init.body).text()
+                : String(init?.body);
         calls.push({ url, body: sent });
         return url.includes("gemini-3.1-pro-preview:streamGenerateContent")
           ? new Response("unavailable", { status: 503 })

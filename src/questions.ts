@@ -115,8 +115,6 @@ export function buildQuestions(
     allowNone: boolean;
     withArgs: boolean;
     maxChoiceOptions?: number;
-    layaNative?: boolean;
-    layaGate?: "noul_refined" | "binary_choice";
   },
 ): { questions: Questions; plans: ToolPlan[] } {
   const plans = tools.map((tool) => planTool(tool, options.maxChoiceOptions));
@@ -140,38 +138,6 @@ export function buildQuestions(
       instructions: "Does the assistant need to call one of its tools now, rather than reply to the user in plain text?",
     },
   };
-  if (options.layaNative) {
-    const descriptions = toolCriteria(tools);
-    questions[TOOL_KEY] = {
-      type: "choice",
-      instructions: "Which tool should be called to handle the user request?",
-      criteria: {
-        ...Object.fromEntries(tools.map((tool, index) => [`tool_${index}`, `${tool.name}: ${descriptions[tool.name] ?? tool.name}`])),
-        ...(options.allowNone ? { direct_answer: "Answer the user request directly without calling any tools." } : {}),
-      },
-    };
-    if (options.layaGate === "noul_refined") {
-      questions[NEEDS_TOOL_KEY] = {
-        type: "noul",
-        instructions: "What should the assistant do next?",
-        criteria: {
-          true: "An available tool is needed for the next action.",
-          false: "The assistant can respond or proceed without a tool call now.",
-        },
-        labels: { true: "A", false: "B" },
-      } as Questions[string];
-    } else if (options.layaGate === "binary_choice") {
-      questions[NEEDS_TOOL_KEY] = {
-        type: "choice",
-        instructions: "What should the assistant do next?",
-        criteria: {
-          A: "An available tool is needed for the next action.",
-          B: "The assistant can respond or proceed without a tool call now.",
-        },
-      };
-    } else delete questions[NEEDS_TOOL_KEY];
-    return { questions, plans };
-  }
   if (!options.withArgs) return { questions, plans };
 
   let argQuestions = 0;

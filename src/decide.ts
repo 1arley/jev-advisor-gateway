@@ -1,18 +1,16 @@
 import type { Questions, SystemOneRequest, SystemOneResult } from "@typesafe-ai/sdk";
 import type { Config } from "./config.js";
-import { layaThreshold } from "./laya-calibration.js";
+import { decisionProvider, type DecisionAssessment } from "./decision-providers.js";
 import {
   argKey,
   buildQuestions,
   buildShortlistQuestions,
   MAX_TOOLS,
-  NEEDS_TOOL_KEY,
   NO_TOOL,
   NONE_OF_THESE,
   shardKey,
   SHORTLIST_PER_SHARD,
   statedKey,
-  TOOL_KEY,
   type ToolPlan,
 } from "./questions.js";
 import { buildState } from "./state.js";
@@ -201,14 +199,13 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
 
   const startedAt = performance.now();
   const state = buildState(input, config);
-  // Laya rejects any single choice question with more than 100 options, including the optional no-tool label.
-  const maxTools = config.jevProvider === "laya" || config.jevProvider === "jiwo" ? 99 : MAX_TOOLS;
-  const native = config.jevProvider === "laya" && config.layaRoutingPolicy !== "legacy";
-  const jiwo = config.jevProvider === "jiwo";
+  const provider = decisionProvider(config);
+  const maxTools = provider.maxTools;
   let tools = input.tools;
   let shortlistTokens = 0;
   let result: SystemOneResult<Questions>;
   let plans: ToolPlan[];
+  let assessment: DecisionAssessment;
   try {
     if (tools.length > maxTools) {
       const shortlisted = await shortlist(tools, state, config, askJev, maxTools);
@@ -218,72 +215,28 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     }
     const built = buildQuestions(tools, {
       allowNone: input.toolChoice !== "required",
-      withArgs: config.directCalls && !jiwo,
-      layaNative: native,
-      layaGate:
-        native && config.layaRoutingPolicy !== "native" && config.layaRoutingPolicy !== "legacy" ? config.layaRoutingPolicy : undefined,
-      maxChoiceOptions: config.jevProvider === "laya" || config.jevProvider === "jiwo" ? 64 : undefined,
+      withArgs: config.directCalls && provider.directCalls,
+      maxChoiceOptions: provider.maxChoiceOptions,
     });
     plans = built.plans;
+    provider.prepareQuestions(built.questions, tools, input.toolChoice !== "required");
     result = await askJev({ state, questions: built.questions, model: config.jevModel });
     if (!validResult(result, built.questions)) return { mode: "passthrough", reason: "jev_unexpected_answer" };
+    assessment = provider.assess(result, tools, input.toolChoice !== "required");
   } catch (error) {
     // Fail open: a Jev outage must never take the gateway down with it.
     return { mode: "passthrough", reason: failureReason(error) };
   }
 
-  const rawPicked = result.answers[TOOL_KEY];
-  if (
-    native &&
-    isRecord(rawPicked) &&
-    (rawPicked.low_confidence === true ||
-      rawPicked.abstained === true ||
-      rawPicked.abstention === "abstained" ||
-      rawPicked.abstention === "unevaluated")
-  ) {
-    return { mode: "passthrough", reason: "low_confidence" };
-  }
-  const picked = rawPicked;
-  const needs = result.answers[NEEDS_TOOL_KEY];
-  if (
-    native &&
-    isRecord(needs) &&
-    (needs.low_confidence === true || needs.abstained === true || needs.abstention === "abstained" || needs.abstention === "unevaluated")
-  )
-    return { mode: "passthrough", reason: "low_confidence" };
-  if (picked?.type !== "choice" || (!native && needs?.type !== "noul")) {
-    return { mode: "passthrough", reason: "jev_unexpected_answer" };
-  }
-  const selected = native ? (picked.choice === "direct_answer" ? NO_TOOL : tools[Number(picked.choice.slice(5))]?.name) : picked.choice;
-  if (!selected) return { mode: "passthrough", reason: "jev_unknown_tool" };
+  if ("reason" in assessment) return { mode: "passthrough", reason: assessment.reason };
+  const selected = assessment.choice;
   const jev: JevTrace = {
     choice: selected,
-    confidence: picked.confidence,
-    needsTool: needs?.type === "noul" ? needs.noul : undefined,
-    ...(config.jevProvider === "laya"
-      ? {
-          policy: config.layaRoutingPolicy,
-          confidenceMetric: native
-            ? "answer_confidence"
-            : isRecord(picked) && typeof picked.x_jev_confidence === "number"
-              ? "x_jev_confidence"
-              : "confidence_or_probability",
-          requestedCheckpoint: config.jevModel,
-          effectiveCheckpoint: (() => {
-            const raw = result as unknown as Record<string, unknown>;
-            const routing = isRecord(raw.routing) ? raw.routing : undefined;
-            return routing && typeof routing.model === "string" && ["english", "multilingual", "typed-decisions"].includes(routing.model)
-              ? routing.model
-              : undefined;
-          })(),
-          optionCount: tools.length + Number(input.toolChoice !== "required"),
-          truncated: isRecord(result.usage) && typeof result.usage.truncated === "boolean" ? result.usage.truncated : undefined,
-          truncatedQuestions:
-            isRecord(result.usage) && Array.isArray(result.usage.truncated_questions) ? result.usage.truncated_questions.length : undefined,
-        }
-      : {}),
+    confidence: assessment.confidence,
+    needsTool: assessment.needsTool,
+    ...assessment.trace,
     topProbabilities: Object.fromEntries(
-      Object.entries(picked.probabilities)
+      Object.entries(assessment.probabilities)
         .sort(([, a], [, b]) => b - a)
         .slice(0, 3),
     ),
@@ -291,38 +244,12 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
     latencyMs: Math.round(performance.now() - startedAt),
     ...(tools === input.tools ? {} : { shortlist: tools.map((tool) => tool.name) }),
   };
-
-  const routing = (result as unknown as Record<string, unknown>).routing;
-  const reportedCheckpoint = isRecord(routing) && typeof routing.model === "string" ? routing.model : config.jevModel;
-  const threshold = layaThreshold(
-    config.layaCalibration,
-    reportedCheckpoint,
-    config.layaRoutingPolicy,
-    tools.length + Number(input.toolChoice !== "required"),
-    config.layaMinConfidence,
-  );
-  if (picked.confidence < (native ? threshold : jiwo ? config.jiwoMinConfidence : config.minConfidence))
-    return { mode: "passthrough", reason: "low_confidence", jev };
-  // The verification question must be confident and agree with the selected action.
+  if (assessment.rejection) return { mode: "passthrough", reason: assessment.rejection, jev };
   const wantsTool = selected !== NO_TOOL;
-  if (native && config.layaRoutingPolicy === "noul_refined") {
-    if (needs?.type !== "noul" || Math.max(needs.noul, 1 - needs.noul) < config.layaMinConfidence)
-      return { mode: "passthrough", reason: "low_confidence", jev };
-    if (needs.noul >= 0.5 !== wantsTool) return { mode: "passthrough", reason: "jev_answers_disagree", jev };
-  }
-  if (native && config.layaRoutingPolicy === "binary_choice") {
-    if (needs?.type !== "choice" || needs.confidence < config.layaMinConfidence)
-      return { mode: "passthrough", reason: "low_confidence", jev };
-    if ((needs.choice === "A") !== wantsTool) return { mode: "passthrough", reason: "jev_answers_disagree", jev };
-  }
-  if (!native && needs?.type === "noul" && (wantsTool ? needs.noul < 0.3 : needs.noul > 0.7)) {
-    return { mode: "passthrough", reason: "jev_answers_disagree", jev };
-  }
-
   if (!wantsTool) {
     // A hint can suggest a tool; suggesting silence would only risk ending an agent's turn early.
-    return !native && config.onNone === "force_none" && input.steer !== "hint"
-      ? { mode: "none", confidence: picked.confidence, jev }
+    return provider.forceNone && config.onNone === "force_none" && input.steer !== "hint"
+      ? { mode: "none", confidence: assessment.confidence, jev }
       : { mode: "passthrough", reason: "no_tool_needed", jev };
   }
 
@@ -344,7 +271,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   // Neither can namespaced ones: backends reject both `tool_choice.namespace` and the bare name.
   if (tool.namespace) return { mode: "passthrough", reason: "namespaced_tool_selected", jev };
 
-  const resolved = !native && plan.closedParams && resolveArgs(plan, toolIndex, result.answers, config.argMinCertainty);
+  const resolved = provider.directCalls && plan.closedParams && resolveArgs(plan, toolIndex, result.answers, config.argMinCertainty);
   // With thinking on, an answer built here carries no thinking block. The client replays it on the
   // next turn, and the API rejects an assistant tool_use that does not start with one: the
   // session would be stuck. So such a request is steered (hint) and the LLM makes the call.
@@ -353,10 +280,10 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
       mode: "direct",
       tool: plan.name,
       args: resolved.args,
-      confidence: Math.min(picked.confidence, resolved.certainty),
+      confidence: Math.min(assessment.confidence, resolved.certainty),
       jev,
     };
   }
-  if (input.steer === "hint") return { mode: "hint", tool: plan.name, confidence: picked.confidence, jev };
-  return { mode: "forced", tool: plan.name, kind: tool.kind, confidence: picked.confidence, jev };
+  if (input.steer === "hint") return { mode: "hint", tool: plan.name, confidence: assessment.confidence, jev };
+  return { mode: "forced", tool: plan.name, kind: tool.kind, confidence: assessment.confidence, jev };
 }

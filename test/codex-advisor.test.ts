@@ -1,34 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { advisorFor, appendAdvisorNote, buildAdvisorRequest, consultAdvisor, extractAdvisorText } from "../src/advisor/advisor.js";
+import {
+  advisorFor,
+  appendAdvisorNote,
+  buildAdvisorRequest,
+  consultAdvisor,
+  extractAdvisorText,
+  prepareAdvisorNote,
+} from "../src/advisor/advisor.js";
 import { responsesAdapter } from "../src/adapters/responses.js";
 import { chatAdapter } from "../src/adapters/chat.js";
 import { createApp } from "../src/app.js";
 import { createEventLog } from "../src/events.js";
 import { NO_TOOL } from "../src/questions.js";
-import { addRecent, createSessionStore, readResponseId, type SessionState } from "../src/advisor/session-state.js";
+import { addRecent, createAdvisorSessions, createSessionStore, readResponseId, type SessionState } from "../src/advisor/session.js";
 import { fakeJev, fakeUpstream, settled, testConfig } from "./helpers.js";
 
 describe("OpenAI Chat Completions advisor", () => {
   it("sends only conversation messages and parses JSON and streamed replies", () => {
     const advisor = advisorFor(chatAdapter)!;
-    const request = advisor.request({
-      model: "jev-gateway/gpt-5",
-      messages: [
-        { role: "system", content: "agent system prompt" },
-        { role: "user", content: "Fix the failing test" },
-        { role: "assistant", content: "I will inspect the test." },
-        { role: "tool", content: "secret tool result" },
-      ],
-    }, testConfig({ advisorModel: "gpt-6-astra" }), {
-      recent: ["tool result: test failed"], lastAdvisorAt: 0, advisorCalls: 0,
-    }) as any;
+    const request = advisor.request(
+      {
+        model: "jev-gateway/gpt-5",
+        messages: [
+          { role: "system", content: "agent system prompt" },
+          { role: "user", content: "Fix the failing test" },
+          { role: "assistant", content: "I will inspect the test." },
+          { role: "tool", content: "secret tool result" },
+        ],
+      },
+      testConfig({ advisorModel: "gpt-6-astra" }),
+      {
+        recent: ["tool result: test failed"],
+        lastAdvisorAt: 0,
+        advisorCalls: 0,
+      },
+    ) as any;
 
     expect(request).toMatchObject({ model: "gpt-6-astra", stream: true });
     expect(request.messages.map((message: { role: string }) => message.role)).toEqual(["system", "user", "assistant", "user"]);
     expect(JSON.stringify(request)).not.toContain("agent system prompt");
     expect(JSON.stringify(request)).not.toContain("secret tool result");
     expect(advisor.text('{"choices":[{"message":{"content":"Check the assertion."}}]}')).toBe("Check the assertion.");
-    expect(advisor.text('data: {"choices":[{"delta":{"content":"Check "}}]}\ndata: {"choices":[{"delta":{"content":"the assertion."}}]}\ndata: [DONE]\n')).toBe("Check the assertion.");
+    expect(
+      advisor.text(
+        'data: {"choices":[{"delta":{"content":"Check "}}]}\ndata: {"choices":[{"delta":{"content":"the assertion."}}]}\ndata: [DONE]\n',
+      ),
+    ).toBe("Check the assertion.");
   });
 
   it("appends the note as a user turn, not a developer role", () => {
@@ -41,20 +58,49 @@ describe("OpenAI Chat Completions advisor", () => {
   });
 });
 
+it("fails open when an optional advisor note cannot be prepared", () => {
+  const base = advisorFor(chatAdapter)!;
+  const req = { model: "gpt-6-luna", messages: [{ role: "user", content: "continue" }] };
+  expect(
+    prepareAdvisorNote(req, "review", {
+      ...base,
+      append: () => {
+        throw new Error("private failure");
+      },
+    }),
+  ).toBeUndefined();
+  expect(
+    prepareAdvisorNote(req, "review", {
+      ...base,
+      append: () => {
+        const cyclic: { self?: unknown } = {};
+        cyclic.self = cyclic;
+        return cyclic as typeof req;
+      },
+    }),
+  ).toBeUndefined();
+});
+
 describe("Codex advisor request", () => {
   it("branches from the Luna response without exposing tools or replacing the main chain", () => {
-    const request = buildAdvisorRequest({
-      model: "gpt-6-luna",
-      previous_response_id: "resp_luna_parent",
-      tools: [{ type: "function", name: "shell" }],
-      input: [
-        { type: "message", role: "user", content: "Fix the failing test" },
-        { type: "additional_tools", tools: [{ type: "custom", name: "exec" }] },
-        { type: "message", role: "developer", content: "Codex system prompt" },
-      ],
-    }, testConfig({ advisorModel: "gpt-6-astra" }), {
-      recent: ["tool result: repeated failure"], lastAdvisorAt: 0, advisorCalls: 0,
-    });
+    const request = buildAdvisorRequest(
+      {
+        model: "gpt-6-luna",
+        previous_response_id: "resp_luna_parent",
+        tools: [{ type: "function", name: "shell" }],
+        input: [
+          { type: "message", role: "user", content: "Fix the failing test" },
+          { type: "additional_tools", tools: [{ type: "custom", name: "exec" }] },
+          { type: "message", role: "developer", content: "Codex system prompt" },
+        ],
+      },
+      testConfig({ advisorModel: "gpt-6-astra" }),
+      {
+        recent: ["tool result: repeated failure"],
+        lastAdvisorAt: 0,
+        advisorCalls: 0,
+      },
+    );
 
     expect(request).toMatchObject({
       model: "gpt-6-astra",
@@ -82,7 +128,9 @@ describe("Codex advisor request", () => {
     const app = createApp({
       config: testConfig({ client: "codex", advisorEnabled: true }),
       askJev: jev.askJev,
-      log: (entry) => { logs.push(entry); },
+      log: (entry) => {
+        logs.push(entry);
+      },
       fetch: (async (_url: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body));
         return Response.json(body.model === "gpt-6-astra" ? { id: "resp_a", output: [] } : { id: "resp_luna", output: [] });
@@ -100,7 +148,12 @@ describe("Codex advisor request", () => {
     expect(res.status).toBe(200);
     await settled();
     // The advisor answered with no output_text, so no note was added; the request still went through.
-    expect(logs[0]!.advisor).toMatchObject({ action: "consult_advisor", consulted: true, noteAdded: false, skipped: "advisor_empty_reply" });
+    expect(logs[0]!.advisor).toMatchObject({
+      action: "consult_advisor",
+      consulted: true,
+      noteAdded: false,
+      skipped: "advisor_empty_reply",
+    });
   });
 
   it("meters the advisor consult, so the dashboard shows its cost apart from the session", async () => {
@@ -142,8 +195,12 @@ describe("Codex advisor request", () => {
     const app = createApp({
       config: testConfig({ client: "codex", advisorEnabled: true }),
       // A Jev outage must not take the gateway down, and must not hide that the advisor is on.
-      askJev: async () => { throw new Error("jev down"); },
-      log: (entry) => { logs.push(entry); },
+      askJev: async () => {
+        throw new Error("jev down");
+      },
+      log: (entry) => {
+        logs.push(entry);
+      },
       fetch: upstream.fetchImpl,
     });
     const res = await app.request("/v1/responses", {
@@ -167,7 +224,10 @@ describe("Codex advisor request", () => {
     expect(rewritten.model).toBe("gpt-6-luna");
     expect(rewritten.input).toEqual([
       { type: "message", role: "user", content: [{ type: "input_text", text: "continue" }] },
-      expect.objectContaining({ role: "developer", content: [expect.objectContaining({ text: expect.stringContaining("Untrusted read-only advisor note") })] }),
+      expect.objectContaining({
+        role: "developer",
+        content: [expect.objectContaining({ text: expect.stringContaining("Untrusted read-only advisor note") })],
+      }),
     ]);
     expect(extractAdvisorText({ output: [{ content: [{ type: "output_text", text: "Review the retry." }] }] })).toBe("Review the retry.");
   });
@@ -179,7 +239,14 @@ describe("Codex advisor reply shapes", () => {
   const req = { model: "gpt-6-luna", input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "go" }] }] } as const;
   const incoming = new Request("http://127.0.0.1:8790/v1/responses", { method: "POST", headers: { "content-type": "application/json" } });
   const consultWith = (reply: string) =>
-    consultAdvisor(incoming, req as never, config, session, (async () => new Response(reply, { status: 200 })) as typeof fetch, advisorFor(responsesAdapter)!);
+    consultAdvisor(
+      incoming,
+      req as never,
+      config,
+      session,
+      (async () => new Response(reply, { status: 200 })) as typeof fetch,
+      advisorFor(responsesAdapter)!,
+    );
 
   // The ChatGPT Codex backend answers 400 to `stream: false`, so the advisor always reads SSE.
   it("reads the note from a streamed reply", async () => {
@@ -215,8 +282,14 @@ describe("Codex advisor reply shapes", () => {
   });
 
   it("reports a refusal with the upstream's own words", async () => {
-    const consult = await consultAdvisor(incoming, req as never, config, session, (async () =>
-      new Response('{"detail":"Stream must be set to true"}', { status: 400 })) as typeof fetch, advisorFor(responsesAdapter)!);
+    const consult = await consultAdvisor(
+      incoming,
+      req as never,
+      config,
+      session,
+      (async () => new Response('{"detail":"Stream must be set to true"}', { status: 400 })) as typeof fetch,
+      advisorFor(responsesAdapter)!,
+    );
 
     expect(consult).toEqual({ reason: "advisor_http_error", status: 400, detail: '{"detail":"Stream must be set to true"}' });
   });
@@ -241,7 +314,7 @@ describe("Codex session continuity", () => {
 
   it("captures IDs from JSON and fragmented SSE without requiring a content-type header", async () => {
     expect(await readResponseId(Response.json({ id: "resp_json" }))).toBe("resp_json");
-    const chunks = ["event: response.created\ndata: {\"type\":\"response.created\",\"response\":{", "\"id\":\"resp_sse\"}}\n\n"];
+    const chunks = ['event: response.created\ndata: {"type":"response.created","response":{', '"id":"resp_sse"}}\n\n'];
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
         const next = chunks.shift();
@@ -250,5 +323,93 @@ describe("Codex session continuity", () => {
       },
     });
     expect(await readResponseId(new Response(stream))).toBe("resp_sse");
+  });
+});
+
+describe("advisor session policy", () => {
+  it.each(["append", "serialization"] as const)("fails open without spending session budget when note %s fails", async (failure) => {
+    const protocol = advisorFor(responsesAdapter)!;
+    const originalAppend = protocol.append;
+    protocol.append =
+      failure === "append"
+        ? () => {
+            throw new Error("private append failure");
+          }
+        : () => {
+            const cyclic: Record<string, unknown> = {};
+            cyclic.self = cyclic;
+            return cyclic as never;
+          };
+
+    try {
+      const logs: Record<string, any>[] = [];
+      const forwarded: Record<string, unknown>[] = [];
+      let advisorCalls = 0;
+      const jev = fakeJev({ session_action: { choice: "consult_advisor" }, tool: { choice: NO_TOOL }, needs_tool: { noul: 0.1 } });
+      const app = createApp({
+        config: testConfig({ client: "codex", advisorEnabled: true, advisorMaxCallsPerSession: 1 }),
+        askJev: jev.askJev,
+        log: (entry) => {
+          logs.push(entry);
+        },
+        fetch: (async (_url: RequestInfo | URL, init?: RequestInit) => {
+          const request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          if (request.model === "gpt-6-astra") {
+            advisorCalls++;
+            return Response.json({ output: [{ content: [{ type: "output_text", text: "review note" }] }] });
+          }
+          forwarded.push(request);
+          return Response.json({ id: "resp_a", output: [] });
+        }) as typeof fetch,
+      });
+      const request = {
+        model: "gpt-6-luna",
+        input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "fix test" }] }],
+        tools: [{ type: "function", name: "shell", description: "Run a command", parameters: { type: "object", properties: {} } }],
+      };
+
+      const first = await app.request("/v1/responses", { method: "POST", body: JSON.stringify(request) });
+      expect(first.status).toBe(200);
+      await settled();
+      const second = await app.request("/v1/responses", {
+        method: "POST",
+        body: JSON.stringify({ ...request, previous_response_id: "resp_a" }),
+      });
+      expect(second.status).toBe(200);
+      await settled();
+
+      expect(advisorCalls).toBe(2);
+      expect(forwarded).toHaveLength(2);
+      expect(JSON.stringify(forwarded)).not.toContain("review note");
+      expect(logs.map((entry) => entry.advisor)).toEqual([
+        expect.objectContaining({ consulted: true, noteAdded: false, skipped: "advisor_note_rewrite_error", calls: 0 }),
+        expect.objectContaining({ consulted: true, noteAdded: false, skipped: "advisor_note_rewrite_error", calls: 0 }),
+      ]);
+    } finally {
+      protocol.append = originalAppend;
+    }
+  });
+
+  it("owns action decisions and spends budget only after a note is added", async () => {
+    const now = 10;
+    const sessions = createAdvisorSessions(
+      testConfig({ client: "codex", advisorMaxCallsPerSession: 1 }),
+      fakeJev({ session_action: { choice: "consult_advisor" } }).askJev,
+      () => now,
+    );
+    const session = await sessions.start(
+      { system: "", turns: [{ role: "user", text: "Inspect src/app.ts" }], tools: [], toolChoice: "auto" },
+      undefined,
+      true,
+    );
+
+    expect(session?.action?.action).toBe("consult_advisor");
+    expect(sessions.consultation(session!, { mode: "passthrough", reason: "no_tools" }, true)).toEqual({ required: true });
+    sessions.noteAdded(session!);
+    expect(session?.state.advisorCalls).toBe(1);
+    expect(sessions.consultation(session!, { mode: "passthrough", reason: "no_tools" }, true)).toEqual({
+      required: true,
+      skipped: "session_budget",
+    });
   });
 });
