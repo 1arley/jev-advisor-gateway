@@ -168,7 +168,7 @@ describe("runSetup", () => {
     });
     expect(values).toBeUndefined();
     expect(checked).toEqual(["", "", ""]);
-    expect(user.printed.join("\n")).not.toContain("bearer key");
+    expect(user.printed.join("\n")).not.toContain("Jiwo (local) needs a bearer key");
   });
 
   it("asks for the serve's bearer key only when laya-serve refuses the keyless check", async () => {

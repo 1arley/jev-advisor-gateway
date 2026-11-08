@@ -206,6 +206,23 @@ rejects invalid or partial responses, and fails open when Jiwo is unavailable or
 `noul` are not sent to Jiwo; the gateway derives the tool-needed signal conservatively. No prompts,
 credentials, tool results or private responses are written to telemetry.
 
+## Kev (optional local decision model)
+
+Install and run [Kev](https://github.com/jaredpalmer/kev) separately. The gateway does not install or
+supervise it. Configure its System One endpoint on loopback:
+
+```bash
+JEV_PROVIDER=kev
+JEV_URL=http://127.0.0.1:8009/v1/systemone
+JEV_MODEL=kev-latest
+# Set only if the local service requires bearer authentication.
+KEV_API_KEY=
+```
+
+The gateway sends only `choice`, `noul` and `score` questions to Kev. Requests with assets or any
+other question type fail open to the normal session-model path. The optional key is sent only as a
+bearer credential to the configured loopback endpoint; the gateway does not install or start Kev.
+
 ## Inspect a decision
 
 For a standalone gateway, `POST /router/decide` accepts a Chat Completions-shaped request and

@@ -130,10 +130,13 @@ the coding session.
 | OpenJev, local    | `openjev`      | placeholder only        | local server model  |
 | Laya, local       | `laya`         | optional `LAYA_API_KEY` | `multilingual`      |
 | Jiwo, local       | `jiwo`         | none                    | `jiwo-0.8b`         |
+| Kev, local        | `kev`          | optional `KEV_API_KEY`  | `kev-latest`        |
 
 Without an explicit `JEV_PROVIDER`, the gateway chooses the first configured hosted provider key.
 OpenJev and Laya can run the System One endpoint locally. OpenJev's backend may still call its own
 provider, so check that backend's privacy and billing terms.
+Kev is installed and run separately; the gateway supports only `choice`, `noul` and `score`
+questions and fails open for other request shapes. See [local provider details](docs/client-compatibility.md#kev-optional-local-decision-model).
 
 ### Jiwo setup
 
@@ -235,45 +238,46 @@ access key is configured. Send `x-jev-gateway: off` to bypass Jev for one reques
 Launchers read settings from the shell or `~/.jev-gateway/.env`. A checkout can use its own `.env`.
 The complete list, including launcher-specific settings, is in [`.env.example`](.env.example).
 
-| Setting                             | Default           | Purpose                                                                                        |
-| ----------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------- |
-| `JEV_PROVIDER`                      | inferred from key | Decision provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev`, `laya` or `jiwo` |
-| `JEV_MODEL`                         | provider default  | Decision model/checkpoint                                                                      |
-| `JEV_URL`                           | provider default  | Override decision endpoint; Laya and Jiwo must be loopback                                     |
-| `JEV_MIN_CONFIDENCE`                | `0.7`             | Below this confidence, pass through to the session model                                       |
-| `JEV_ARG_MIN_CERTAINTY`             | `0.8`             | Certainty required for closed-set direct arguments                                             |
-| `JEV_ROUTING`                       | `on`              | Start in routing or baseline metering mode                                                     |
-| `JEV_TIMEOUT_MS`                    | `8000`            | Hosted decision deadline; Laya uses its own timeout                                            |
-| `JEV_JIWO_MAX_STATE_CHARS`          | `7000`            | Maximum sanitized state sent to Jiwo                                                           |
-| `JEV_JIWO_MIN_CONFIDENCE`           | `0.7`             | Below this Jiwo choice confidence, pass through to the session model                           |
-| `JEV_LAYA_ROUTING_POLICY`           | `legacy`          | Laya policy: `legacy`, `native`, `noul_refined` or `binary_choice`                             |
-| `JEV_LAYA_SHADOW_POLICY`            | unset             | Optional local Laya comparison policy                                                          |
-| `JEV_LAYA_SHADOW_CONCURRENCY`       | `1`               | Maximum concurrent Laya shadow calls, from 1 to 4                                              |
-| `JEV_LAYA_MIN_CONFIDENCE`           | `0.7`             | Laya native-policy threshold                                                                   |
-| `JEV_LAYA_CALIBRATION`              | unset             | Laya confidence profile for a checkpoint and option-count bucket                               |
-| `JEV_LAYA_TIMEOUT_MS`               | `8000`            | Laya deadline                                                                                  |
-| `JEV_LAYA_MAX_LEN`                  | `2048`            | `max_len` sent to Laya                                                                         |
-| `JEV_ADVISOR`                       | launcher-specific | Enable read-only advisor consultations                                                         |
-| `JEV_ADVISOR_MODEL`                 | launcher-specific | Advisor model                                                                                  |
-| `JEV_ADVISOR_PROVIDER`              | unset             | Explicit `openai-compatible` or `anthropic` advisor provider                                   |
-| `JEV_ADVISOR_URL`                   | unset             | Separate advisor base URL; HTTPS remotely, loopback HTTP only                                  |
-| `JEV_ADVISOR_API_KEY`               | unset             | Separate advisor key; never reused upstream                                                    |
-| `JEV_ADVISOR_EFFORT`                | unset             | `low`, `medium` or `high` when supported by the model                                          |
-| `JEV_ADVISOR_TIMEOUT_MS`            | `30000`           | Advisor deadline                                                                               |
-| `JEV_ADVISOR_MAX_OUTPUT_TOKENS`     | `700`             | Advisor response bound                                                                         |
-| `JEV_ADVISOR_MAX_CALLS_PER_SESSION` | `6`               | Advisor call limit per session                                                                 |
-| `ARGS_MODEL`                        | unset             | Optional model for open-ended tool arguments; not used for Codex                               |
-| `JEV_ON_NONE`                       | provider-specific | `force_none` or `passthrough` when Jev selects no tool                                         |
-| `JEV_DIRECT_CALLS`                  | `true`            | Answer directly when all arguments are closed-set                                              |
-| `HOST`                              | `127.0.0.1`       | Bind address                                                                                   |
-| `PORT`                              | `8787`            | Gateway port                                                                                   |
-| `UPSTREAM_BASE_URL`                 | OpenAI API        | LLM upstream base URL                                                                          |
-| `UPSTREAM_API_KEY`                  | unset             | Replace the client credential upstream                                                         |
-| `ROUTER_API_KEY`                    | unset             | Require a gateway credential; requires `UPSTREAM_API_KEY`                                      |
-| `JEV_HEADROOM_MODE`                 | `off`             | Codex continuation compression: `off`, `shadow` or `compress`                                  |
-| `JEV_HEADROOM_URL`                  | unset             | Explicit loopback `/v1/compress` endpoint                                                      |
-| `JEV_HEADROOM_TIMEOUT_MS`           | `500`             | Headroom deadline                                                                              |
-| `JEV_DEBUG_DUMP_DIR`                | unset             | Opt-in dumps containing full request bodies; use with care                                     |
+| Setting                             | Default           | Purpose                                                                                               |
+| ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `JEV_PROVIDER`                      | inferred from key | Decision provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev`, `laya`, `jiwo` or `kev` |
+| `JEV_MODEL`                         | provider default  | Decision model/checkpoint                                                                             |
+| `JEV_URL`                           | provider default  | Override decision endpoint; Laya, Jiwo and Kev must be loopback                                       |
+| `KEV_API_KEY`                       | unset             | Optional bearer key for a local Kev service that requires one                                         |
+| `JEV_MIN_CONFIDENCE`                | `0.7`             | Below this confidence, pass through to the session model                                              |
+| `JEV_ARG_MIN_CERTAINTY`             | `0.8`             | Certainty required for closed-set direct arguments                                                    |
+| `JEV_ROUTING`                       | `on`              | Start in routing or baseline metering mode                                                            |
+| `JEV_TIMEOUT_MS`                    | `8000`            | Hosted decision deadline; Laya uses its own timeout                                                   |
+| `JEV_JIWO_MAX_STATE_CHARS`          | `7000`            | Maximum sanitized state sent to Jiwo                                                                  |
+| `JEV_JIWO_MIN_CONFIDENCE`           | `0.7`             | Below this Jiwo choice confidence, pass through to the session model                                  |
+| `JEV_LAYA_ROUTING_POLICY`           | `legacy`          | Laya policy: `legacy`, `native`, `noul_refined` or `binary_choice`                                    |
+| `JEV_LAYA_SHADOW_POLICY`            | unset             | Optional local Laya comparison policy                                                                 |
+| `JEV_LAYA_SHADOW_CONCURRENCY`       | `1`               | Maximum concurrent Laya shadow calls, from 1 to 4                                                     |
+| `JEV_LAYA_MIN_CONFIDENCE`           | `0.7`             | Laya native-policy threshold                                                                          |
+| `JEV_LAYA_CALIBRATION`              | unset             | Laya confidence profile for a checkpoint and option-count bucket                                      |
+| `JEV_LAYA_TIMEOUT_MS`               | `8000`            | Laya deadline                                                                                         |
+| `JEV_LAYA_MAX_LEN`                  | `2048`            | `max_len` sent to Laya                                                                                |
+| `JEV_ADVISOR`                       | launcher-specific | Enable read-only advisor consultations                                                                |
+| `JEV_ADVISOR_MODEL`                 | launcher-specific | Advisor model                                                                                         |
+| `JEV_ADVISOR_PROVIDER`              | unset             | Explicit `openai-compatible` or `anthropic` advisor provider                                          |
+| `JEV_ADVISOR_URL`                   | unset             | Separate advisor base URL; HTTPS remotely, loopback HTTP only                                         |
+| `JEV_ADVISOR_API_KEY`               | unset             | Separate advisor key; never reused upstream                                                           |
+| `JEV_ADVISOR_EFFORT`                | unset             | `low`, `medium` or `high` when supported by the model                                                 |
+| `JEV_ADVISOR_TIMEOUT_MS`            | `30000`           | Advisor deadline                                                                                      |
+| `JEV_ADVISOR_MAX_OUTPUT_TOKENS`     | `700`             | Advisor response bound                                                                                |
+| `JEV_ADVISOR_MAX_CALLS_PER_SESSION` | `6`               | Advisor call limit per session                                                                        |
+| `ARGS_MODEL`                        | unset             | Optional model for open-ended tool arguments; not used for Codex                                      |
+| `JEV_ON_NONE`                       | provider-specific | `force_none` or `passthrough` when Jev selects no tool                                                |
+| `JEV_DIRECT_CALLS`                  | `true`            | Answer directly when all arguments are closed-set                                                     |
+| `HOST`                              | `127.0.0.1`       | Bind address                                                                                          |
+| `PORT`                              | `8787`            | Gateway port                                                                                          |
+| `UPSTREAM_BASE_URL`                 | OpenAI API        | LLM upstream base URL                                                                                 |
+| `UPSTREAM_API_KEY`                  | unset             | Replace the client credential upstream                                                                |
+| `ROUTER_API_KEY`                    | unset             | Require a gateway credential; requires `UPSTREAM_API_KEY`                                             |
+| `JEV_HEADROOM_MODE`                 | `off`             | Codex continuation compression: `off`, `shadow` or `compress`                                         |
+| `JEV_HEADROOM_URL`                  | unset             | Explicit loopback `/v1/compress` endpoint                                                             |
+| `JEV_HEADROOM_TIMEOUT_MS`           | `500`             | Headroom deadline                                                                                     |
+| `JEV_DEBUG_DUMP_DIR`                | unset             | Opt-in dumps containing full request bodies; use with care                                            |
 
 ## Headroom compression
 

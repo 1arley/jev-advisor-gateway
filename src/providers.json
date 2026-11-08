@@ -62,5 +62,14 @@
     "model": "jiwo-0.8b",
     "askModel": true,
     "keyless": true
+  },
+  "kev": {
+    "label": "Kev (local)",
+    "note": "a local System One decision model; optional bearer key",
+    "keyEnv": "KEV_API_KEY",
+    "keyUrl": "https://github.com/jaredpalmer/kev",
+    "url": "http://127.0.0.1:8009/v1/systemone",
+    "model": "kev-latest",
+    "keyless": true
   }
 }

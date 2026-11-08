@@ -133,7 +133,17 @@ export function createAskJev(
   if (!config.jevApiKey && !provider.keyless) {
     throw new Error(`No API key for Jev: set ${provider.keyEnv} (${provider.label}), or run jev-codex --setup.`);
   }
+  const kev = config.jevProvider === "kev";
   const once = async (request: SystemOneRequest<Questions>) => {
+    if (
+      kev &&
+      (Object.hasOwn(request, "assets") ||
+        Object.values(request.questions).some(
+          (question) => !(question.type === "choice" || question.type === "noul" || question.type === "score"),
+        ))
+    ) {
+      throw new Error("kev_unsupported_request");
+    }
     const outbound = jiwo
       ? (toJiwoRequest({
           ...request,
@@ -145,7 +155,7 @@ export function createAskJev(
       headers: {
         ...(config.jevApiKey ? { authorization: `Bearer ${config.jevApiKey}` } : {}),
         "content-type": "application/json",
-        ...(jiwo
+        ...(jiwo || kev
           ? {}
           : {
               "http-referer": "https://github.com/1arley/jev-advisor-gateway",
@@ -179,7 +189,11 @@ export function createAskJev(
       return await once(request);
     } catch (error) {
       const name = (error as { name?: string }).name;
-      if (config.jevProvider === "jiwo" || (config.jevProvider === "laya" && (name === "TimeoutError" || name === "AbortError")))
+      if (
+        config.jevProvider === "jiwo" ||
+        config.jevProvider === "kev" ||
+        (config.jevProvider === "laya" && (name === "TimeoutError" || name === "AbortError"))
+      )
         throw error;
       const status = (error as { status?: number }).status;
       if (status !== undefined && !RETRYABLE.has(status)) throw error;
