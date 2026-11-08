@@ -56,7 +56,11 @@ export async function validateKey(provider, key, fetchImpl = fetch) {
   const ask = (model) =>
     fetchImpl(provider.url, {
       method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-title": "jev-advisor-gateway" },
+      headers: {
+        ...(key ? { authorization: `Bearer ${key}` } : {}),
+        "content-type": "application/json",
+        ...(provider.keyEnv === "KEV_API_KEY" ? {} : { "x-title": "jev-advisor-gateway" }),
+      },
       body: JSON.stringify({
         model,
         state: "jev-advisor-gateway setup check",
@@ -111,6 +115,10 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
       const healthUrl = provider.healthUrl ? new URL("/health", localUrl).toString() : undefined;
       provider = { ...provider, url: localUrl, ...(healthUrl ? { healthUrl } : {}) };
     }
+    if (id === "kev") {
+      const key = (await io.askSecret("Kev API key (optional; input is hidden, Enter for none): ")).trim();
+      provider = { ...provider, setupKey: key };
+    }
   }
 
   let model = provider.model;
@@ -122,7 +130,7 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
     const keyPrompt = provider.keyIgnored
       ? "Paste anything as the key (input is hidden; it is ignored): "
       : `Paste your ${provider.label} API key (input is hidden): `;
-    let key = keyless ? "" : (await io.askSecret(keyPrompt)).trim();
+    let key = keyless ? (provider.setupKey ?? "") : (await io.askSecret(keyPrompt)).trim();
     if (!key && !keyless) {
       io.print("Nothing entered. Run this again whenever you have a key.");
       return undefined;

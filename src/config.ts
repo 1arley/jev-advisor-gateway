@@ -88,7 +88,7 @@ const bool = (env: Env, key: string, fallback: boolean): boolean => {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 };
 
-function validateLocalDecisionUrl(url: string, provider: "laya" | "jiwo"): void {
+function validateLocalDecisionUrl(url: string, provider: "laya" | "jiwo" | "kev"): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -111,12 +111,17 @@ function validateJiwoUrl(url: string): void {
   validateLocalDecisionUrl(url, "jiwo");
 }
 
+function validateKevUrl(url: string): void {
+  validateLocalDecisionUrl(url, "kev");
+}
+
 export function loadConfig(env: Env = process.env): Config {
   const client = str(env, "JEV_CLIENT") ?? "standalone";
   const jevProvider = resolveProvider(env);
   const jevUrl = resolveUrl(jevProvider, env);
   if (jevProvider === "laya") validateLayaUrl(jevUrl);
   if (jevProvider === "jiwo") validateJiwoUrl(jevUrl);
+  if (jevProvider === "kev") validateKevUrl(jevUrl);
   if (!isProvider(jevProvider)) throw new Error(`Unsupported JEV provider "${jevProvider}"`);
   const jevModel = resolveModel(jevProvider, str(env, "JEV_MODEL"));
   const advisorProviderValue = str(env, "JEV_ADVISOR_PROVIDER")?.toLowerCase();

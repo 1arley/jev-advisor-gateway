@@ -11,7 +11,7 @@ An optional read-only advisor can add a bounded note for the agent to consider.
 [![14-second overview](media/overview.gif)](media/jev-advisor-gateway-overview.mp4)
 
 The gateway supports Codex, Claude Code, OpenCode, Kilo, Gemini CLI, Antigravity CLI and Devin. It
-supports hosted Jev providers and local OpenJev, Laya and Jiwo services. It is an independent
+supports hosted Jev providers and local OpenJev, Laya, Jiwo and Kev services. It is an independent
 project, not affiliated with or endorsed by TypeSafe.
 
 ## Quick start
