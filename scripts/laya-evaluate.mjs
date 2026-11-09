@@ -3,6 +3,7 @@
 import { decide } from "../src/decide.ts";
 import { loadConfig } from "../src/config.ts";
 import { createAskJev } from "../src/jev.ts";
+import { fitLayaThreshold } from "../src/laya-calibration.ts";
 import { readFile, writeFile } from "node:fs/promises";
 import { CORPUS } from "./laya-evaluate-corpus.mjs";
 
@@ -261,23 +262,31 @@ if (fitProfile) {
   const bucketFor = (count) => (count === 1 ? "2" : count <= 4 ? "3-5" : count <= 9 ? "6-10" : "11+");
   const fitted = {};
   const insufficientBuckets = {};
+  const noThresholdBuckets = {};
   for (const key of ["2", "3-5", "6-10", "11+"]) {
     const samples = rows.filter((row) => row.order === "original" && Number.isFinite(row.confidence) && bucketFor(row.toolCount) === key);
     if (samples.length < 20) {
       insufficientBuckets[key] = { samples: samples.length, required: 20 };
       continue;
     }
-    const thresholds = [...new Set(samples.map((row) => row.confidence))].sort((a, b) => a - b);
-    const threshold = thresholds.find((value) => {
-      const accepted = samples.filter((row) => row.confidence >= value);
-      const errors = accepted.filter((row) => row.selected !== row.expected).length;
-      return (errors + 1) / (accepted.length + 1) <= errorTarget;
-    });
-    if (threshold !== undefined) fitted[key] = { threshold, samples: samples.length };
+    const threshold = fitLayaThreshold(
+      samples.map((row) => ({ confidence: row.confidence, correct: row.selected === row.expected })),
+      errorTarget,
+    );
+    if (threshold) fitted[key] = threshold;
+    else noThresholdBuckets[key] = { samples: samples.length, errorTarget };
   }
+  const overall = rows.filter((row) => row.order === "original" && Number.isFinite(row.confidence));
+  const defaultThreshold = fitLayaThreshold(
+    overall.map((row) => ({ confidence: row.confidence, correct: row.selected === row.expected })),
+    errorTarget,
+  );
+  if (defaultThreshold) fitted.default = defaultThreshold;
+  else if (overall.length < 20) insufficientBuckets.default = { samples: overall.length, required: 20 };
+  else noThresholdBuckets.default = { samples: overall.length, errorTarget };
   profile = { version: 1, source, checkpoint: model, policy, buckets: fitted };
   await writeFile(fitProfile, `${JSON.stringify(profile, null, 2)}\n`);
-  reportFit = { includedBuckets: Object.keys(fitted), insufficientBuckets };
+  reportFit = { includedBuckets: Object.keys(fitted), insufficientBuckets, noThresholdBuckets };
 }
 const report = {
   split,

@@ -3,6 +3,7 @@
 // runs it again. The pieces are separate functions so the conversation can be tested without a
 // terminal.
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { dirname, join } from "node:path";
 
 /** The provider table the gateway itself uses (src/jev.ts), so the two can never disagree. */
@@ -20,6 +21,27 @@ export function configuredProvider(env, providers) {
   const id = chosen && providers[chosen] ? chosen : Object.keys(providers).find((name) => present(env, providers[name].keyEnv));
   // A keyless provider counts once it is named: it answers without a key of its own.
   return id && (present(env, providers[id].keyEnv) || providers[id].keyless) ? id : undefined;
+}
+
+function isLocalProviderUrl(value, endpointPath) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  const ipv4 = hostname.split(".").map(Number);
+  const loopback = hostname === "localhost" || hostname === "::1" || (isIP(hostname) === 4 && ipv4[0] === 127);
+  return (
+    loopback &&
+    ["http:", "https:"].includes(url.protocol) &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    url.pathname.replace(/\/+$/, "") === endpointPath
+  );
 }
 
 /** Set `values` in the text of a .env file, replacing lines that exist and keeping everything else. */
@@ -112,16 +134,24 @@ export async function runSetup({ name, providers, envFile, io, validate = valida
   if (keyless) io.print(`\n${provider.label} needs no key: it runs on your machine (docs: ${provider.keyUrl}).`);
   else if (provider.keyUrl) io.print(`\nGet a key at ${provider.keyUrl}`);
   else io.print(`\n${provider.label} needs no remote key; what you enter below is only a placeholder.`);
+  if (provider.layaRoutingPolicy) {
+    io.print(`Default Laya configuration: ${provider.model} checkpoint with ${provider.layaRoutingPolicy} policy and bundled calibration.`);
+  }
 
-  // A keyless provider runs where the user started it: Enter takes the served default, and a custom
-  // one gets JEV_URL. A base URL is completed, because the gateway's JEV_URL is the full endpoint.
   let localUrl;
-  if (keyless) {
-    const answer = (await io.ask(`${provider.label} URL [${provider.url}]: `)).trim().replace(/\/+$/, "");
+  if (provider.localOnly) {
+    const baseUrl = provider.url.slice(0, -provider.endpointPath.length).replace(/\/+$/, "");
+    const answer = (await io.ask(`${provider.label} base URL (gateway adds ${provider.endpointPath}) [${baseUrl}]: `))
+      .trim()
+      .replace(/\/+$/, "");
     if (answer) {
-      localUrl = answer.endsWith("/v1/systemone") ? answer : `${answer}/v1/systemone`;
+      localUrl = answer.endsWith(provider.endpointPath) ? answer : `${answer}${provider.endpointPath}`;
       const healthUrl = provider.healthUrl ? new URL("/health", localUrl).toString() : undefined;
       provider = { ...provider, url: localUrl, ...(healthUrl ? { healthUrl } : {}) };
+    }
+    if (!isLocalProviderUrl(provider.url, provider.endpointPath)) {
+      io.print("Local provider URL must use loopback, have no credentials or parameters, and end at the configured endpoint.");
+      return undefined;
     }
     if (id === "kev") {
       const key = (await io.askSecret("Kev API key (optional; input is hidden, Enter for none): ")).trim();

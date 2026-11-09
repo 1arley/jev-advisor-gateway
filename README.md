@@ -121,16 +121,16 @@ diagnostics.
 Choose the provider that receives decision requests. This is separate from the LLM provider used by
 the coding session.
 
-| Provider          | `JEV_PROVIDER` | Key                     | Default model       |
-| ----------------- | -------------- | ----------------------- | ------------------- |
-| TypeSafe          | `typesafe`     | `TYPESAFE_API_KEY`      | `jev-latest`        |
-| OpenRouter        | `openrouter`   | `OPENROUTER_API_KEY`    | `typesafe/jev-1.13` |
-| Vercel AI Gateway | `vercel`       | `AI_GATEWAY_API_KEY`    | `typesafe-ai/jev`   |
-| OpenCode Zen      | `opencode`     | `OPENCODE_API_KEY`      | `jev-1.13-free`     |
-| OpenJev, local    | `openjev`      | placeholder only        | local server model  |
-| Laya, local       | `laya`         | optional `LAYA_API_KEY` | `multilingual`      |
-| Jiwo, local       | `jiwo`         | none                    | `jiwo-0.8b`         |
-| Kev, local        | `kev`          | optional `KEV_API_KEY`  | `kev-latest`        |
+| Provider          | `JEV_PROVIDER` | Key                     | Default model                       |
+| ----------------- | -------------- | ----------------------- | ----------------------------------- |
+| TypeSafe          | `typesafe`     | `TYPESAFE_API_KEY`      | `jev-latest`                        |
+| OpenRouter        | `openrouter`   | `OPENROUTER_API_KEY`    | `typesafe/jev-1.13`                 |
+| Vercel AI Gateway | `vercel`       | `AI_GATEWAY_API_KEY`    | `typesafe-ai/jev`                   |
+| OpenCode Zen      | `opencode`     | `OPENCODE_API_KEY`      | `jev-1.13-free`                     |
+| OpenJev, local    | `openjev`      | placeholder only        | local server model                  |
+| Laya, local       | `laya`         | optional `LAYA_API_KEY` | `typed-decisions` (`native` policy) |
+| Jiwo, local       | `jiwo`         | none                    | `jiwo-0.8b`                         |
+| Kev, local        | `kev`          | optional `KEV_API_KEY`  | `kev-latest`                        |
 
 Without an explicit `JEV_PROVIDER`, the gateway chooses the first configured hosted provider key.
 OpenJev and Laya can run the System One endpoint locally. OpenJev's backend may still call its own
@@ -242,7 +242,7 @@ The complete list, including launcher-specific settings, is in [`.env.example`](
 | ----------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- |
 | `JEV_PROVIDER`                      | inferred from key | Decision provider: `typesafe`, `openrouter`, `vercel`, `opencode`, `openjev`, `laya`, `jiwo` or `kev` |
 | `JEV_MODEL`                         | provider default  | Decision model/checkpoint                                                                             |
-| `JEV_URL`                           | provider default  | Override decision endpoint; Laya, Jiwo and Kev must be loopback                                       |
+| `JEV_URL`                           | provider default  | Override the full decision endpoint; local providers require loopback and `/v1/systemone`             |
 | `KEV_API_KEY`                       | unset             | Optional bearer key for a local Kev service that requires one                                         |
 | `JEV_MIN_CONFIDENCE`                | `0.7`             | Below this confidence, pass through to the session model                                              |
 | `JEV_ARG_MIN_CERTAINTY`             | `0.8`             | Certainty required for closed-set direct arguments                                                    |
@@ -250,11 +250,11 @@ The complete list, including launcher-specific settings, is in [`.env.example`](
 | `JEV_TIMEOUT_MS`                    | `8000`            | Hosted decision deadline; Laya uses its own timeout                                                   |
 | `JEV_JIWO_MAX_STATE_CHARS`          | `7000`            | Maximum sanitized state sent to Jiwo                                                                  |
 | `JEV_JIWO_MIN_CONFIDENCE`           | `0.7`             | Below this Jiwo choice confidence, pass through to the session model                                  |
-| `JEV_LAYA_ROUTING_POLICY`           | `legacy`          | Laya policy: `legacy`, `native`, `noul_refined` or `binary_choice`                                    |
+| `JEV_LAYA_ROUTING_POLICY`           | `native` for Laya | Laya policy: `legacy`, `native`, `noul_refined` or `binary_choice`                                    |
 | `JEV_LAYA_SHADOW_POLICY`            | unset             | Optional local Laya comparison policy                                                                 |
 | `JEV_LAYA_SHADOW_CONCURRENCY`       | `1`               | Maximum concurrent Laya shadow calls, from 1 to 4                                                     |
-| `JEV_LAYA_MIN_CONFIDENCE`           | `0.7`             | Laya native-policy threshold                                                                          |
-| `JEV_LAYA_CALIBRATION`              | unset             | Laya confidence profile for a checkpoint and option-count bucket                                      |
+| `JEV_LAYA_MIN_CONFIDENCE`           | `0.7`             | Fallback threshold when no matching Laya calibration profile applies                                  |
+| `JEV_LAYA_CALIBRATION`              | bundled profile   | Override the checkpoint-scoped Laya confidence profile                                                |
 | `JEV_LAYA_TIMEOUT_MS`               | `8000`            | Laya deadline                                                                                         |
 | `JEV_LAYA_MAX_LEN`                  | `2048`            | `max_len` sent to Laya                                                                                |
 | `JEV_ADVISOR`                       | launcher-specific | Enable read-only advisor consultations                                                                |

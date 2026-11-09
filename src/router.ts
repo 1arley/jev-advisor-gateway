@@ -6,9 +6,8 @@ import { exaAdapter } from "./adapters/exa.js";
 import { geminiAdapter } from "./adapters/gemini.js";
 import { messagesAdapter } from "./adapters/messages.js";
 import { responsesAdapter, type ResponsesRequest } from "./adapters/responses.js";
-import { advisorFor, consultAdvisor } from "./advisor/advisor.js";
-import { decideSessionAction } from "./advisor/policy.js";
-import { addRecent, createSessionStore, type SessionState } from "./advisor/session-state.js";
+import { advisorFor, consultAdvisor, prepareAdvisorNote } from "./advisor/advisor.js";
+import { createAdvisorSessions, type AdvisorSession } from "./advisor/session.js";
 import type { Config } from "./config.js";
 import { redactHeaders, summarizeResponse, type Dump } from "./debug.js";
 import { decide, type AskJev, type Decision } from "./decide.js";
@@ -64,18 +63,6 @@ function decisionHeaders(decision: Decision): Record<string, string> {
     headers["x-jev-gateway-latency-ms"] = String(decision.jev.latencyMs);
   }
   return headers;
-}
-
-const CLAUDE_ADVISOR_REASONS = new Set(["low_confidence", "jev_answers_disagree"]);
-const CLAUDE_FAILURE_MARKERS = /\b(?:error|fail(?:ed|ure)?|invalid|rejected|denied|timeout|exception|boom)\b/i;
-
-function shouldReviewClaude(decision: Decision, session: SessionState): boolean {
-  if (decision.mode === "passthrough" && CLAUDE_ADVISOR_REASONS.has(decision.reason)) return true;
-  return session.recent.some((event) => event.startsWith("tool result") && CLAUDE_FAILURE_MARKERS.test(event));
-}
-
-function shouldRunClaudePolicy(input: import("./types.js").RouterInput): boolean {
-  return input.turns.some((turn) => turn.role === "tool_result" || (turn.role === "assistant" && Array.isArray(turn.tool_calls)));
 }
 
 function createDecider(config: Config, askJev: AskJev) {
@@ -134,7 +121,7 @@ export function createDecisionHandler(config: Config, askJev: AskJev) {
 }
 
 export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, routing, advisorEnabled }: RouterDeps) {
-  const sessions = createSessionStore();
+  const sessions = createAdvisorSessions(config, askJev);
   const shadowConfig = config.layaShadowPolicy ? { ...config, layaRoutingPolicy: config.layaShadowPolicy, directCalls: false } : undefined;
   const shadowDecide = shadowConfig
     ? createDecider(
@@ -209,42 +196,25 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
 
       let decision: Decision;
       let tools: number | undefined;
-      let session: SessionState | undefined;
-      let sessionAction: Awaited<ReturnType<typeof decideSessionAction>> | undefined;
+      let session: AdvisorSession | undefined;
       // Undefined for wire formats the advisor cannot speak (exa): no consult, no policy.
       const advisorImpl = advisorFor(adapter);
       if (!req) decision = { mode: "passthrough", reason: encoding ? "unsupported_encoding" : "unparseable_body" };
       else if (c.req.header("x-jev-gateway") === "off") decision = { mode: "passthrough", reason: "disabled_by_header" };
       else if (!routing.enabled) decision = { mode: "passthrough", reason: "routing_disabled" };
       else {
-        // The session policy needs a conversation the router can read. Codex continues one by
-        // `previous_response_id`; Claude resends the whole conversation every turn, so its session
-        // is per-request (the advisor budget then caps calls within a turn, not across the chat).
-        let sessionInput: import("./types.js").RouterInput | undefined;
-        if (advisorImpl && advisorEnabled.enabled && req.model !== "codex-auto-review") {
+        // The router keeps sequencing; the session module owns eligibility and its continuation ledger.
+        if (advisorImpl) {
           try {
             const input = adapter.toInput(req, config.maxMessageChars);
-            if (!("skip" in input)) {
-              sessionInput = input;
-              session = sessions.resume((req as ResponsesRequest).previous_response_id);
-              addRecent(session, input);
-              // Claude normally needs only the routing call. Defer its second Jev call until the
-              // routing result or a recent failed tool result gives the advisor a concrete reason.
-              if (config.client !== "claude" || shouldRunClaudePolicy(input))
-                sessionAction = await decideSessionAction(input, session, config, askJev);
-            }
+            if (!("skip" in input))
+              session = await sessions.start(input, (req as ResponsesRequest).previous_response_id, advisorEnabled.enabled, req.model);
           } catch {
             // The session policy is advisory; tool routing and the original request can still proceed.
           }
         }
         ({ decision, tools } = await decideFor(adapter, req));
-        if (config.client === "claude" && session && sessionInput && shouldReviewClaude(decision, session)) {
-          try {
-            sessionAction = await decideSessionAction(sessionInput, session, config, askJev);
-          } catch {
-            sessionAction = undefined;
-          }
-        }
+        if (session) await sessions.afterDecision(session, decision);
       }
 
       let shadow: Promise<Record<string, unknown>> | undefined;
@@ -285,39 +255,46 @@ export function createRouter({ config, askJev, fetch: fetchImpl, log, dump, rout
       if (advisorImpl && advisorEnabled.enabled) {
         advisor = {
           model: config.advisorModel,
-          action: sessionAction?.action ?? "unknown",
-          confidence: sessionAction?.confidence ?? 0,
-          calls: session?.advisorCalls ?? 0,
+          action: session?.action?.action ?? "unknown",
+          confidence: session?.action?.confidence ?? 0,
+          calls: session?.state.advisorCalls ?? 0,
         };
       }
-      if (req && session && sessionAction && advisorImpl) {
-        const uncertain = decision.mode === "passthrough" && ["low_confidence", "jev_answers_disagree"].includes(decision.reason);
-        if (sessionAction.action === "stop" && (tools ?? 0) > 0) {
-          decision = { mode: "none", confidence: sessionAction.confidence, jev: decision.jev };
-        } else if (sessionAction.action === "consult_advisor" || uncertain) {
-          if (!advisorEnabled.enabled || session.advisorCalls >= config.advisorMaxCallsPerSession) {
-            advisor = { ...advisor, consulted: false, skipped: advisorEnabled.enabled ? "session_budget" : "advisor_off" };
-          } else {
-            const consult = await consultAdvisor(c.req.raw, req, config, session, fetchImpl, advisorImpl);
-            const note = "note" in consult ? consult.note : undefined;
-            advisor = {
-              ...advisor,
-              consulted: true,
-              noteAdded: note !== undefined,
-              ...("usage" in consult && consult.usage ? { usage: consult.usage } : {}),
-              ...("reason" in consult
-                ? {
-                    skipped: consult.reason,
-                    ...("status" in consult ? { advisorStatus: consult.status } : {}),
-                    ...("detail" in consult ? { detail: consult.detail } : {}),
-                  }
-                : {}),
-            };
-            if (note) {
-              req = advisorImpl.append(req, note);
-              bodyOverride = JSON.stringify(req);
-              session.lastAdvisorAt = Date.now();
-              session.advisorCalls++;
+      if (req && session && advisorImpl) {
+        const stop = sessions.stopDecision(session, tools ?? 0);
+        if (stop) {
+          decision = { mode: "none", confidence: stop.confidence, jev: decision.jev };
+        } else {
+          const consultation = sessions.consultation(session, decision, advisorEnabled.enabled);
+          if (consultation.required) {
+            if (consultation.skipped) {
+              advisor = { ...advisor, consulted: false, skipped: consultation.skipped };
+            } else {
+              const consult = await consultAdvisor(c.req.raw, req, config, session.state, fetchImpl, advisorImpl);
+              const note = "note" in consult ? consult.note : undefined;
+              advisor = {
+                ...advisor,
+                consulted: true,
+                noteAdded: note !== undefined,
+                ...("usage" in consult && consult.usage ? { usage: consult.usage } : {}),
+                ...("reason" in consult
+                  ? {
+                      skipped: consult.reason,
+                      ...("status" in consult ? { advisorStatus: consult.status } : {}),
+                      ...("detail" in consult ? { detail: consult.detail } : {}),
+                    }
+                  : {}),
+              };
+              if (note) {
+                const prepared = prepareAdvisorNote(req, note, advisorImpl);
+                if (prepared) {
+                  req = prepared.request;
+                  bodyOverride = prepared.body;
+                  sessions.noteAdded(session);
+                } else {
+                  advisor = { ...advisor, noteAdded: false, skipped: "advisor_note_rewrite_error" };
+                }
+              }
             }
           }
         }

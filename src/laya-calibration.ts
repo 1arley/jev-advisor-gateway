@@ -1,11 +1,15 @@
-/** Thresholds fitted on labeled, independent scenarios, scoped to one checkpoint. */
+import defaultProfile from "./laya-default-calibration.json" with { type: "json" };
+
+/** Thresholds fitted on labeled calibration scenarios, scoped to one checkpoint. */
 export interface LayaCalibration {
   version: 1;
   source: string;
   checkpoint: string;
   policy: "native" | "noul_refined" | "binary_choice";
-  buckets: Partial<Record<"2" | "3-5" | "6-10" | "11+", { threshold: number; samples: number }>>;
+  buckets: Partial<Record<"default" | "2" | "3-5" | "6-10" | "11+", { threshold: number; samples: number }>>;
 }
+
+export const DEFAULT_LAYA_CALIBRATION = defaultProfile as LayaCalibration;
 
 export function parseLayaCalibration(raw: string): LayaCalibration {
   let value: unknown;
@@ -29,7 +33,7 @@ export function parseLayaCalibration(raw: string): LayaCalibration {
   )
     throw new Error("Invalid JEV_LAYA_CALIBRATION profile");
   for (const [key, entry] of Object.entries(profile.buckets)) {
-    if (!["2", "3-5", "6-10", "11+"].includes(key) || !entry || typeof entry !== "object" || Array.isArray(entry))
+    if (!["default", "2", "3-5", "6-10", "11+"].includes(key) || !entry || typeof entry !== "object" || Array.isArray(entry))
       throw new Error("Invalid JEV_LAYA_CALIBRATION bucket");
     const bucket = entry as Record<string, unknown>;
     if (
@@ -54,5 +58,22 @@ export function layaThreshold(
   fallback: number,
 ): number {
   const key = options <= 2 ? "2" : options <= 5 ? "3-5" : options <= 10 ? "6-10" : "11+";
-  return profile?.checkpoint === checkpoint && profile.policy === policy ? (profile.buckets[key]?.threshold ?? fallback) : fallback;
+  return profile?.checkpoint === checkpoint && profile.policy === policy
+    ? (profile.buckets[key]?.threshold ?? profile.buckets.default?.threshold ?? fallback)
+    : fallback;
+}
+
+export function fitLayaThreshold(
+  observations: { confidence: number; correct: boolean }[],
+  errorTarget: number,
+): { threshold: number; samples: number } | undefined {
+  if (observations.length < 20) return undefined;
+  const threshold = [...new Set(observations.map(({ confidence }) => confidence))]
+    .sort((left, right) => left - right)
+    .find((candidate) => {
+      const accepted = observations.filter(({ confidence }) => confidence >= candidate);
+      const errors = accepted.filter(({ correct }) => !correct).length;
+      return (errors + 1) / (accepted.length + 1) <= errorTarget;
+    });
+  return threshold === undefined ? undefined : { threshold, samples: observations.length };
 }

@@ -158,12 +158,18 @@ verified.
 
 ## Local Jev options
 
+Run `jev-codex-advisor --setup` to choose a local provider and enter its base URL. The gateway adds
+`/v1/systemone`; entering the full endpoint is also accepted. `JEV_URL` in a `.env` file always
+contains the full endpoint. OpenJev, Laya, Jiwo and Kev must use loopback URLs.
+
 OpenJev serves the `/v1/systemone` protocol locally. Its backend (for example, a local model server)
 has its own provider and billing; `OPENJEV_KEY` is only a setup placeholder. See the
 [OpenJev project](https://github.com/1arley/OpenJev).
 
 [Laya](https://github.com/NandhaKishorM/laya) can serve the same protocol locally with
-`JEV_PROVIDER=laya`. Install and run `laya-serve` separately. Its default state window is about
+`JEV_PROVIDER=laya`. Install and run `laya-serve` separately. Setup selects `typed-decisions` with
+the `native` policy and a bundled synthetic calibration profile unless you override `JEV_MODEL`,
+`JEV_LAYA_ROUTING_POLICY` or `JEV_LAYA_CALIBRATION`. Its default state window is about
 1,024 tokens; the gateway sends `max_len` (default `JEV_LAYA_MAX_LEN=2048`) so it reads the full
 bounded request state. Laya uses its own `JEV_LAYA_MAX_STATE_CHARS=7000` and
 `JEV_LAYA_MAX_MESSAGE_CHARS=1500` limits. Hosted providers keep the generic

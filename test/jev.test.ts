@@ -73,9 +73,16 @@ describe("choosing a provider", () => {
       "http://user@127.0.0.1:8000/v1/systemone",
       "http://127.0.0.1:8000/v1/systemone?forward=1",
       "http://127.0.0.1:8000/v1/systemone#fragment",
+      "http://127.0.0.1:8000/other",
     ]) {
       expect(() => loadConfig({ JEV_PROVIDER: "laya", JEV_URL: jevUrl })).toThrow(/JEV_URL/);
     }
+  });
+
+  it("keeps OpenJev on its local System One endpoint", () => {
+    expect(loadConfig({ JEV_PROVIDER: "openjev" }).jevUrl).toBe("http://localhost:6767/v1/systemone");
+    expect(() => loadConfig({ JEV_PROVIDER: "openjev", JEV_URL: "https://remote.example/v1/systemone" })).toThrow(/JEV_URL/);
+    expect(() => loadConfig({ JEV_PROVIDER: "openjev", JEV_URL: "http://localhost:6767/other" })).toThrow(/JEV_URL/);
   });
 
   it("requires Headroom to be explicitly loopback and pins its deadline", () => {
@@ -159,12 +166,29 @@ describe("asking Laya locally", () => {
     usage: { input_tokens: 10, output_tokens: 0 },
   };
 
+  it("defaults to the calibrated typed-decisions checkpoint and native policy", () => {
+    const config = loadConfig({ JEV_PROVIDER: "laya" });
+    expect(config).toMatchObject({
+      jevModel: "typed-decisions",
+      layaRoutingPolicy: "native",
+      layaCalibration: {
+        checkpoint: "typed-decisions",
+        policy: "native",
+        buckets: { default: { threshold: 0.5118, samples: 32 } },
+      },
+    });
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_MODEL: "english", JEV_LAYA_ROUTING_POLICY: "legacy" })).toMatchObject({
+      jevModel: "english",
+      layaRoutingPolicy: "legacy",
+    });
+  });
+
   it("answers with no key at all, and sends no Authorization header unless one is configured", async () => {
-    const keyless = loadConfig({ JEV_PROVIDER: "laya" });
+    const keyless = loadConfig({ JEV_PROVIDER: "laya", JEV_LAYA_ROUTING_POLICY: "legacy" });
     expect(keyless).toMatchObject({
       jevProvider: "laya",
       jevApiKey: undefined,
-      jevModel: "multilingual",
+      jevModel: "typed-decisions",
       jevUrl: "http://127.0.0.1:8000/v1/systemone",
       maxStateChars: 7_000,
       maxMessageChars: 1_500,
@@ -249,7 +273,7 @@ describe("asking Laya locally", () => {
       "http://localhost:8009/v1/systemone/",
     );
     for (const jevUrl of ["http://127.0.0.1:8009/", "http://127.0.0.1:8009/v1/other"]) {
-      expect(() => loadConfig({ JEV_PROVIDER: "kev", JEV_URL: jevUrl })).toThrow(/JEV_URL for Kev/);
+      expect(() => loadConfig({ JEV_PROVIDER: "kev", JEV_URL: jevUrl })).toThrow(/JEV_URL.*\/v1\/systemone/);
     }
   });
 
@@ -315,17 +339,19 @@ describe("asking Laya locally", () => {
   });
 
   it("pins JEV_MODEL to a checkpoint Laya actually serves", () => {
-    expect(resolveModel("laya", undefined)).toBe("multilingual");
+    expect(resolveModel("laya", undefined)).toBe("typed-decisions");
     expect(resolveModel("laya", "english")).toBe("english");
     expect(resolveModel("laya", "typed-decisions")).toBe("typed-decisions");
-    expect(resolveModel("laya", "jev-latest")).toBe("multilingual");
-    expect(resolveModel("laya", "typesafe/jev-1.13")).toBe("multilingual");
+    expect(resolveModel("laya", "jev-latest")).toBe("typed-decisions");
+    expect(resolveModel("laya", "typesafe/jev-1.13")).toBe("typed-decisions");
   });
 
   it("names the local checkpoint in the config when only an optional key is present", () => {
     expect(resolveProvider({ LAYA_API_KEY: "k" })).toBe("laya");
     expect(resolveProvider({ TYPESAFE_API_KEY: "k", LAYA_API_KEY: "k" })).toBe("typesafe");
-    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_URL: "http://127.0.0.1:9200/" }).jevUrl).toBe("http://127.0.0.1:9200/");
+    expect(loadConfig({ JEV_PROVIDER: "laya", JEV_URL: "http://127.0.0.1:9200/v1/systemone" }).jevUrl).toBe(
+      "http://127.0.0.1:9200/v1/systemone",
+    );
   });
 });
 

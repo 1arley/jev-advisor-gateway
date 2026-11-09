@@ -8,7 +8,7 @@ import { summarizeResponse } from "../debug.js";
 import { forward } from "../upstream.js";
 import { readUsage, type Usage } from "../usage.js";
 import type { ChatRequest } from "../types.js";
-import type { SessionState } from "./session-state.js";
+import type { SessionState } from "./session.js";
 
 /**
  * The advisor asks one model to review the coding agent's next step, and hands the answer back as
@@ -84,7 +84,7 @@ function chatContext(req: ChatRequest, config: Config): AdvisorMessage[] {
 function geminiContext(req: GeminiRequest, config: Config): AdvisorMessage[] {
   const messages = (Array.isArray(req.contents) ? req.contents : []).flatMap((content): AdvisorMessage[] => {
     if (content.role !== "user" && content.role !== "model") return [];
-    const text = (content.parts ?? []).flatMap((part) => typeof part.text === "string" ? [part.text] : []).join("");
+    const text = (content.parts ?? []).flatMap((part) => (typeof part.text === "string" ? [part.text] : [])).join("");
     if (!text.trim()) return [];
     return [{ role: content.role === "model" ? "assistant" : "user", content: text }];
   });
@@ -293,8 +293,10 @@ function geminiResponseText(response: unknown): string {
   if (!response || typeof response !== "object") return "";
   const candidates = (response as GeminiAdvisorResponse).candidates;
   if (!Array.isArray(candidates)) return "";
-  return candidates.flatMap((candidate) => candidate?.content?.parts ?? [])
-    .map((part) => typeof part?.text === "string" ? part.text : "").join("");
+  return candidates
+    .flatMap((candidate) => candidate?.content?.parts ?? [])
+    .map((part) => (typeof part?.text === "string" ? part.text : ""))
+    .join("");
 }
 
 export function buildGeminiAdvisorRequest(req: GeminiRequest, config: Config, session: SessionState) {
@@ -324,12 +326,20 @@ export function extractGeminiAdvisorText(body: string): string | undefined {
     return geminiResponseText(value);
   };
   if (body.trimStart().startsWith("{") || body.trimStart().startsWith("[")) {
-    try { return bounded(textFrom(JSON.parse(body)).trim()); } catch { return undefined; }
+    try {
+      return bounded(textFrom(JSON.parse(body)).trim());
+    } catch {
+      return undefined;
+    }
   }
   const chunks: string[] = [];
   for (const line of body.split(/\r?\n/)) {
     if (!line.startsWith("data:") || line.slice(5).trim() === "[DONE]") continue;
-    try { chunks.push(textFrom(JSON.parse(line.slice(5)))); } catch { /* Ignore non-JSON SSE frames. */ }
+    try {
+      chunks.push(textFrom(JSON.parse(line.slice(5))));
+    } catch {
+      /* Ignore non-JSON SSE frames. */
+    }
   }
   return bounded(chunks.join("").trim());
 }
@@ -386,6 +396,17 @@ export interface Advisor<Req> {
   requestUrl?(url: URL, config: Config): URL;
   /** The advisor's text in a reply body, streamed or as one JSON object. */
   text(body: string): string | undefined;
+}
+
+/** Preserve the prepared request if an optional advisor note cannot be appended or encoded. */
+export function prepareAdvisorNote<Req>(req: Req, note: string, advisor: Advisor<Req>): { request: Req; body: string } | undefined {
+  try {
+    const request = advisor.append(req, note);
+    const body = JSON.stringify(request);
+    return body === undefined ? undefined : { request, body };
+  } catch {
+    return undefined;
+  }
 }
 
 const responsesAdvisor: Advisor<ResponsesRequest> = {

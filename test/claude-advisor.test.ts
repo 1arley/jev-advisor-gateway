@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { chatAdapter } from "../src/adapters/chat.js";
 import { messagesAdapter } from "../src/adapters/messages.js";
 import { advisorFor, buildMessagesAdvisorRequest, extractMessagesAdvisorText } from "../src/advisor/advisor.js";
-import type { SessionState } from "../src/advisor/session-state.js";
+import type { SessionState } from "../src/advisor/session.js";
 import { createApp } from "../src/app.js";
 import { NO_TOOL } from "../src/questions.js";
 import { fakeJev, settled, testConfig } from "./helpers.js";
