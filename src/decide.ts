@@ -1,6 +1,7 @@
 import type { Questions, SystemOneRequest, SystemOneResult } from "@typesafe-ai/sdk";
 import type { Config } from "./config.js";
-import { decisionProvider, type DecisionAssessment } from "./decision-providers.js";
+import { shouldPassThroughRecentToolResult } from "./client-policy.js";
+import { decisionProvider, type DecisionAssessment } from "./decision-providers/index.js";
 import {
   argKey,
   buildQuestions,
@@ -117,16 +118,6 @@ function skipReason(input: RouterInput): string | undefined {
   if (input.tools.some((tool) => tool.name === NO_TOOL)) return "reserved_tool_name";
   if (input.toolChoice === "decided") return "tool_choice_already_decided";
   return undefined;
-}
-
-function recentToolResults(input: RouterInput): Set<string> {
-  const recent: string[] = [];
-  for (const turn of input.turns.toReversed()) {
-    if (turn.role === "tool_result" && typeof turn.tool === "string") recent.push(turn.tool);
-    if (turn.role === "assistant" && Array.isArray(turn.tool_calls)) return new Set(recent);
-    if (turn.role === "user") return new Set();
-  }
-  return new Set();
 }
 
 /** Fill every argument from Jev's answers; the weakest judgement bounds the whole call. */
@@ -254,13 +245,7 @@ export async function decide(input: RouterInput, config: Config, askJev: AskJev)
   }
 
   // Let coding agents inspect a result when Laya picks the tool that just produced it.
-  if (
-    config.jevProvider === "laya" &&
-    (config.client === "opencode" || config.client === "codex") &&
-    recentToolResults(input).has(selected)
-  ) {
-    return { mode: "passthrough", reason: "recent_tool_result", jev };
-  }
+  if (shouldPassThroughRecentToolResult(config, input, selected)) return { mode: "passthrough", reason: "recent_tool_result", jev };
 
   const toolIndex = plans.findIndex((plan) => plan.name === selected);
   const plan = plans[toolIndex];

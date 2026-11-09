@@ -1,5 +1,7 @@
+import type { Questions, SystemOneResult } from "@typesafe-ai/sdk";
 import { describe, expect, it } from "vitest";
 import { decide } from "../src/decide.js";
+import { decisionProvider } from "../src/decision-providers/index.js";
 import { PROVIDERS } from "../src/jev.js";
 import type { RouterInput, RouterTool } from "../src/types.js";
 import { fakeJev, testConfig } from "./helpers.js";
@@ -62,4 +64,90 @@ describe("decision provider capabilities", () => {
     expect(result).toMatchObject({ mode: "forced", tool: "tool0" });
     expect(result.jev?.shortlist).toEqual(provider === "typesafe" ? undefined : ["tool0", "tool50"]);
   });
+});
+
+const syntheticResult = (answers: Record<string, unknown>): SystemOneResult<Questions> =>
+  ({ model: "synthetic", answers, usage: { input_tokens: 1, output_tokens: 0 } }) as unknown as SystemOneResult<Questions>;
+
+const choice = (overrides: Record<string, unknown> = {}) => ({
+  type: "choice",
+  choice: "selected",
+  confidence: 0.95,
+  probabilities: { selected: 0.95 },
+  ...overrides,
+});
+const noul = (value: number) => ({ type: "noul", noul: value });
+const providerTools: RouterTool[] = [{ name: "selected", kind: "function" }];
+
+describe("provider decision adapters", () => {
+  it.each([
+    ["low_confidence", { low_confidence: true }],
+    ["abstained", { abstained: true }],
+    ["abstention=abstained", { abstention: "abstained" }],
+    ["abstention=unevaluated", { abstention: "unevaluated" }],
+  ])("Laya native turns %s into a fail-open decision even with high confidence", (_name, marker) => {
+    const provider = decisionProvider(testConfig({ jevProvider: "laya", layaRoutingPolicy: "native" }));
+    const result = syntheticResult({ tool: choice({ choice: "tool_0", ...marker }) });
+    expect(provider.assess(result, providerTools, true)).toEqual({ reason: "low_confidence" });
+  });
+
+  it("Laya applies the calibrated confidence threshold and keeps trace metadata", () => {
+    const provider = decisionProvider(testConfig({ jevProvider: "laya", layaRoutingPolicy: "native" }));
+    const assessment = provider.assess(syntheticResult({ tool: choice({ choice: "tool_0", confidence: 0.2 }) }), providerTools, true);
+    expect(assessment).toMatchObject({
+      choice: "selected",
+      rejection: "low_confidence",
+      trace: { policy: "native", confidenceMetric: "answer_confidence", optionCount: 2 },
+    });
+  });
+
+  it.each([
+    ["tool gate", "noul_refined", { noul: noul(0.05) }, { tool: choice({ choice: "tool_0" }), needs_tool: noul(0.05) }],
+    [
+      "binary gate",
+      "binary_choice",
+      { choice: "choice", confidence: 0.95 },
+      { tool: choice({ choice: "tool_0" }), needs_tool: choice({ choice: "B" }) },
+    ],
+  ])("Laya rejects a %s that disagrees with the selected action", (_name, policy, _gate, answers) => {
+    const provider = decisionProvider(testConfig({ jevProvider: "laya", layaRoutingPolicy: policy as "noul_refined" | "binary_choice" }));
+    expect(provider.assess(syntheticResult(answers), providerTools, true)).toMatchObject({ rejection: "jev_answers_disagree" });
+  });
+
+  it.each([
+    ["missing tool answer", {}, "jev_unexpected_answer"],
+    ["wrong tool answer type", { tool: noul(0.95) }, "jev_unexpected_answer"],
+    ["non-canonical tool label", { tool: choice({ choice: "tool_99" }) }, "jev_unknown_tool"],
+  ])("Laya native passes malformed %s through", (_name, answers, reason) => {
+    const provider = decisionProvider(testConfig({ jevProvider: "laya", layaRoutingPolicy: "native" }));
+    expect(provider.assess(syntheticResult(answers), providerTools, true)).toEqual({ reason });
+  });
+
+  it("Jiwo uses its own confidence threshold and rejects a missing verification answer", () => {
+    const provider = decisionProvider(testConfig({ jevProvider: "jiwo" }));
+    expect(
+      provider.assess(syntheticResult({ tool: choice({ confidence: 0.6 }), needs_tool: noul(0.9) }), providerTools, true),
+    ).toMatchObject({
+      rejection: "low_confidence",
+    });
+    expect(provider.assess(syntheticResult({ tool: choice() }), providerTools, true)).toEqual({ reason: "jev_unexpected_answer" });
+  });
+
+  it("canonical providers reject missing answers without treating them as a routing decision", () => {
+    const provider = decisionProvider(testConfig({ jevProvider: "typesafe" }));
+    expect(provider.assess(syntheticResult({}), providerTools, true)).toEqual({ reason: "jev_unexpected_answer" });
+  });
+
+  it.each(["laya", "jiwo", "typesafe"] as const)(
+    "fails open before the provider seam when %s returns a malformed result",
+    async (provider) => {
+      const malformed = { model: "synthetic", answers: { tool: { type: "choice", choice: "selected" } }, usage: {} };
+      const result = await decide(
+        input(),
+        testConfig({ jevProvider: provider, layaRoutingPolicy: "native" }),
+        async () => malformed as unknown as SystemOneResult<Questions>,
+      );
+      expect(result).toMatchObject({ mode: "passthrough", reason: "jev_unexpected_answer" });
+    },
+  );
 });
